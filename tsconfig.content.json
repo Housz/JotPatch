@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "none",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "skipLibCheck": true,
+    "outFile": "dist/content.js",
+    "removeComments": false,
+    "noEmitOnError": true
+  },
+  "files": [
+    "src/content/types.ts",
+    "src/content/page-key.ts",
+    "src/content/anchor.ts",
+    "src/content/repository.ts",
+    "src/content/app.ts",
+    "src/content/entry.ts"
+  ]
+}

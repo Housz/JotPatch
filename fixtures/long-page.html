@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>JotPatch 测试长文档</title>
+<style>body{max-width:790px;margin:30px auto;font:18px/1.9 system-ui}section{margin:50px 0; padding:20px;border-left:2px solid #ddd}p{margin:18px 0;}#middle{background:#eef9ee}</style>
+</head>
+<body>
+<h1>JotPatch Stage 0 · 长文档测试</h1>
+<p>在这篇演示文章中，你可以选中一句文字，点击「贴便签」，然后滚动、刷新或修改 DOM。</p>
+<div id="long-document">
+  <section><p>开篇的问题是：如何将临时想法留在产生想法的上下文旁边？</p>
+    <p id="duplicate-first">第一个背景。我们需要保留原文的位置信息。这里是不同的尾部说明。</p></section>
+  <section id="top"><p>这段在文档前部，用于检测简单滚动时便签标记是否跟随正文。</p></section>
+  <section><p>占位内容：浏览器中的便签应该轻量化，不应要求用户管理分类、文件夹和多余的功能。</p></section>
+  <section><p>继续滚动：一张贴在原文上的便签，理应在原文滚走时离开视口。</p></section>
+  <section><p>AI 回答可以很长，我们需要一个很窄的 Dock 来快速定位分布在整个页面的便签。</p></section>
+  <section id="middle"><p id="anchor-target">第二个背景。我们需要保留原文的位置信息。这里是第二个段落的不同尾部上下文。</p></section>
+  <section><p>页面发生结构变化时，可以根据选中文本前后的语境重新匹配。</p></section>
+  <section><p>文本锚定失败时，便签仍然需要保留在本地存储，等待用户重新指定位置。</p></section>
+  <section><p>插件不应依赖 DOM 的绝对坐标，因为动态文档布局不断变化。</p></section>
+  <section><p>最终，用户可以点击右侧 Dock 回到原文，再继续编辑自己的想法。</p></section>
+  <section><p>继续向下滚动，这些末尾段落用来验证锚点在视口之外时会隐藏。</p></section>
+  <section><p>长文档可能有数十轮问答和大量附加资料；Dock 应独立保持可访问。</p></section>
+  <section><p>测试的最后一段，使得页面底部不会直接与正文中的锚点重叠。</p></section>
+</div>
+</body></html>
