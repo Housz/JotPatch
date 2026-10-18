@@ -58,8 +58,11 @@ namespace JP {
 
     async preferences(): Promise<Preferences> {
       const saved = (await chrome.storage.local.get(PREFERENCES_KEY))[PREFERENCES_KEY];
-      const setting = saved && typeof saved === 'object' ? (saved as Partial<Preferences>).selectionTrigger : null;
-      return { selectionTrigger: setting === 'alt' || setting === 'off' ? setting : 'always' };
+      const prefs = saved && typeof saved === 'object' ? saved as Partial<Preferences> : {};
+      return {
+        selectionTrigger: prefs.selectionTrigger === 'alt' || prefs.selectionTrigger === 'off' ? prefs.selectionTrigger : 'always',
+        conversationNavigation: prefs.conversationNavigation !== false
+      };
     }
 
     private isNote(value: unknown): value is Note {

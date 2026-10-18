@@ -13,6 +13,7 @@
     "src/content/types.ts",
     "src/content/page-key.ts",
     "src/content/anchor.ts",
+    "src/content/conversation.ts",
     "src/content/repository.ts",
     "src/content/paper-styles.ts",
     "src/content/app.ts",

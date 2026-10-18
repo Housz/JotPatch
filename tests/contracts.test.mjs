@@ -40,3 +40,19 @@ test('right-click action and selection-trigger preference are included', () => {
   assert.ok(content.includes("selectionTrigger === 'alt'"));
   assert.ok(readFileSync('options.html', 'utf8').includes('value="alt"'));
 });
+
+test('stage 1.5 conversation adapters and unified rail compile without wider permissions', () => {
+  assert.equal(manifest.version, '0.1.5');
+  assert.equal(manifest.host_permissions, undefined);
+  for (const symbol of ['collectConversation', 'turnForRange', 'rail-turn', 'jp-turn-preview']) {
+    assert.ok(content.includes(symbol), `${symbol} missing in bundled content script`);
+  }
+  const source = readFileSync('src/content/conversation.ts', 'utf8');
+  assert.ok(source.includes('data-message-author-role'));
+  assert.ok(source.includes('data-user-message-bubble'));
+  assert.ok(source.includes('user-query'));
+  assert.ok(source.includes('nativeChatGPTRailPresent'));
+  assert.ok(source.includes('interface ConversationSnapshot'));
+  assert.ok(readFileSync('options.html', 'utf8').includes('id="conversation-navigation"'));
+  assert.ok(readFileSync('options.js', 'utf8').includes('...current, ...patch'));
+});
