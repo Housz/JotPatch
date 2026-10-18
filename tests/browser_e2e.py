@@ -188,6 +188,12 @@ def run():
         editor.press('Control+b')
         assert editor.input_value()=='**an idea**',editor.input_value()
         print('PASS: minimalist Markdown keyboard formatting')
+        # The sparse editor is also a readable, safely rendered paper when blurred.
+        editor.evaluate('(node)=>node.blur()')
+        expect(page.locator('#jotpatch-root .paper').last.locator('.note-preview strong')).to_have_text('an idea')
+        page.locator('#jotpatch-root .paper').last.locator('.note-preview').click()
+        expect(editor).to_be_visible()
+        print('PASS: inline Markdown preview and return to editor')
 
         # Delete and undo keep the original id and content.
         last=page.locator('#jotpatch-root .paper').last
@@ -210,6 +216,21 @@ def run():
         expect(page.locator('#jotpatch-root .rail-pin.missing')).to_have_count(1)
         print('PASS: storage restore + lost-anchor gracefully represented')
         assert not errors,errors
+
+        # Preference panel is a real extension document in production; fake the
+        # storage methods for this view to test the independent radio setting.
+        options=(ROOT/'options.html').read_text(encoding='utf-8').replace('<script src="options.js"></script>','')
+        settings=context.new_page()
+        settings.set_content(options)
+        settings.evaluate(STORAGE_SHIM)
+        settings.add_script_tag(path=str(ROOT/'options.js'))
+        expect(settings.locator('input[value="always"]')).to_be_checked()
+        settings.locator('input[value="alt"]').check()
+        expect(settings.locator('#preference-status')).to_contain_text('已保存')
+        value=settings.evaluate("() => window.__jotpatchFakeStore['jotpatch:preferences:v1'].selectionTrigger")
+        assert value == 'alt',value
+        print('PASS: settings page selection mode persisted')
+        settings.close()
         context.close();browser.close()
 
 if __name__=='__main__': run()

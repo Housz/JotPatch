@@ -84,6 +84,6 @@ interface Note {
 ## Tests and next development work
 
 - `npm run check`: TypeScript build and Node contract checks.
-- `python tests/browser_e2e.py`: Chromium DOM integration with a fake extension store; covers selection and quote restore, multiple notes, color, drag/resize/save, mutation and Dock, selection modes, right-click message handling, page notes, Markdown hotkeys, undo and missing anchor.
+- `python tests/browser_e2e.py`: Chromium DOM integration with a fake extension store; covers selection and quote restore, multiple notes, color, drag/resize/save, mutation and Dock, selection modes, right-click message handling, page notes, Markdown hotkeys/preview, undo, missing anchor, and options-page preference storage.
 - Real Chrome/Edge tests remain required for extension install/update, context-menu integration, permission prompts, Chrome worker lifetime, cross-origin frames, and ChatGPT/Gemini UI changes. The DOM harness is not proof of those browser-specific behaviors.
 - Stage 2 needs cross-tab placement coordination, origin-authorization strategy, and ownership of a single floating follow note across browser windows. It must not reuse the current page-scoped `openIds` as global state.
