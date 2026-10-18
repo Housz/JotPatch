@@ -1,85 +1,89 @@
-# JotPatch architecture (Stage 0)
+# JotPatch architecture — Stage 1
 
-## Product constraints
+## Product invariants
 
-JotPatch is a small, local-first note layer for reading and working on web pages. **Page Pin is the default and defining behavior**: users select text, attach a short note, and find it again from a narrow Dock. The note belongs to its source URL and text anchor, not an ephemeral Chrome tab ID.
+1. **Page Pin is the default**. Notes are scoped by canonical URL and optionally a text quote. The browser tab ID is never used as the durable note identity.
+2. **Paper is the editor**. No permanent title/header/footer/quoted text; UI controls appear softly on hover/focus, rather than claiming reading space.
+3. **Notes survive transient interface closure**. Closing a note hides its paper only, not its stored content. When a stored quote cannot be found, it remains recoverable via the Dock.
+4. **The browser follow mode (Stage 2) migrates floating cards** between eligible web pages, rather than replacing them with Side Panel. Stage 3 popouts are deferred.
+5. **Privacy first**. No cloud services and no mandatory all-sites host permission.
 
-The product roadmap has four stages:
-
-| Stage | Scope | Status |
-| --- | --- | --- |
-| 0 | Text-quote anchors, scroll-following markers, Dock, reload/SPA recovery | This prototype |
-| 1 | Polished sticky cards, drag/resize, multi-note editing, robust lifecycle | Planned |
-| 2 | **Follow mode B**: migrate floating notes among eligible browser pages | Planned; selected approach |
-| 3 | Browser-independent popout window | Deferred |
-
-Stage 0 deliberately omits arbitrary pixel anchoring, image anchors, full Markdown, browser-wide Follow and a standalone window. The UI is intentionally a proof of concept, not a full sticky-note app.
-
-## Current MV3 architecture
+## Extension architecture
 
 ```text
-Chrome action click                  Extension Options (site grant)
-       |                                         |
-       v                                         v
-MV3 service worker  --------- optional per-origin script registration
+Extension Toolbar click         Selected-text context menu          Options page
+        |                                |                                  |
+        v                                v                                  v
+    MV3 service worker  --- activeTab injection ---  storage preferences / site opt-in
+        |
+        v
+    Content Script (one classic JS bundle, Shadow DOM UI)
+       |-- AnchorEngine             src/content/anchor.ts
+       |     - DOM linear index with bounded traversal
+       |     - quote + context + position capture, unambiguous resolution
+       |-- PageKey                  src/content/page-key.ts
+       |-- NoteRepository           src/content/repository.ts
+       |     - individual keys + optional appearance + revision / tombstone
+       |-- Page UI orchestrator      src/content/app.ts
+       |     - small launcher and selection pin
+       |     - multiple independent paper cards, overlays and navigation Dock
+       |     - drag / resize, sparse Markdown keyboard controls
+       |     - serial saves and external chrome.storage.onChanged observation
+       |-- Paper styling            src/content/paper-styles.ts
        |
-       | chrome.scripting.executeScript / insertCSS
        v
-Content script, isolated JS world
-  - Page key normalization (`page-key.ts`)
-  - Anchor capture + matching (`anchor.ts`)
-  - UI layer + text highlights (`app.ts`)
-  - Page-local note repository (`repository.ts`)
-       |
-       v
-chrome.storage.local  (one key per note, jotpatch:note:v1:<uuid>)
+chrome.storage.local
+  jotpatch:note:v1:<uuid>        per-note body, anchor, color and layout
+  jotpatch:preferences:v1       selectionTrigger ('always' | 'alt' | 'off')
 ```
 
-Stage 0 compiles multiple TypeScript `namespace JP` files into one *classic* content script (`dist/content.js`) and a separate service worker (`dist/background.js`). There are no runtime dependencies and no remote services. Future work should separate the anchor engine from UI components and extend the repository as data volume grows.
+`tsc --outFile` compiles TS `namespace JP` source files into one classic content script. UI is mounted in a ShadowRoot to reduce host CSS interference. DOM text that users select or enter is assigned using `textContent`, textarea `.value`, or freshly created Text nodes rather than injected as untrusted HTML.
 
-### Anchor data model and resolution
+## Anchor and placement semantics
 
-- `pageKey`: URL origin + path + meaningful query parameters; strips known tracking parameters, ignores ordinary fragments, retains hash-router paths.
-- `TextAnchor`: exact quote, 48 characters of preceding and following text, and offsets into a flattened index of eligible DOM text nodes.
-- `buildTextIndex`: excludes script/style/forms/editable content and the extension host; caps work at 2 million characters.
-- `resolveAnchor`: find exact quote occurrences; score surrounding context and distance from recorded position; reject weak or ambiguous matches; construct a fresh DOM `Range`.
-- `Positioning`: measure the live DOM Range and move a viewport-fixed marker using scroll/resize events; hide the marker when the Range leaves the viewport.
-- `Navigation Dock`: position dots by resolved document text order; show unresolved anchors in gray. Click to scroll to a DOM node (including inside scroll containers) then display its card.
-- `MutationObserver`: debounce re-indexing of dynamically changed DOM; SPA route detection loads notes from the new URL. The current stage also checks URL changes periodically, avoiding instrumentation of site-owned History methods.
+- Text-level Pin captures original `TextAnchor { exact, prefix, suffix, start, end }` and never trusts old pixel coordinates. On reload or SPA route change, `resolveAnchor` checks quote occurrences, surrounding text and ambiguity.
+- Page-level Pin has **no** `anchor`: it remains a page-scoped viewport paper without a text marker, but is present in Dock.
+- Anchored paper uses a live DOM `Range` and scroll/resize-dependent placement. Prefer a margin next to the source block; if unavailable, place below/above the block so it does not immediately obscure the selected sentence.
+- User dragging changes `appearance.offsetX/Y` relative to the resolved base placement, **not** the text anchor; user resizing changes `appearance.width/height`. On changed viewport dimensions cards are clamped back into view.
+- When anchor leaves the viewport, its expanded paper/marker is temporarily hidden (not closed) and appears again when original content returns. Dock retains access.
+- Dock dots are ordered by text-index offset, not manual categories. Missing quote resolves to gray dot; card remains editable.
 
-Quotes are **not** matched fuzzily to unrelated content. When confidence is insufficient, a note remains stored and accessible in the Dock, but is marked unresolved rather than silently placed on the wrong paragraph.
+## Storage migration and concurrency
 
-### Privacy and permissions
+Existing Stage 0 notes continue using `schemaVersion:1`, and optional Stage 1 fields carry defaults:
 
-Required: `activeTab`, `scripting`, `storage`. No mandatory broad host permission. Clicking the toolbar injects the content script in the active tab. A user can opt in to *per-origin* site access in the extension options page; after granting it, a registered content script loads when pages on that site open. Disabling a site permission unregisters its script.
+```ts
+interface Note {
+  id: string;
+  pageKey: string;
+  text: string;
+  anchor?: TextAnchor; // absent means page-level note
+  appearance?: {
+    color?: 'yellow'|'pink'|'green'|'blue'|'purple'|'gray';
+    width?: number; height?: number; offsetX?: number; offsetY?: number;
+  };
+  revision?: number;
+  deletedAt?: number;
+}
+```
 
-Notes are saved to `chrome.storage.local`. No account, analytics, network requests, cloud sync, or AI calls. Content scripts run in Chrome's isolated world, but their DOM overlays are not a security boundary; the extension must never execute arbitrary selected HTML.
+- Content edits are locally reflected immediately and stored after ~380 ms debounce or on blur. Writes are serialized per note within each tab to prevent local save reorder.
+- A saved `revision` is compared against the last observed storage revision prior to updating. Other tabs' changes are observed via `chrome.storage.onChanged`. If edits collide, the current tab stops saving the conflicting note and advises copying its local text.
+- This is **optimistic best effort**, not compare-and-swap; a race between two tab writes can still occur. Robust multi-tab atomic editing is future work and must not be claimed solved.
+- Delete stores a tombstone (`deletedAt`); undo within ~8 seconds restores the note. Old tombstones can be pruned on loading that page. Closing a popup/card does not delete it.
+- The data schema remains forward-extensible for Stage 2 placement ownership (`page`, `follow`) and Stage 3 popout UI without duplicating note identities.
 
-### Data lifecycle
+## Permission and event handling
 
-- Note creation writes to storage before drawing a persisted Dock entry.
-- Text editing writes on a 350 ms debounce, flushes on blur and when switching cards, and serializes asynchronous writes for each note.
-- Multiple notes use separate storage keys to reduce lost updates on different notes.
-- Deletion in Stage 0 is immediate after confirmation (undo belongs to Stage 1).
-- Stage 0 does **not** guarantee conflict-free editing of the same note in two tabs. Stage 1 should implement revisioned updates and `chrome.storage.onChanged` instance coordination.
-- Position is resolved afresh from the source range, not restored from a screen pixel coordinate.
+- `activeTab` + `scripting` + `storage` + `contextMenus`; no mandatory `host_permissions`. A toolbar action or user-selected context-menu item grants temporary active-tab access.
+- When context menu is clicked on a page where the extension has not been injected, worker ensures the script is loaded and dispatches a message. The script captures an existing DOM `Range` when possible; if only selection text survives, it anchors **only if the text occurs uniquely**. If ambiguous, it asks the user to reselect and does not invent an anchor.
+- Users opt in to per-origin host permissions through the extension options page; the worker registers a persistent content script for future page reloads. Revoking permissions unregisters it.
+- Settings updates broadcast through `chrome.storage.onChanged` to already-open content scripts and take effect without browser reload.
+- Repeated injection is idempotent (no duplicate shadow roots). The toolbar icon shows/hides the small launcher; the launcher has a separate “hide JotPatch” control.
 
-### Known limitations and Stage 1 hardening
+## Tests and next development work
 
-- The selection index is linear and whitespace-sensitive, and contains a conservative 2M-character cutoff. Unusual rich editors, virtualized documents and inaccessible cross-origin iframes may not be anchorable.
-- The text index can include hidden nodes in some complex sites; future matching should improve visible-content and structural-block heuristics.
-- `TextAnchor` currently captures text from DOM ranges whose end/start are text nodes or ordinary element boundaries. It is not a general DOM/XPath anchor implementation.
-- Re-indexing an entire long document after frequent mutations can cost CPU. For AI-streaming sites use incremental indexing, observer gating, and message-block caches in a later stage.
-- The Stage 0 toolbar is a debug affordance and may obscure page elements. Stage 1 will minimize it in favor of a compact, contextual control.
-- Browser `chrome://` pages and some special documents cannot host content scripts.
-- The automatic site-restore permission prompt should be tested with the actual browser UI after installation.
-
-## Acceptance checkpoints
-
-1. Select a repeated phrase in the *second* context and attach a note; no mistaken match to the first occurrence.
-2. Insert text before the anchor and verify it still resolves to the intended occurrence.
-3. Scroll far away: in-page marker disappears while Dock remains; click Dock to jump back.
-4. Reload the page (after opting in to site restoration), and recover the note from local storage.
-5. Remove the original paragraph: note survives as unresolved; no false relocation.
-6. Compare URLs with query tracking parameters and distinct chat/conversation paths.
-7. Revoke optional site access and ensure automatic injection stops without deleting notes.
+- `npm run check`: TypeScript build and Node contract checks.
+- `python tests/browser_e2e.py`: Chromium DOM integration with a fake extension store; covers selection and quote restore, multiple notes, color, drag/resize/save, mutation and Dock, selection modes, right-click message handling, page notes, Markdown hotkeys/preview, undo, missing anchor, and options-page preference storage.
+- Real Chrome/Edge tests remain required for extension install/update, context-menu integration, permission prompts, Chrome worker lifetime, cross-origin frames, and ChatGPT/Gemini UI changes. The DOM harness is not proof of those browser-specific behaviors.
+- Stage 2 needs cross-tab placement coordination, origin-authorization strategy, and ownership of a single floating follow note across browser windows. It must not reuse the current page-scoped `openIds` as global state.

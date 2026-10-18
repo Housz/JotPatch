@@ -132,3 +132,28 @@ namespace JP {
     };
   }
 }
+
+namespace JP {
+  /** Context-menu fallback only when the selected quotation occurs exactly once.
+   *  Never fabricate an anchor for repeated text when the live Range is lost. */
+  export function uniqueQuoteRange(exact: string, index: TextIndex): Range | null {
+    if (!exact.trim() || exact.length > 1600) return null;
+    const first = index.text.indexOf(exact);
+    if (first === -1 || index.text.indexOf(exact, first + 1) !== -1) return null;
+    let start: { node: Text; offset: number } | null = null;
+    let end: { node: Text; offset: number } | null = null;
+    const targetEnd = first + exact.length;
+    for (const item of index.nodes) {
+      if (!start && item.start <= first && item.end > first) start = { node: item.node, offset: first - item.start };
+      if (item.start < targetEnd && item.end >= targetEnd) {
+        end = { node: item.node, offset: targetEnd - item.start };
+        break;
+      }
+    }
+    if (!start || !end) return null;
+    const range = document.createRange();
+    range.setStart(start.node, start.offset);
+    range.setEnd(end.node, end.offset);
+    return range;
+  }
+}
