@@ -1,28 +1,42 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>JotPatch · 网站自动恢复</title>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JotPatch · 设置</title>
   <style>
-    body {font: 15px/1.6 system-ui, sans-serif; max-width: 540px; margin: 72px auto; padding: 20px; color: #2b2924;}
-    main {border: 1px solid #e8dfc7; border-radius: 18px; background: #fffbef; padding: 26px;}
-    h1 {font-size: 23px; margin: 0 0 8px;} p {color:#625a4b;} label {display:block; font-weight:600; margin: 22px 0 6px;}
-    input {width:100%; box-sizing:border-box; padding:10px 12px; border-radius:9px; border:1px solid #bfb5a1; font-size:15px;}
-    button {background:#7059c1; color:white; padding:11px 18px; border:0; border-radius:9px; cursor:pointer; margin-top:14px; font-size:15px;}
-    button:disabled {opacity:.5;cursor:default;} #status {min-height:24px;} small {color:#645a4c;}
+    :root{color-scheme:light}*{box-sizing:border-box}
+    body{font:14px/1.6 system-ui,-apple-system,'Segoe UI',sans-serif;color:#34312c;max-width:620px;margin:52px auto;padding:0 24px;background:#fcfbf7}
+    h1{font-size:26px;font-weight:650;margin:0 0 4px}h2{font-size:16px;margin:0 0 10px}p{margin:3px 0 16px;color:#716c62}
+    section{padding:22px 0;border-bottom:1px solid #e7e3d9}fieldset{border:0;margin:0;padding:0}
+    .choice{display:flex;gap:12px;align-items:flex-start;padding:9px 0;cursor:pointer}.choice input{margin-top:6px;accent-color:#6c5ba4}
+    .choice small{display:block;color:#716c62}label[for=origin]{display:block;font-weight:600;margin-bottom:6px}
+    #origin{width:100%;padding:10px 12px;border:1px solid #d0c9bb;border-radius:7px;font:inherit;background:white}
+    button{font:inherit;color:#403626;border:0;background:#efe9d9;border-radius:7px;padding:9px 14px;cursor:pointer;margin-top:12px}
+    button:disabled{opacity:.5;cursor:default}#status{min-height:24px;color:#605944}footer{color:#777165;font-size:12px;margin:22px 0}
   </style>
 </head>
 <body>
-  <main>
-    <h1>JotPatch · 自动恢复</h1>
-    <p>允许这个网站在你刷新或再次访问时，自动显示已保存的便签和导航 Dock。只申请所选网站的访问权限。</p>
+  <h1>JotPatch <span aria-hidden="true">📌</span></h1>
+  <p>轻轻记，留在原文旁边。</p>
+  <section>
+    <h2>选中文字后的快捷图钉</h2>
+    <fieldset aria-label="选区快捷图钉显示方式">
+      <label class="choice"><input type="radio" name="selectionTrigger" value="always"><span>总是显示<small>选中网页文字后，在选区附近出现一个小图钉（默认）。</small></span></label>
+      <label class="choice"><input type="radio" name="selectionTrigger" value="alt"><span>按住 Alt / Option 时显示<small>按住 Alt（Mac 为 Option），再拖动选中文字并松开鼠标；普通选区不会被打扰。</small></span></label>
+      <label class="choice"><input type="radio" name="selectionTrigger" value="off"><span>从不显示<small>只通过选区右键菜单添加便签；扩展图标也可新建页面便签。</small></span></label>
+    </fieldset>
+    <p id="preference-status" role="status" aria-live="polite"></p>
+    <p>右键菜单中的「📌 添加 JotPatch 便签」始终可用。图钉只会出现在普通网页选区，不会干扰文本输入框。</p>
+  </section>
+  <section>
+    <h2>自动恢复</h2>
+    <p>允许特定网站在刷新或再次访问时自动显示已保存的便签。不会要求访问所有网站。</p>
     <label for="origin">网站地址</label>
     <input id="origin" type="url" placeholder="https://chatgpt.com" spellcheck="false">
-    <button id="grant">允许此网站自动恢复</button>
+    <button type="button" id="grant">允许该网站自动恢复</button>
     <p id="status" role="status" aria-live="polite"></p>
-    <small>未授权也能使用：打开网页后点击 JotPatch 扩展图标，即可手动恢复。暂不支持 chrome:// 页面。</small>
-  </main>
+  </section>
+  <footer>笔记存储在本地 Chrome 扩展数据中。暂不支持 chrome:// 页面及跨域 iframe 内选区。</footer>
   <script src="options.js"></script>
 </body>
 </html>

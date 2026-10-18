@@ -1,40 +1,71 @@
 # JotPatch 📌
 
-*Pin your thoughts right where they happen.*
+**把想法留在原文旁边。** A tiny, local-first sticky-note layer for Chrome / Edge.
 
-JotPatch is a lightweight, local-first Chrome extension for leaving notes beside selected text on webpages. **The page/text Pin is the default**; a narrow Dock gets you back to the original passage in long documents and AI conversations.
+目前版本：**Stage 1 · Minimal Paper Notes (`0.1.0`)**。保留阶段 0 已验证的文字锚定、文档滚动、Dock 定位和刷新恢复；重新设计为真正的“便签纸”而不是有标题栏、原文引用框和底栏的卡片。
 
-## Stage 0: text-anchor proof of concept
+## 体验一览
 
-✅ Select webpage text → **📌 贴便签** → type a short note.  
-✅ Markers follow their source text as the page scrolls.  
-✅ Dock dots jump back to the source; the list shows all page notes.  
-✅ Notes persist in local Chrome extension storage and can be restored after a reload.  
-✅ Duplicate quotes are disambiguated by neighboring context; missing source text is shown as unresolved.  
-✅ Optional **per-site** permission for automatic restore (no blanket all-site permission at install).
+- **选中文字 → 一个 📌 图标 → 直接写。** 默认不显示「贴便签」文字；在选项里可改为**按住 Alt/Option 才出现**，或**完全关闭弹出按钮**。
+- **右键选中文字 →「📌 添加 JotPatch 便签」**：无论选区气泡的模式如何，右键入口始终保留。普通网页主文档内的选区最可靠；若网页清除了选区，仅会在可确定唯一文字匹配时恢复锚点，避免错误关联。
+- **没有选区也能记**：点击扩展图标打开很小的快捷区，再按 `+` 创建固定到当前网页的便签。
+- **便签就是纸**：无固定标题、原文引文框、工具栏/底栏。鼠标悬停或聚焦时出现低干扰图标；左上角 `⠿` 拖动，右下角拖动缩放整张便签的宽和高。调整后的尺寸与偏移量会保存。
+- **多张便签**可同时展开；选择六种浅色；底部浮动按钮支持加粗 / 斜体 / 项目列表 / 编号列表 / 复制。
+- **小范围 Markdown**：编辑区支持 `**粗体**`、`*斜体*`、`-` 和 `1.` 列表（或 Ctrl/⌘+B、Ctrl/⌘+I）；离开编辑区后显示简化的格式化预览。不是完整 Markdown 编辑器。
+- **Dock 保留**：颜色圆点导航长网页；锚点不在视口内时便签自动离开视口，返回原文时可继续使用。
+- **删除可撤销**：删除后约 8 秒内在提示条中点击「撤销」。
+- **本地持久化**：`chrome.storage.local` 自动保存文本、颜色、尺寸、拖动偏移、锚点；既有 Stage 0 `schemaVersion:1` 笔记可直接读取，无需手动迁移。
 
-This is **not yet the finished sticky-note UI**. The selected **Follow mode B** (moving a floating note between webpages) belongs to Stage 2. The independent popout window is deferred to Stage 3.
+## 安装与试用
 
-## Install and try
+### 从阶段 1 ZIP / 源码安装
 
-1. Download/clone the `stage-0/anchoring-prototype` branch.
-2. Install Node.js 20+ and run `npm install` followed by `npm run build` in the repository directory.
-3. Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the **repository root** (not `dist`).
-4. Open a regular `https://` webpage or the local demo page served over HTTP. Click the JotPatch toolbar icon once to activate on the current tab.
-5. Select some normal webpage text. Click the nearby **📌 贴便签** button; enter a thought in the small editor.
-6. Scroll: the colored marker follows the passage and disappears when it scrolls off screen. The right-side Dock remains; click a dot to return to the text.
-7. For automatic restore after navigating away or restarting Chrome, choose **自动恢复设置** in JotPatch, then grant access **only to the site you want**. Refresh that page. Without a site grant, use the toolbar icon again to re-open your saved notes manually.
+1. 解压阶段 1 安装包；打开 `chrome://extensions` / `edge://extensions`。
+2. 开启 **开发者模式**，点击 **加载已解压的扩展程序**；选择包含 `manifest.json` 与 `dist/` 的 **JotPatch 根目录**（不要只选 `dist`）。
+3. 进入普通 `https://` 网页（如 ChatGPT / Gemini），点击浏览器右上角的 JotPatch 扩展图标一次。此操作只对当前网页临时授权。
+4. 选中文字，点选区旁的 📌；或右键选中的文字选择 JotPatch。对于不依赖具体文字的想法，点击扩展图标，再点小快捷区中的 `+`。
+5. 便签的 `···` 菜单中改颜色、删除；在选项页面设置选区触发方式。
+6. 想在刷新后无需再次点击扩展图标恢复：通过快捷区中的 ⚙ 打开设置，在**自动恢复**里按站点授权，然后刷新网页。
 
-**Demo page:** after building, serve the repository root via `python -m http.server 8000`, then open `http://localhost:8000/fixtures/long-page.html` and click JotPatch. The demo contains duplicate phrases and enough content to test the Dock.
+**更新已有阶段 0 安装**：可以复用同一个解压目录并在扩展页点击“重新加载”。如果换了扩展 ID（例如删除后重新安装另一份 unpacked 路径），旧数据不会自动迁移；**不要卸载原扩展并清空数据后再更新**。
 
-## Development and tests
+### 使用快捷按钮的三种模式
 
-- `npm run build`: compile classic MV3 content/background scripts with TypeScript; verify emitted assets.
-- `npm run check`: build and run dependency-free Node contract tests.
-- `npm run test:e2e`: run DOM integration tests in Chromium (requires Python Playwright and `/usr/bin/chromium`; tests use a storage shim, and do not replace a manual extension permission smoke test).
+| 设置 | 行为 |
+| --- | --- |
+| **总是显示**（默认） | 普通网页中选中文字、松开鼠标后出现小 📌 |
+| **按住 Alt/Option** | 鼠标选区结束时仍按住 Alt（macOS 为 Option）才显示 |
+| **从不显示** | 不显示选区气泡；使用右键菜单添加 |
 
-## Architecture and constraints
+> 文本输入框、不可访问的跨域 iframe 选区、`chrome://` 页面以及部分高度动态/虚拟滚动内容并不保证锚定。重复的相同文本会使用前后文消歧，置信度不足时保留便签但提示“原文未找到”，不猜测位置。
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Persistent notes are stored in `chrome.storage.local`, one key per note. No telemetry, login, server, or data upload. Uninstalling the extension may delete this local data; backup/export and deletion undo are planned for a later stage.
+## 本地开发
 
-Stage 0 limitations: only standard DOM text selections; some SPA/virtualized content can be temporarily unresolvable; edit conflicts between tabs are not solved. This branch is a feasibility prototype rather than a production release.
+需要 Node 20+；唯一开发依赖是 TypeScript，无运行时依赖。
+
+```bash
+npm install
+npm run check
+python tests/browser_e2e.py  # Python Playwright + Chromium（额外安装）
+```
+
+`npm run build` 生成 `dist/content.js`、`dist/background.js`。发布 ZIP 中已经包含这些编译产物，可以不安装 Node 直接加载。
+
+## 路线图
+
+| 阶段 | 内容 | 状态 |
+| --- | --- | --- |
+| 0 | 文本锚定、滚动跟随、Dock、重载恢复 | ✅ 验证完毕 |
+| **1** | **无标题便签纸 UI、鼠标拖动/缩放、颜色、多张便签、选区策略、右键、基本 Markdown、保存/撤销** | **本分支** |
+| 2 | **Follow 模式 B**：在不同浏览器网页迁移同一张悬浮便签（不是侧边栏） | 待开发，方向已确定 |
+| 3 | 真正独立便签窗口 | 暂不实施 |
+
+架构见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)；交互细节见 [docs/STAGE1_INTERACTIONS.md](docs/STAGE1_INTERACTIONS.md)。
+
+## 隐私与限制
+
+- 不联网、不上传文本、不要求账号；不使用任何远程 AI 服务。
+- 仅在点击浏览器扩展图标或右键菜单时使用 `activeTab` 进行临时注入。按网站的自动恢复权限由用户明确授予。
+- 右键选中文本属于 Chrome `contextMenus` 权限，启用后即使关闭选区图钉也可使用。
+- 单个便签的多标签页并发编辑使用修订号/冲突提示作保守保护，**不保证原子冲突解决**；若提示冲突，先复制本地正文备份再处理。
+- 删除撤销窗口不会跨浏览器重启持久存在。建议不要在便签中存放密码或高度敏感资料。
