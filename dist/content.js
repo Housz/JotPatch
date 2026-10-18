@@ -199,6 +199,126 @@ var JP;
 })(JP || (JP = {}));
 var JP;
 (function (JP) {
+    const CHATGPT = {
+        site: 'chatgpt',
+        // Support multiple observed generations of markup; these are not official APIs.
+        selectors: [
+            'article[data-turn="user"]', '[data-turn="user"]',
+            '[data-message-author-role="user"]', '[data-user-message-bubble]',
+            '[data-testid="user-message"]'
+        ].join(','),
+        canonical(node) {
+            return node.closest('article[data-turn="user"], article[data-testid^="conversation-turn-"], [data-turn-key]') || node;
+        },
+        textSource(node) {
+            return node.querySelector('[data-user-message-bubble], .user-message-bubble-color, [data-message-author-role="user"] .whitespace-pre-wrap, [data-message-author-role="user"], [data-testid="user-message"]') || node;
+        }
+    };
+    const GEMINI = {
+        site: 'gemini',
+        selectors: 'user-query, [data-test-id="user-query"], [data-testid="user-query"]',
+        canonical(node) {
+            return node.closest('user-query') || node;
+        },
+        textSource(node) {
+            return node.querySelector('.query-text, .user-query-content, .query-content, [data-test-id="query-text"], .query-text-line, .text-query') || node;
+        }
+    };
+    function conversationSite(url = new URL(location.href)) {
+        const host = url.hostname.toLowerCase();
+        if (host === 'chatgpt.com' || host === 'chat.openai.com')
+            return 'chatgpt';
+        if (host === 'gemini.google.com')
+            return 'gemini';
+        return null;
+    }
+    JP.conversationSite = conversationSite;
+    function compactText(node) {
+        // innerText excludes display:none labels where supported and preserves visible lines.
+        const readable = node.innerText || node.textContent || '';
+        return readable.replace(/\s+/g, ' ').trim().slice(0, 110);
+    }
+    function isCandidateUsable(node) {
+        if (!node.isConnected || node.closest('nav, aside, [role="dialog"], [aria-hidden="true"], [data-jotpatch-exclude]'))
+            return false;
+        // getClientRects is non-empty for scroll-offscreen nodes, but empty for display:none.
+        return node.getClientRects().length > 0;
+    }
+    function sourceId(node) {
+        for (const candidate of [node, node.querySelector('[data-message-id], [data-turn-id], [data-turn-key]')]) {
+            if (!candidate)
+                continue;
+            for (const attr of ['data-turn-id', 'data-turn-key', 'data-message-id']) {
+                const value = candidate.getAttribute(attr);
+                if (value && value.length <= 200)
+                    return `${attr}:${value}`;
+            }
+        }
+        return null;
+    }
+    function nativeChatGPTRailPresent() {
+        // Conservative opt-out: only recognize explicitly identified native navigation.
+        // A generic <nav> might be the history sidebar and must NOT disable JotPatch.
+        const native = document.querySelector('[data-testid="conversation-timeline"], [data-testid="conversation-navigation"], ' +
+            '[aria-label="Conversation navigation"], [aria-label="对话导航"]');
+        return !!native && native.getClientRects().length > 0;
+    }
+    function collectConversation(url = new URL(location.href)) {
+        const site = conversationSite(url);
+        const empty = { site, turns: [], nativeRailPresent: false };
+        if (!site || !document.body)
+            return empty;
+        const adapter = site === 'chatgpt' ? CHATGPT : GEMINI;
+        const seen = new Set();
+        const turns = [];
+        for (const candidate of Array.from(document.querySelectorAll(adapter.selectors))) {
+            const wrapper = adapter.canonical(candidate);
+            if (seen.has(wrapper) || !isCandidateUsable(wrapper))
+                continue;
+            seen.add(wrapper);
+            const textTarget = adapter.textSource(wrapper);
+            const preview = compactText(textTarget) || '非文本提问';
+            const rawId = sourceId(wrapper) || sourceId(candidate);
+            // The fallback is intentionally ephemeral; never store it as a note anchor.
+            turns.push({ id: rawId || `ordinal:${turns.length}`, order: turns.length, preview, element: wrapper });
+            // Protect against pathological site markup with thousands of repeated nodes.
+            if (turns.length >= 1200)
+                break;
+        }
+        // querySelectorAll traverses in document order, even with multiple selector alternatives.
+        // Duplicate upstream IDs are not trusted as stable identities.
+        const used = new Set();
+        for (const turn of turns) {
+            if (used.has(turn.id))
+                turn.id = `ordinal:${turn.order}`;
+            used.add(turn.id);
+        }
+        return { site, turns, nativeRailPresent: site === 'chatgpt' && nativeChatGPTRailPresent() };
+    }
+    JP.collectConversation = collectConversation;
+    /** Associate notes with the most recent preceding user question, not the quote text. */
+    function turnForRange(range, turns) {
+        if (!turns.length)
+            return null;
+        let previous = null;
+        const point = range.startContainer;
+        for (const turn of turns) {
+            if (turn.element.contains(point))
+                return turn;
+            const relation = turn.element.compareDocumentPosition(point);
+            if (relation & Node.DOCUMENT_POSITION_DISCONNECTED)
+                return null;
+            if (relation & Node.DOCUMENT_POSITION_FOLLOWING)
+                previous = turn;
+            else
+                break;
+        }
+        return previous;
+    }
+    JP.turnForRange = turnForRange;
+})(JP || (JP = {}));
+var JP;
+(function (JP) {
     const PREFIX = 'jotpatch:note:v1:';
     const PREFERENCES_KEY = 'jotpatch:preferences:v1';
     const COLORS = ['yellow', 'pink', 'green', 'blue', 'purple', 'gray'];
@@ -253,8 +373,11 @@ var JP;
         }
         async preferences() {
             const saved = (await chrome.storage.local.get(PREFERENCES_KEY))[PREFERENCES_KEY];
-            const setting = saved && typeof saved === 'object' ? saved.selectionTrigger : null;
-            return { selectionTrigger: setting === 'alt' || setting === 'off' ? setting : 'always' };
+            const prefs = saved && typeof saved === 'object' ? saved : {};
+            return {
+                selectionTrigger: prefs.selectionTrigger === 'alt' || prefs.selectionTrigger === 'off' ? prefs.selectionTrigger : 'always',
+                conversationNavigation: prefs.conversationNavigation !== false
+            };
         }
         isNote(value) {
             if (!value || typeof value !== 'object')
@@ -286,6 +409,19 @@ var JP;
     .rail-head{position:absolute;top:3px;left:2px;width:20px;height:20px;border-radius:50%;font-size:11px;
       background:#f0ece2;color:#615a4b;padding:0}
     .rail-track{position:absolute;top:28px;bottom:12px;left:3px;right:3px}
+    .rail.with-conversation{width:32px}
+    .rail.native-nav{right:42px}
+    .rail.with-conversation .rail-track{left:3px;right:3px}
+    .rail.with-conversation .rail-pin{left:0;width:9px;height:9px;z-index:2}
+    .rail-turn{position:absolute;right:0;width:13px;height:5px;min-height:2px;padding:0;
+      background:#c3c7cc;border-radius:8px;transform:translateY(-50%);transition:width .11s ease,background .11s ease}
+    .rail-turn:hover,.rail-turn:focus-visible{width:19px;background:#818894}
+    .rail-turn[aria-current="location"]{width:19px;background:#717883}
+    .turn-preview{position:fixed;max-width:238px;min-width:140px;z-index:40;pointer-events:none;
+      border-radius:8px;padding:9px 11px;background:#fffefcf7;border:1px solid #e6e3dc;
+      box-shadow:0 4px 18px #0002;font-size:12px;color:#37342e;overflow-wrap:anywhere}
+    .turn-preview small{display:block;font-size:10px;color:#8d877d;margin-bottom:3px}
+    .turn-preview span{display:block;line-height:1.5;max-height:5.9em;overflow:hidden}
     .rail-pin{position:absolute;left:4px;width:12px;height:12px;border:1px solid #0002;border-radius:50%;
       box-shadow:0 1px 4px #0002;transform:translateY(-50%);padding:0}
     .rail-pin.missing{background:#aaa!important;border-style:dashed}
@@ -297,6 +433,10 @@ var JP;
     .entry{width:100%;background:transparent;padding:9px 7px;display:flex;align-items:flex-start;gap:8px;
       border-top:1px solid #ece9e0;color:#34312e;text-align:left}
     .entry:hover{background:#f7f2e8}.entry .dot{width:9px;height:9px;flex:0 0 9px;border-radius:50%;margin-top:5px}
+    .list-section{font-size:11px;color:#827d74;letter-spacing:.025em;padding:8px 8px 3px}
+    .turn-entry{align-items:center;gap:8px;font-size:12px}
+    .turn-entry span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .turn-order{color:#8e928f;flex:0 0 21px;font-variant-numeric:tabular-nums;text-align:right}
     .entry strong{display:block;font-weight:550;max-width:190px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .entry small{display:block;color:#8b8477;font-size:11px}
     .marker{position:fixed;z-index:4;width:19px;height:19px;pointer-events:auto;border-radius:50%;padding:0;
@@ -386,6 +526,10 @@ var JP;
         launcherOpen = false;
         listOpen = false;
         selectionTrigger = 'always';
+        conversationNavigation = true;
+        conversation = { site: null, turns: [], nativeRailPresent: false };
+        conversationTimer = 0;
+        activeTurnId = null;
         refreshTimer = 0;
         scrollScheduled = false;
         loadRequest = 0;
@@ -401,9 +545,14 @@ var JP;
         async start() {
             this.mount();
             this.setupEvents();
-            void this.loadPreferences();
+            await this.loadPreferences();
             await this.loadPage();
-            this.observer = new MutationObserver(() => this.scheduleRefresh());
+            this.refreshConversation();
+            this.observer = new MutationObserver((records) => {
+                this.scheduleRefresh();
+                if (records.some(record => record.type === 'childList'))
+                    this.scheduleConversationScan();
+            });
             this.observer.observe(document.body, { subtree: true, childList: true, characterData: true });
             // SPA navigation without injecting into page-owned history functions.
             window.setInterval(() => this.checkPageRoute(), 1400);
@@ -446,10 +595,11 @@ var JP;
           <button id="jp-hide" aria-label="隐藏 JotPatch" title="隐藏便签" type="button">−</button>
         </div>
         <div class="bubble" id="jp-bubble" hidden><button id="jp-bubble-pin" aria-label="将便签钉在选中文字旁" title="贴便签" type="button">📌</button></div>
-        <nav id="jp-rail" class="rail" aria-label="本页便签导航" hidden>
-          <button id="jp-list-toggle" class="rail-head" title="本页便签列表" type="button">0</button>
+        <nav id="jp-rail" class="rail" aria-label="网页对话与便签导航" hidden>
+          <button id="jp-list-toggle" class="rail-head" title="打开本页导航列表" type="button">0</button>
           <div class="rail-track" id="jp-rail-track"></div>
         </nav>
+        <div id="jp-turn-preview" class="turn-preview" role="tooltip" hidden></div>
         <aside id="jp-list" class="list" aria-label="本页便签列表" hidden></aside>
         <div id="jp-markers"></div>
         <div id="jp-cards"></div>
@@ -514,9 +664,12 @@ var JP;
                 if (area !== 'local')
                     return;
                 if (changes[PREFERENCE_KEY]) {
-                    const trigger = changes[PREFERENCE_KEY].newValue?.selectionTrigger;
+                    const preferences = changes[PREFERENCE_KEY].newValue;
+                    const trigger = preferences?.selectionTrigger;
                     this.selectionTrigger = trigger === 'alt' || trigger === 'off' ? trigger : 'always';
+                    this.conversationNavigation = preferences?.conversationNavigation !== false;
                     this.$('#jp-bubble').hidden = true;
+                    this.refreshConversation();
                 }
                 for (const [key, change] of Object.entries(changes)) {
                     const fresh = this.repo.noteFromChange(key, change.newValue);
@@ -527,10 +680,13 @@ var JP;
         }
         async loadPreferences() {
             try {
-                this.selectionTrigger = (await this.repo.preferences()).selectionTrigger;
+                const prefs = await this.repo.preferences();
+                this.selectionTrigger = prefs.selectionTrigger;
+                this.conversationNavigation = prefs.conversationNavigation;
             }
             catch {
                 this.selectionTrigger = 'always';
+                this.conversationNavigation = true;
             }
         }
         openSettings() {
@@ -550,7 +706,9 @@ var JP;
             this.cards.clear();
             this.$('#jp-cards').replaceChildren();
             this.listOpen = false;
-            void this.loadPage();
+            this.conversation = { site: JP.conversationSite(), turns: [], nativeRailPresent: false };
+            this.hideTurnPreview();
+            void this.loadPage().then(() => this.scheduleConversationScan(true));
         }
         async loadPage() {
             const request = ++this.loadRequest;
@@ -693,21 +851,125 @@ var JP;
             return [...this.notes].sort((a, b) => (this.matches.get(a.id)?.start ?? (a.anchor ? Infinity : -1)) -
                 (this.matches.get(b.id)?.start ?? (b.anchor ? Infinity : -1)) || a.createdAt - b.createdAt);
         }
+        /** Scan only known AI sites. A leading-edge throttle handles streaming DOM changes. */
+        scheduleConversationScan(immediate = false) {
+            if (!this.conversationNavigation || !JP.conversationSite())
+                return;
+            if (immediate)
+                clearTimeout(this.conversationTimer);
+            else if (this.conversationTimer)
+                return;
+            this.conversationTimer = window.setTimeout(() => {
+                this.conversationTimer = 0;
+                this.refreshConversation();
+            }, immediate ? 60 : 800);
+        }
+        refreshConversation() {
+            clearTimeout(this.conversationTimer);
+            this.conversationTimer = 0;
+            this.conversation = this.conversationNavigation ? JP.collectConversation() :
+                { site: JP.conversationSite(), turns: [], nativeRailPresent: false };
+            this.hideTurnPreview();
+            this.renderDock();
+            this.schedulePosition();
+        }
+        hideTurnPreview() { this.$('#jp-turn-preview').hidden = true; }
+        showTurnPreview(turn, button) {
+            const preview = this.$('#jp-turn-preview');
+            preview.replaceChildren();
+            const label = el('small');
+            label.textContent = `第 ${turn.order + 1} / ${this.conversation.turns.length} 轮`;
+            const summary = el('span');
+            summary.textContent = turn.preview;
+            preview.append(label, summary);
+            const rect = button.getBoundingClientRect();
+            const railRect = this.$('#jp-rail').getBoundingClientRect();
+            preview.style.right = `${Math.max(44, innerWidth - railRect.left + 9)}px`;
+            preview.style.top = `${clamp(rect.top - 13, 8, innerHeight - 96)}px`;
+            preview.hidden = false;
+        }
+        jumpToTurn(turn) {
+            this.hideTurnPreview();
+            if (!turn.element.isConnected) {
+                this.toast('该轮内容暂时未加载，请滚动网页后再试');
+                this.scheduleConversationScan(true);
+                return;
+            }
+            turn.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            this.activeTurnId = turn.id;
+            this.schedulePosition();
+        }
+        updateActiveTurn() {
+            const turns = this.conversation.turns;
+            if (!this.conversationNavigation || !turns.length || this.conversation.nativeRailPresent)
+                return;
+            // DOM order is monotonically scroll-ordered: O(log N) layout reads per frame.
+            let lo = 0, hi = turns.length;
+            const threshold = innerHeight * 0.40;
+            while (lo < hi) {
+                const mid = (lo + hi) >>> 1;
+                if (turns[mid].element.getBoundingClientRect().top <= threshold)
+                    lo = mid + 1;
+                else
+                    hi = mid;
+            }
+            const turn = turns[Math.max(0, lo - 1)];
+            if (!turn || turn.id === this.activeTurnId)
+                return;
+            this.activeTurnId = turn.id;
+            for (const button of Array.from(this.shadow.querySelectorAll('.rail-turn'))) {
+                if (button.dataset.turnId === turn.id)
+                    button.setAttribute('aria-current', 'location');
+                else
+                    button.removeAttribute('aria-current');
+            }
+        }
         renderDock() {
             const rail = this.$('#jp-rail');
-            rail.hidden = !this.notes.length;
-            this.$('#jp-list-toggle').textContent = String(this.notes.length);
+            const turns = this.conversationNavigation ? this.conversation.turns : [];
+            const showTurns = turns.length >= 3 && !this.conversation.nativeRailPresent;
+            rail.hidden = !this.notes.length && !showTurns;
+            rail.classList.toggle('with-conversation', showTurns);
+            rail.classList.toggle('native-nav', this.conversation.nativeRailPresent);
+            const toggle = this.$('#jp-list-toggle');
+            toggle.textContent = showTurns ? '≡' : String(this.notes.length);
+            toggle.title = showTurns ? `${turns.length} 轮对话 · ${this.notes.length} 张便签` : `本页 ${this.notes.length} 张便签`;
             const track = this.$('#jp-rail-track');
             track.replaceChildren();
+            if (showTurns) {
+                // Prevent densely spaced targets from covering their neighbors.
+                const availableHeight = Math.max(160, innerHeight * 0.60 - 40) * 0.92;
+                const lineHeight = clamp(availableHeight / Math.max(1, turns.length) * 0.78, 2, 6);
+                for (const turn of turns) {
+                    const button = el('button', 'rail-turn');
+                    button.type = 'button';
+                    button.dataset.turnId = turn.id;
+                    button.style.top = `${this.turnPosition(turn.order, turns.length)}%`;
+                    button.style.height = `${lineHeight}px`;
+                    button.title = `第 ${turn.order + 1} 轮：${turn.preview}`;
+                    button.setAttribute('aria-label', button.title);
+                    button.addEventListener('click', () => this.jumpToTurn(turn));
+                    button.addEventListener('pointerenter', () => this.showTurnPreview(turn, button));
+                    button.addEventListener('pointerleave', () => this.hideTurnPreview());
+                    button.addEventListener('focus', () => this.showTurnPreview(turn, button));
+                    button.addEventListener('blur', () => this.hideTurnPreview());
+                    track.appendChild(button);
+                }
+            }
             const sorted = this.sortedNotes();
             const textLength = this.index?.text.length || 1;
             const placed = [];
             sorted.forEach((note, i) => {
                 const match = this.matches.get(note.id);
-                let pos = match ? match.start / textLength * 100 : (note.anchor ? 90 + i % 4 * 2 : 3 + i * 3);
+                const linkedTurn = showTurns && match ? JP.turnForRange(match.range, turns) : null;
+                const offset = linkedTurn ? Math.min(1.1, (i % 3) * 0.45) : 0;
+                let pos = linkedTurn ? this.turnPosition(linkedTurn.order, turns.length) + offset
+                    : match ? match.start / textLength * 100 : (note.anchor ? 90 + i % 4 * 2 : 3 + i * 3);
                 pos = clamp(pos, 2, 98);
-                while (placed.some(p => Math.abs(p - pos) < 3.4) && pos < 96)
-                    pos += 3.4;
+                if (!showTurns) {
+                    while (placed.some(p => Math.abs(p - pos) < 3.4) && pos < 96)
+                        pos += 3.4;
+                }
                 placed.push(pos);
                 const button = el('button', `rail-pin${note.anchor && !match ? ' missing' : ''}`);
                 button.type = 'button';
@@ -715,20 +977,27 @@ var JP;
                 button.style.background = note.anchor && !match ? '#aaa' : COLOR_HEX[JP.appearance(note).color];
                 button.title = note.text.trim().slice(0, 70) || (note.anchor?.exact.slice(0, 50) || '本页便签');
                 button.setAttribute('aria-label', `跳转便签：${button.title}`);
-                button.addEventListener('click', () => this.goTo(note.id));
+                button.addEventListener('click', () => { this.hideTurnPreview(); this.goTo(note.id); });
                 track.appendChild(button);
             });
+            this.activeTurnId = null;
+            this.updateActiveTurn();
             this.renderList();
+        }
+        turnPosition(order, count) {
+            return 4 + 92 * (count <= 1 ? 0.5 : order / (count - 1));
         }
         renderList() {
             const list = this.$('#jp-list');
-            list.hidden = !this.listOpen || !this.notes.length;
+            const turns = this.conversationNavigation && !this.conversation.nativeRailPresent ? this.conversation.turns : [];
+            list.hidden = !this.listOpen || (!this.notes.length && turns.length < 3);
             if (list.hidden)
                 return;
             list.replaceChildren();
             const head = el('div', 'list-header');
             const title = el('span');
-            title.textContent = `本页便签 · ${this.notes.length}`;
+            title.textContent = turns.length >= 3
+                ? `会话 · ${turns.length} 轮 / ${this.notes.length} 张便签` : `本页便签 · ${this.notes.length}`;
             const close = el('button');
             close.type = 'button';
             close.textContent = '×';
@@ -736,20 +1005,43 @@ var JP;
             close.addEventListener('click', () => { this.listOpen = false; this.renderList(); });
             head.append(title, close);
             list.appendChild(head);
-            for (const note of this.sortedNotes()) {
-                const button = el('button', 'entry');
-                button.type = 'button';
-                const dot = el('span', 'dot');
-                dot.style.background = COLOR_HEX[JP.appearance(note).color];
-                const content = el('span');
-                const label = el('strong');
-                label.textContent = note.text.trim().split('\n')[0] || (note.anchor?.exact.slice(0, 45) || '空白便签');
-                const sub = el('small');
-                sub.textContent = !note.anchor ? '本页' : this.matches.has(note.id) ? '已关联原文' : '原文暂时未找到';
-                content.append(label, sub);
-                button.append(dot, content);
-                button.addEventListener('click', () => this.goTo(note.id));
-                list.appendChild(button);
+            if (turns.length >= 3) {
+                const heading = el('div', 'list-section');
+                heading.textContent = '对话轮次';
+                list.appendChild(heading);
+                for (const turn of turns) {
+                    const button = el('button', 'entry turn-entry');
+                    button.type = 'button';
+                    const count = el('span', 'turn-order');
+                    count.textContent = String(turn.order + 1);
+                    const label = el('span');
+                    label.textContent = turn.preview;
+                    button.append(count, label);
+                    button.addEventListener('click', () => { this.listOpen = false; this.renderList(); this.jumpToTurn(turn); });
+                    list.appendChild(button);
+                }
+            }
+            if (this.notes.length) {
+                if (turns.length >= 3) {
+                    const heading = el('div', 'list-section');
+                    heading.textContent = '本页便签';
+                    list.appendChild(heading);
+                }
+                for (const note of this.sortedNotes()) {
+                    const button = el('button', 'entry');
+                    button.type = 'button';
+                    const dot = el('span', 'dot');
+                    dot.style.background = COLOR_HEX[JP.appearance(note).color];
+                    const content = el('span');
+                    const label = el('strong');
+                    label.textContent = note.text.trim().split('\n')[0] || (note.anchor?.exact.slice(0, 45) || '空白便签');
+                    const sub = el('small');
+                    sub.textContent = !note.anchor ? '本页' : this.matches.has(note.id) ? '已关联原文' : '原文暂时未找到';
+                    content.append(label, sub);
+                    button.append(dot, content);
+                    button.addEventListener('click', () => { this.listOpen = false; this.renderList(); this.goTo(note.id); });
+                    list.appendChild(button);
+                }
             }
         }
         renderMarkers() {
@@ -779,6 +1071,7 @@ var JP;
                 this.positionMarkers();
                 for (const id of this.openIds)
                     this.positionCard(id);
+                this.updateActiveTurn();
             });
         }
         positionMarkers() {

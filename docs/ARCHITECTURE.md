@@ -1,4 +1,4 @@
-# JotPatch architecture — Stage 1
+# JotPatch architecture — Stage 1.5
 
 ## Product invariants
 
@@ -22,11 +22,15 @@ Extension Toolbar click         Selected-text context menu          Options page
        |     - DOM linear index with bounded traversal
        |     - quote + context + position capture, unambiguous resolution
        |-- PageKey                  src/content/page-key.ts
+       |-- ConversationEngine       src/content/conversation.ts
+       |     - per-site ChatGPT/Gemini DOM adapters, short in-memory turn index
+       |     - native navigation detection and turn-to-anchor association
        |-- NoteRepository           src/content/repository.ts
        |     - individual keys + optional appearance + revision / tombstone
        |-- Page UI orchestrator      src/content/app.ts
        |     - small launcher and selection pin
-       |     - multiple independent paper cards, overlays and navigation Dock
+       |     - multiple independent paper cards, overlays and unified navigation Dock
+       |     - light conversation strokes, turn previews and active-turn highlighting
        |     - drag / resize, sparse Markdown keyboard controls
        |     - serial saves and external chrome.storage.onChanged observation
        |-- Paper styling            src/content/paper-styles.ts
@@ -35,6 +39,7 @@ Extension Toolbar click         Selected-text context menu          Options page
 chrome.storage.local
   jotpatch:note:v1:<uuid>        per-note body, anchor, color and layout
   jotpatch:preferences:v1       selectionTrigger ('always' | 'alt' | 'off')
+                                 conversationNavigation (boolean, default true)
 ```
 
 `tsc --outFile` compiles TS `namespace JP` source files into one classic content script. UI is mounted in a ShadowRoot to reduce host CSS interference. DOM text that users select or enter is assigned using `textContent`, textarea `.value`, or freshly created Text nodes rather than injected as untrusted HTML.
@@ -46,7 +51,8 @@ chrome.storage.local
 - Anchored paper uses a live DOM `Range` and scroll/resize-dependent placement. Prefer a margin next to the source block; if unavailable, place below/above the block so it does not immediately obscure the selected sentence.
 - User dragging changes `appearance.offsetX/Y` relative to the resolved base placement, **not** the text anchor; user resizing changes `appearance.width/height`. On changed viewport dimensions cards are clamped back into view.
 - When anchor leaves the viewport, its expanded paper/marker is temporarily hidden (not closed) and appears again when original content returns. Dock retains access.
-- Dock dots are ordered by text-index offset, not manual categories. Missing quote resolves to gray dot; card remains editable.
+- On generic pages Dock dots are ordered by text-index offset. On ChatGPT/Gemini with conversation navigation enabled, matched note dots are placed beside their containing user/assistant turn. Their **actual click destination remains the exact quote**. Missing quote resolves to gray dot; card remains editable.
+- Conversation turns (user question + its answer) are **runtime-only DOM references and short previews**: no extra persistent chat index or network access. Third-party DOM is not a stable API; unrecognized or virtualized messages gracefully downgrade to note-only navigation. See [Stage 1.5 specification](STAGE1_5_CONVERSATION.md).
 
 ## Storage migration and concurrency
 
@@ -84,6 +90,8 @@ interface Note {
 ## Tests and next development work
 
 - `npm run check`: TypeScript build and Node contract checks.
+- `npm run test:e2e`: Chromium DOM integration (Stage 1 + synthetic ChatGPT/Gemini Stage 1.5).
 - `python tests/browser_e2e.py`: Chromium DOM integration with a fake extension store; covers selection and quote restore, multiple notes, color, drag/resize/save, mutation and Dock, selection modes, right-click message handling, page notes, Markdown hotkeys/preview, undo, missing anchor, and options-page preference storage.
+- Stage 1.5 separately verifies two ChatGPT markup generations, Gemini, hover previews, active turn, dynamic DOM, unified colored note marker, preferences and long synthetic conversation fixtures.
 - Real Chrome/Edge tests remain required for extension install/update, context-menu integration, permission prompts, Chrome worker lifetime, cross-origin frames, and ChatGPT/Gemini UI changes. The DOM harness is not proof of those browser-specific behaviors.
 - Stage 2 needs cross-tab placement coordination, origin-authorization strategy, and ownership of a single floating follow note across browser windows. It must not reuse the current page-scoped `openIds` as global state.

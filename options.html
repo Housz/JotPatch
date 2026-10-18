@@ -29,6 +29,13 @@
     <p>右键菜单中的「📌 添加 JotPatch 便签」始终可用。图钉只会出现在普通网页选区，不会干扰文本输入框。</p>
   </section>
   <section>
+    <h2>AI 会话导航</h2>
+    <label class="choice"><input type="checkbox" id="conversation-navigation" checked><span>显示对话轮次导航
+      <small>在 ChatGPT 与 Gemini 中用浅色短横线定位每一轮提问，已有彩色便签点共用同一条 Dock；普通网页不受影响。</small></span></label>
+    <p id="conversation-status" role="status" aria-live="polite"></p>
+    <p>若网页重新显示官方轮次导航，可在这里关闭 JotPatch 轮次横条。不会删除本页便签。</p>
+  </section>
+  <section>
     <h2>自动恢复</h2>
     <p>允许特定网站在刷新或再次访问时自动显示已保存的便签。不会要求访问所有网站。</p>
     <label for="origin">网站地址</label>

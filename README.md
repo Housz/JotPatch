@@ -2,7 +2,7 @@
 
 **把想法留在原文旁边。** A tiny, local-first sticky-note layer for Chrome / Edge.
 
-目前版本：**Stage 1 · Minimal Paper Notes (`0.1.0`)**。保留阶段 0 已验证的文字锚定、文档滚动、Dock 定位和刷新恢复；重新设计为真正的“便签纸”而不是有标题栏、原文引用框和底栏的卡片。
+目前版本：**Stage 1.5 · Conversation & Notes Rail (`0.1.5`)**。继承 Stage 1 的极简便签纸与阶段 0 的文本锚定，新增 ChatGPT / Gemini 对话轮次横条，与原有便签 Dock 融合。
 
 ## 体验一览
 
@@ -12,15 +12,17 @@
 - **便签就是纸**：无固定标题、原文引文框、工具栏/底栏。鼠标悬停或聚焦时出现低干扰图标；左上角 `⠿` 拖动，右下角拖动缩放整张便签的宽和高。调整后的尺寸与偏移量会保存。
 - **多张便签**可同时展开；选择六种浅色；底部浮动按钮支持加粗 / 斜体 / 项目列表 / 编号列表 / 复制。
 - **小范围 Markdown**：编辑区支持 `**粗体**`、`*斜体*`、`-` 和 `1.` 列表（或 Ctrl/⌘+B、Ctrl/⌘+I）；离开编辑区后显示简化的格式化预览。不是完整 Markdown 编辑器。
+- **AI 会话导航（Stage 1.5）**：在 ChatGPT / Gemini 已加载的对话中，每轮用户提问显示一条浅灰短横线；悬停预览、点击跳转。彩色便签点贴在所属轮次旁但依旧跳转到准确原文。普通网页仍使用便签 Dock。
+- **可关闭**：设置中的「AI 会话导航」只关闭灰色轮次横线，不影响已有便签标记；若检测到已知的官方轮次导航标记，也会优先收起 JotPatch 的灰色横条。
 - **Dock 保留**：颜色圆点导航长网页；锚点不在视口内时便签自动离开视口，返回原文时可继续使用。
 - **删除可撤销**：删除后约 8 秒内在提示条中点击「撤销」。
 - **本地持久化**：`chrome.storage.local` 自动保存文本、颜色、尺寸、拖动偏移、锚点；既有 Stage 0 `schemaVersion:1` 笔记可直接读取，无需手动迁移。
 
 ## 安装与试用
 
-### 从阶段 1 ZIP / 源码安装
+### 从阶段 1.5 ZIP / 源码安装
 
-1. 解压阶段 1 安装包；打开 `chrome://extensions` / `edge://extensions`。
+1. 解压阶段 1.5 安装包；打开 `chrome://extensions` / `edge://extensions`。
 2. 开启 **开发者模式**，点击 **加载已解压的扩展程序**；选择包含 `manifest.json` 与 `dist/` 的 **JotPatch 根目录**（不要只选 `dist`）。
 3. 进入普通 `https://` 网页（如 ChatGPT / Gemini），点击浏览器右上角的 JotPatch 扩展图标一次。此操作只对当前网页临时授权。
 4. 选中文字，点选区旁的 📌；或右键选中的文字选择 JotPatch。对于不依赖具体文字的想法，点击扩展图标，再点小快捷区中的 `+`。
@@ -46,7 +48,7 @@
 ```bash
 npm install
 npm run check
-python tests/browser_e2e.py  # Python Playwright + Chromium（额外安装）
+npm run test:e2e  # Python Playwright + Chromium（额外安装）
 ```
 
 `npm run build` 生成 `dist/content.js`、`dist/background.js`。发布 ZIP 中已经包含这些编译产物，可以不安装 Node 直接加载。
@@ -56,16 +58,19 @@ python tests/browser_e2e.py  # Python Playwright + Chromium（额外安装）
 | 阶段 | 内容 | 状态 |
 | --- | --- | --- |
 | 0 | 文本锚定、滚动跟随、Dock、重载恢复 | ✅ 验证完毕 |
-| **1** | **无标题便签纸 UI、鼠标拖动/缩放、颜色、多张便签、选区策略、右键、基本 Markdown、保存/撤销** | **本分支** |
+| 1 | 无标题便签纸 UI、鼠标拖动/缩放、颜色、多张便签、选区策略、右键、基本 Markdown、保存/撤销 | 已完成 |
+| **1.5** | **ChatGPT / Gemini 对话短横条、悬停预览、轮次跳转，与彩色便签点统一 Dock** | **本分支** |
 | 2 | **Follow 模式 B**：在不同浏览器网页迁移同一张悬浮便签（不是侧边栏） | 待开发，方向已确定 |
 | 3 | 真正独立便签窗口 | 暂不实施 |
 
-架构见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)；交互细节见 [docs/STAGE1_INTERACTIONS.md](docs/STAGE1_INTERACTIONS.md)。
+架构见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)；交互细节见 [docs/STAGE1_INTERACTIONS.md](docs/STAGE1_INTERACTIONS.md)；新增 [Stage 1.5 会话导航技术与交互说明](docs/STAGE1_5_CONVERSATION.md)。
 
 ## 隐私与限制
 
-- 不联网、不上传文本、不要求账号；不使用任何远程 AI 服务。
+- 不联网、不上传文本、不要求账号；不使用任何远程 AI 服务。会话导航只读取当前网页已渲染的用户提问作为临时预览，**不存储完整对话**。
 - 仅在点击浏览器扩展图标或右键菜单时使用 `activeTab` 进行临时注入。按网站的自动恢复权限由用户明确授予。
 - 右键选中文本属于 Chrome `contextMenus` 权限，启用后即使关闭选区图钉也可使用。
 - 单个便签的多标签页并发编辑使用修订号/冲突提示作保守保护，**不保证原子冲突解决**；若提示冲突，先复制本地正文备份再处理。
 - 删除撤销窗口不会跨浏览器重启持久存在。建议不要在便签中存放密码或高度敏感资料。
+
+> **会话导航适配限制：** 网页 DOM 是第三方实现细节，未来可能变化。对于尚未加载进网页的历史消息，当前版本不保证提供全部轮次；如果 ChatGPT / Gemini 无法识别，JotPatch 仍保留原来的便签功能。Chrome 的 `activeTab` 默认需用户主动点击启动；如希望刷新后自动运行，请在设置里按网站授权。

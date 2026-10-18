@@ -43,6 +43,10 @@ namespace JP {
     private launcherOpen = false;
     private listOpen = false;
     private selectionTrigger: SelectionTrigger = 'always';
+    private conversationNavigation = true;
+    private conversation: ConversationSnapshot = { site: null, turns: [], nativeRailPresent: false };
+    private conversationTimer = 0;
+    private activeTurnId: string | null = null;
     private refreshTimer = 0;
     private scrollScheduled = false;
     private loadRequest = 0;
@@ -59,9 +63,13 @@ namespace JP {
     async start(): Promise<void> {
       this.mount();
       this.setupEvents();
-      void this.loadPreferences();
+      await this.loadPreferences();
       await this.loadPage();
-      this.observer = new MutationObserver(() => this.scheduleRefresh());
+      this.refreshConversation();
+      this.observer = new MutationObserver((records) => {
+        this.scheduleRefresh();
+        if (records.some(record => record.type === 'childList')) this.scheduleConversationScan();
+      });
       this.observer.observe(document.body, { subtree: true, childList: true, characterData: true });
       // SPA navigation without injecting into page-owned history functions.
       window.setInterval(() => this.checkPageRoute(), 1400);
@@ -95,10 +103,11 @@ namespace JP {
           <button id="jp-hide" aria-label="隐藏 JotPatch" title="隐藏便签" type="button">−</button>
         </div>
         <div class="bubble" id="jp-bubble" hidden><button id="jp-bubble-pin" aria-label="将便签钉在选中文字旁" title="贴便签" type="button">📌</button></div>
-        <nav id="jp-rail" class="rail" aria-label="本页便签导航" hidden>
-          <button id="jp-list-toggle" class="rail-head" title="本页便签列表" type="button">0</button>
+        <nav id="jp-rail" class="rail" aria-label="网页对话与便签导航" hidden>
+          <button id="jp-list-toggle" class="rail-head" title="打开本页导航列表" type="button">0</button>
           <div class="rail-track" id="jp-rail-track"></div>
         </nav>
+        <div id="jp-turn-preview" class="turn-preview" role="tooltip" hidden></div>
         <aside id="jp-list" class="list" aria-label="本页便签列表" hidden></aside>
         <div id="jp-markers"></div>
         <div id="jp-cards"></div>
@@ -147,9 +156,12 @@ namespace JP {
       chrome.storage.onChanged?.addListener((changes: Record<string, {newValue?: unknown; oldValue?: unknown}>, area: string) => {
         if (area !== 'local') return;
         if (changes[PREFERENCE_KEY]) {
-          const trigger = (changes[PREFERENCE_KEY].newValue as Partial<Preferences> | undefined)?.selectionTrigger;
+          const preferences = changes[PREFERENCE_KEY].newValue as Partial<Preferences> | undefined;
+          const trigger = preferences?.selectionTrigger;
           this.selectionTrigger = trigger === 'alt' || trigger === 'off' ? trigger : 'always';
+          this.conversationNavigation = preferences?.conversationNavigation !== false;
           this.$<HTMLElement>('#jp-bubble').hidden = true;
+          this.refreshConversation();
         }
         for (const [key, change] of Object.entries(changes)) {
           const fresh = this.repo.noteFromChange(key, change.newValue);
@@ -159,8 +171,11 @@ namespace JP {
     }
 
     private async loadPreferences(): Promise<void> {
-      try { this.selectionTrigger = (await this.repo.preferences()).selectionTrigger; }
-      catch { this.selectionTrigger = 'always'; }
+      try {
+        const prefs = await this.repo.preferences();
+        this.selectionTrigger = prefs.selectionTrigger;
+        this.conversationNavigation = prefs.conversationNavigation;
+      } catch { this.selectionTrigger = 'always'; this.conversationNavigation = true; }
     }
     private openSettings(): void {
       void chrome.runtime.sendMessage({ type: 'JP_OPEN_SITE_SETUP' }).catch(() => this.toast('请从扩展管理页打开 JotPatch 设置。'));
@@ -176,7 +191,9 @@ namespace JP {
       this.$<HTMLElement>('#jp-bubble').hidden = true;
       this.openIds.clear(); this.cards.clear(); this.$<HTMLElement>('#jp-cards').replaceChildren();
       this.listOpen = false;
-      void this.loadPage();
+      this.conversation = { site: conversationSite(), turns: [], nativeRailPresent: false };
+      this.hideTurnPreview();
+      void this.loadPage().then(() => this.scheduleConversationScan(true));
     }
     private async loadPage(): Promise<void> {
       const request = ++this.loadRequest;
@@ -282,48 +299,164 @@ namespace JP {
         (this.matches.get(a.id)?.start ?? (a.anchor ? Infinity : -1)) -
         (this.matches.get(b.id)?.start ?? (b.anchor ? Infinity : -1)) || a.createdAt - b.createdAt);
     }
+    /** Scan only known AI sites. A leading-edge throttle handles streaming DOM changes. */
+    private scheduleConversationScan(immediate = false): void {
+      if (!this.conversationNavigation || !conversationSite()) return;
+      if (immediate) clearTimeout(this.conversationTimer);
+      else if (this.conversationTimer) return;
+      this.conversationTimer = window.setTimeout(() => {
+        this.conversationTimer = 0;
+        this.refreshConversation();
+      }, immediate ? 60 : 800);
+    }
+    private refreshConversation(): void {
+      clearTimeout(this.conversationTimer);
+      this.conversationTimer = 0;
+      this.conversation = this.conversationNavigation ? collectConversation() :
+        { site: conversationSite(), turns: [], nativeRailPresent: false };
+      this.hideTurnPreview();
+      this.renderDock();
+      this.schedulePosition();
+    }
+    private hideTurnPreview(): void { this.$<HTMLElement>('#jp-turn-preview').hidden = true; }
+    private showTurnPreview(turn: ConversationTurn, button: HTMLButtonElement): void {
+      const preview = this.$<HTMLElement>('#jp-turn-preview');
+      preview.replaceChildren();
+      const label = el('small'); label.textContent = `第 ${turn.order + 1} / ${this.conversation.turns.length} 轮`;
+      const summary = el('span'); summary.textContent = turn.preview;
+      preview.append(label, summary);
+      const rect = button.getBoundingClientRect();
+      const railRect = this.$<HTMLElement>('#jp-rail').getBoundingClientRect();
+      preview.style.right = `${Math.max(44, innerWidth - railRect.left + 9)}px`;
+      preview.style.top = `${clamp(rect.top - 13, 8, innerHeight - 96)}px`;
+      preview.hidden = false;
+    }
+    private jumpToTurn(turn: ConversationTurn): void {
+      this.hideTurnPreview();
+      if (!turn.element.isConnected) {
+        this.toast('该轮内容暂时未加载，请滚动网页后再试');
+        this.scheduleConversationScan(true);
+        return;
+      }
+      turn.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      this.activeTurnId = turn.id;
+      this.schedulePosition();
+    }
+    private updateActiveTurn(): void {
+      const turns = this.conversation.turns;
+      if (!this.conversationNavigation || !turns.length || this.conversation.nativeRailPresent) return;
+      // DOM order is monotonically scroll-ordered: O(log N) layout reads per frame.
+      let lo = 0, hi = turns.length;
+      const threshold = innerHeight * 0.40;
+      while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        if (turns[mid].element.getBoundingClientRect().top <= threshold) lo = mid + 1;
+        else hi = mid;
+      }
+      const turn = turns[Math.max(0, lo - 1)];
+      if (!turn || turn.id === this.activeTurnId) return;
+      this.activeTurnId = turn.id;
+      for (const button of Array.from(this.shadow.querySelectorAll<HTMLButtonElement>('.rail-turn'))) {
+        if (button.dataset.turnId === turn.id) button.setAttribute('aria-current', 'location');
+        else button.removeAttribute('aria-current');
+      }
+    }
     private renderDock(): void {
       const rail = this.$<HTMLElement>('#jp-rail');
-      rail.hidden = !this.notes.length;
-      this.$<HTMLButtonElement>('#jp-list-toggle').textContent = String(this.notes.length);
+      const turns = this.conversationNavigation ? this.conversation.turns : [];
+      const showTurns = turns.length >= 3 && !this.conversation.nativeRailPresent;
+      rail.hidden = !this.notes.length && !showTurns;
+      rail.classList.toggle('with-conversation', showTurns);
+      rail.classList.toggle('native-nav', this.conversation.nativeRailPresent);
+      const toggle = this.$<HTMLButtonElement>('#jp-list-toggle');
+      toggle.textContent = showTurns ? '≡' : String(this.notes.length);
+      toggle.title = showTurns ? `${turns.length} 轮对话 · ${this.notes.length} 张便签` : `本页 ${this.notes.length} 张便签`;
       const track = this.$<HTMLElement>('#jp-rail-track'); track.replaceChildren();
+      if (showTurns) {
+        // Prevent densely spaced targets from covering their neighbors.
+        const availableHeight = Math.max(160, innerHeight * 0.60 - 40) * 0.92;
+        const lineHeight = clamp(availableHeight / Math.max(1, turns.length) * 0.78, 2, 6);
+        for (const turn of turns) {
+          const button = el('button', 'rail-turn');
+          button.type = 'button';
+          button.dataset.turnId = turn.id;
+          button.style.top = `${this.turnPosition(turn.order, turns.length)}%`;
+          button.style.height = `${lineHeight}px`;
+          button.title = `第 ${turn.order + 1} 轮：${turn.preview}`;
+          button.setAttribute('aria-label', button.title);
+          button.addEventListener('click', () => this.jumpToTurn(turn));
+          button.addEventListener('pointerenter', () => this.showTurnPreview(turn, button));
+          button.addEventListener('pointerleave', () => this.hideTurnPreview());
+          button.addEventListener('focus', () => this.showTurnPreview(turn, button));
+          button.addEventListener('blur', () => this.hideTurnPreview());
+          track.appendChild(button);
+        }
+      }
       const sorted = this.sortedNotes();
       const textLength = this.index?.text.length || 1;
       const placed: number[] = [];
       sorted.forEach((note, i) => {
         const match = this.matches.get(note.id);
-        let pos = match ? match.start / textLength * 100 : (note.anchor ? 90 + i % 4 * 2 : 3 + i * 3);
+        const linkedTurn = showTurns && match ? turnForRange(match.range, turns) : null;
+        const offset = linkedTurn ? Math.min(1.1, (i % 3) * 0.45) : 0;
+        let pos = linkedTurn ? this.turnPosition(linkedTurn.order, turns.length) + offset
+          : match ? match.start / textLength * 100 : (note.anchor ? 90 + i % 4 * 2 : 3 + i * 3);
         pos = clamp(pos, 2, 98);
-        while (placed.some(p => Math.abs(p - pos) < 3.4) && pos < 96) pos += 3.4;
+        if (!showTurns) {
+          while (placed.some(p => Math.abs(p - pos) < 3.4) && pos < 96) pos += 3.4;
+        }
         placed.push(pos);
         const button = el('button', `rail-pin${note.anchor && !match ? ' missing' : ''}`);
         button.type = 'button'; button.style.top = `${pos}%`;
         button.style.background = note.anchor && !match ? '#aaa' : COLOR_HEX[appearance(note).color];
         button.title = note.text.trim().slice(0, 70) || (note.anchor?.exact.slice(0, 50) || '本页便签');
         button.setAttribute('aria-label', `跳转便签：${button.title}`);
-        button.addEventListener('click', () => this.goTo(note.id));
+        button.addEventListener('click', () => {this.hideTurnPreview(); this.goTo(note.id);});
         track.appendChild(button);
       });
+      this.activeTurnId = null;
+      this.updateActiveTurn();
       this.renderList();
+    }
+    private turnPosition(order: number, count: number): number {
+      return 4 + 92 * (count <= 1 ? 0.5 : order / (count - 1));
     }
     private renderList(): void {
       const list = this.$<HTMLElement>('#jp-list');
-      list.hidden = !this.listOpen || !this.notes.length;
+      const turns = this.conversationNavigation && !this.conversation.nativeRailPresent ? this.conversation.turns : [];
+      list.hidden = !this.listOpen || (!this.notes.length && turns.length < 3);
       if (list.hidden) return;
       list.replaceChildren();
       const head = el('div', 'list-header');
-      const title = el('span'); title.textContent = `本页便签 · ${this.notes.length}`;
+      const title = el('span'); title.textContent = turns.length >= 3
+        ? `会话 · ${turns.length} 轮 / ${this.notes.length} 张便签` : `本页便签 · ${this.notes.length}`;
       const close = el('button'); close.type='button'; close.textContent='×'; close.title='关闭列表';
       close.addEventListener('click', () => {this.listOpen=false; this.renderList();});
       head.append(title,close); list.appendChild(head);
-      for (const note of this.sortedNotes()) {
-        const button = el('button','entry'); button.type='button';
-        const dot = el('span','dot'); dot.style.background = COLOR_HEX[appearance(note).color];
-        const content = el('span');
-        const label = el('strong'); label.textContent = note.text.trim().split('\n')[0] || (note.anchor?.exact.slice(0,45) || '空白便签');
-        const sub = el('small'); sub.textContent = !note.anchor ? '本页' : this.matches.has(note.id) ? '已关联原文' : '原文暂时未找到';
-        content.append(label,sub); button.append(dot,content);
-        button.addEventListener('click',()=>this.goTo(note.id)); list.appendChild(button);
+      if (turns.length >= 3) {
+        const heading = el('div', 'list-section'); heading.textContent = '对话轮次'; list.appendChild(heading);
+        for (const turn of turns) {
+          const button = el('button','entry turn-entry'); button.type='button';
+          const count = el('span','turn-order'); count.textContent = String(turn.order + 1);
+          const label = el('span'); label.textContent = turn.preview;
+          button.append(count,label);
+          button.addEventListener('click',()=>{this.listOpen=false;this.renderList();this.jumpToTurn(turn);});
+          list.appendChild(button);
+        }
+      }
+      if (this.notes.length) {
+        if (turns.length >= 3) {
+          const heading = el('div','list-section'); heading.textContent = '本页便签'; list.appendChild(heading);
+        }
+        for (const note of this.sortedNotes()) {
+          const button = el('button','entry'); button.type='button';
+          const dot = el('span','dot'); dot.style.background = COLOR_HEX[appearance(note).color];
+          const content = el('span');
+          const label = el('strong'); label.textContent = note.text.trim().split('\n')[0] || (note.anchor?.exact.slice(0,45) || '空白便签');
+          const sub = el('small'); sub.textContent = !note.anchor ? '本页' : this.matches.has(note.id) ? '已关联原文' : '原文暂时未找到';
+          content.append(label,sub); button.append(dot,content);
+          button.addEventListener('click',()=>{this.listOpen=false;this.renderList();this.goTo(note.id);}); list.appendChild(button);
+        }
       }
     }
     private renderMarkers(): void {
@@ -345,6 +478,7 @@ namespace JP {
       requestAnimationFrame(()=>{
         this.scrollScheduled=false; this.positionMarkers();
         for(const id of this.openIds) this.positionCard(id);
+        this.updateActiveTurn();
       });
     }
     private positionMarkers(): void {

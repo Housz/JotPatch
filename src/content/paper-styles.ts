@@ -16,6 +16,19 @@ namespace JP {
     .rail-head{position:absolute;top:3px;left:2px;width:20px;height:20px;border-radius:50%;font-size:11px;
       background:#f0ece2;color:#615a4b;padding:0}
     .rail-track{position:absolute;top:28px;bottom:12px;left:3px;right:3px}
+    .rail.with-conversation{width:32px}
+    .rail.native-nav{right:42px}
+    .rail.with-conversation .rail-track{left:3px;right:3px}
+    .rail.with-conversation .rail-pin{left:0;width:9px;height:9px;z-index:2}
+    .rail-turn{position:absolute;right:0;width:13px;height:5px;min-height:2px;padding:0;
+      background:#c3c7cc;border-radius:8px;transform:translateY(-50%);transition:width .11s ease,background .11s ease}
+    .rail-turn:hover,.rail-turn:focus-visible{width:19px;background:#818894}
+    .rail-turn[aria-current="location"]{width:19px;background:#717883}
+    .turn-preview{position:fixed;max-width:238px;min-width:140px;z-index:40;pointer-events:none;
+      border-radius:8px;padding:9px 11px;background:#fffefcf7;border:1px solid #e6e3dc;
+      box-shadow:0 4px 18px #0002;font-size:12px;color:#37342e;overflow-wrap:anywhere}
+    .turn-preview small{display:block;font-size:10px;color:#8d877d;margin-bottom:3px}
+    .turn-preview span{display:block;line-height:1.5;max-height:5.9em;overflow:hidden}
     .rail-pin{position:absolute;left:4px;width:12px;height:12px;border:1px solid #0002;border-radius:50%;
       box-shadow:0 1px 4px #0002;transform:translateY(-50%);padding:0}
     .rail-pin.missing{background:#aaa!important;border-style:dashed}
@@ -27,6 +40,10 @@ namespace JP {
     .entry{width:100%;background:transparent;padding:9px 7px;display:flex;align-items:flex-start;gap:8px;
       border-top:1px solid #ece9e0;color:#34312e;text-align:left}
     .entry:hover{background:#f7f2e8}.entry .dot{width:9px;height:9px;flex:0 0 9px;border-radius:50%;margin-top:5px}
+    .list-section{font-size:11px;color:#827d74;letter-spacing:.025em;padding:8px 8px 3px}
+    .turn-entry{align-items:center;gap:8px;font-size:12px}
+    .turn-entry span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .turn-order{color:#8e928f;flex:0 0 21px;font-variant-numeric:tabular-nums;text-align:right}
     .entry strong{display:block;font-weight:550;max-width:190px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .entry small{display:block;color:#8b8477;font-size:11px}
     .marker{position:fixed;z-index:4;width:19px;height:19px;pointer-events:auto;border-radius:50%;padding:0;

@@ -42,6 +42,7 @@ namespace JP {
 
   export interface Preferences {
     selectionTrigger: SelectionTrigger;
+    conversationNavigation: boolean;
   }
 
   export interface Match {
