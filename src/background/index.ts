@@ -7,7 +7,7 @@ const HIGHLIGHT_CSS = 'styles/highlight.css';
 function matchForOrigin(value: string): string {
   const url = new URL(value);
   if (!['http:', 'https:'].includes(url.protocol) || !url.hostname) throw new Error('Unsupported origin');
-  return `${url.origin}/*`;
+  return `${url.protocol}//${url.hostname}/*`; // Match patterns never contain explicit ports.
 }
 
 function registrationId(origin: string): string {
@@ -24,7 +24,7 @@ async function registerSite(origin: string): Promise<void> {
   const match = matchForOrigin(origin);
   const allowed = await chrome.permissions.contains({ origins: [match] });
   if (!allowed) throw new Error('Site permission not granted');
-  const id = registrationId(origin);
+  const id = registrationId(match);
   const registered = await chrome.scripting.getRegisteredContentScripts({ ids: [id] });
   if (!registered.length) {
     await chrome.scripting.registerContentScripts([{

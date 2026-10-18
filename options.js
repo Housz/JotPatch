@@ -19,7 +19,10 @@ button.addEventListener('click', async () => {
   button.disabled = true;
   status.textContent = '正在请求网站权限…';
   try {
-    const granted = await chrome.permissions.request({ origins: [`${origin}/*`] });
+    // Chrome match patterns do not encode URL ports (localhost:8000 -> localhost/*).
+    const url = new URL(origin);
+    const pattern = `${url.protocol}//${url.hostname}/*`;
+    const granted = await chrome.permissions.request({ origins: [pattern] });
     if (!granted) { status.textContent = '未授权。你仍可通过扩展图标手动使用。'; return; }
     const registered = await chrome.runtime.sendMessage({ type: 'JP_REGISTER_SITE', origin });
     if (!registered?.ok) throw Error(registered?.error || '脚本注册失败');

@@ -147,6 +147,21 @@ def run():
         ]""")
         assert keys[0] == keys[1] and keys[1] != keys[2], keys
         print('PASS: normalized URL excludes trackers but isolates conversations')
+
+        # Whole-element selections have element-node rather than Text-node
+        # range boundaries; they should still produce an anchor.
+        separate = new_page(context, fixture_html)
+        separate.locator('#anchor-target').scroll_into_view_if_needed()
+        separate.evaluate("""() => {
+          const range = document.createRange();
+          range.selectNodeContents(document.querySelector('#anchor-target'));
+          const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
+          document.querySelector('#anchor-target').dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
+        }""")
+        separate.locator('#jotpatch-root #jp-bubble-pin').click()
+        expect(separate.locator('#jotpatch-root .rail-pin')).to_have_count(1)
+        print('PASS: element-boundary selection anchors the contained text')
+        separate.close()
         context.close()
         browser.close()
 
