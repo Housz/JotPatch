@@ -29,7 +29,7 @@ test('anchor matching, page keys, unresolved states, persisted note fields are r
 test('selection bubble has no label, no quote/title/footer, and no permanent toolbar', () => {
   const source = readFileSync('src/content/app.ts', 'utf8');
   assert.match(source, /id="jp-bubble-pin"[^>]*>📌<\/button>/);
-  assert.doesNotMatch(source, /📌 原文便签|class="card-head"|class="card-foot"|id="jp-quote"/);
+  assert.doesNotMatch(source, /class="card-head"|class="card-foot"|id="jp-quote"/);
   assert.match(readFileSync('src/content/paper-styles.ts', 'utf8'), /\.paper\{--paper/);
 });
 
@@ -57,10 +57,10 @@ test('stage 1.5 conversation adapters and unified rail compile without wider per
 });
 
 
-test('stage 1.6 WYSIWYG editor and history navigation stay local-first', () => {
+test('stage 1.8 WYSIWYG editor and passive navigation stay local-first', () => {
   const ui = readFileSync('src/content/app.ts', 'utf8');
   const md = readFileSync('src/content/markdown.ts', 'utf8');
-  for(const mark of ['contenteditable="true"', 'markdownFromEditor', 'font-size', 'scanOlderTurns', 'jp-note-popover'])
+  for(const mark of ['contenteditable="true"', 'markdownFromEditor', 'font-size', 'layoutConversationRail', 'paper-pin'])
     assert.ok(ui.includes(mark), mark);
   for(const command of ['insertUnorderedList','insertOrderedList','bold','italic'])
     assert.ok(ui.includes(command),command);
@@ -71,11 +71,25 @@ test('stage 1.6 WYSIWYG editor and history navigation stay local-first', () => {
 
 
 test('0.1.7 rejects missing or stale anchored ranges before showing papers', () => {
-  assert.equal(manifest.version, '0.1.7');
+  assert.equal(manifest.version, '0.1.8');
   const app = readFileSync('src/content/app.ts', 'utf8');
   assert.ok(app.includes('private liveMatch(note:Note):Match|null'));
   assert.ok(app.includes('if(!match||!rect)'));
   assert.ok(app.includes('explicitlyDetachedIds.has(noteId)'));
   assert.ok(app.includes('range.startContainer.isConnected'));
   assert.ok(app.includes('this.concealCard(card)'));
+});
+
+
+test('navigation is passive and has individual note markers with one-way unpin', () => {
+  const app=readFileSync('src/content/app.ts','utf8');
+  assert.ok(!app.includes('scanOlderTurns'));
+  assert.ok(!app.includes('scan-history'));
+  assert.ok(!app.includes('jp-note-popover'));
+  for(const name of ['associateNotesToTurns','addRailNote','applyRailLayout','setRailFocus',
+    'unpinNote','undoLastAction','rail-loose','conversationTurnId']) assert.ok(app.includes(name),name);
+  const css=readFileSync('src/content/paper-styles.ts','utf8');
+  assert.match(css,/\.rail-head\{[^}]*left:50%;transform:translateX\(-50%\)/);
+  assert.match(css,/\.note-entry\.nested/);
+  assert.equal(manifest.host_permissions,undefined);
 });

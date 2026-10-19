@@ -103,3 +103,8 @@ interface Note {
 - Stage 2 needs cross-tab placement coordination, origin-authorization strategy, and ownership of a single floating follow note across browser windows. It must not reuse the current page-scoped `openIds` as global state.
 
 See [Stage 1.5.1 reliability / UX investigation](STAGE1_6_FIXES.md) for virtualized history indexing, source-to-prompt targeting, clustered rail design, browser edit engine tradeoffs and test coverage.
+
+
+## Stage 1.8 导航架构更新
+
+`src/content/rail-layout.ts` 新增不依赖 DOM 的 `layoutConversationRail` 纯布局引擎；轮次与便签标记以真实顺序插入轨道间隙，按便签数量自适应分配空间。密集时局部聚焦而非默认用数字合并。`ConversationIndex` 改为随着用户自然滚动积累稳定轮次 ID，不再自动滚屏或调用内部接口。`Note.conversationTurnId?` 是可选的稳定轮次关联，用于虚拟化后的归属维护，旧数据兼容。详细参见 [STAGE1_8_PASSIVE_RAIL.md](STAGE1_8_PASSIVE_RAIL.md)。

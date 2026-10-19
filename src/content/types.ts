@@ -34,6 +34,9 @@ namespace JP {
     sourceTitle: string;
     // Optional: page notes are pinned to the page but not to a text range.
     anchor?: TextAnchor;
+    // Optional stable turn ID, captured only after matching a real prompt.
+    // Lets the rail retain an accurate group when virtualized DOM unloads.
+    conversationTurnId?: string;
     text: string;
     appearance?: Partial<NoteAppearance>;
     createdAt: number;

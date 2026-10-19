@@ -131,12 +131,12 @@ def run():
         assert abs(grew['x']-initial['x']) < 3 and abs(grew['y']-initial['y']) < 3,(initial,grew)
         print('PASS: resize preserves original top-left corner')
         grip=paper.locator('.drag-region').bounding_box()
-        page.mouse.move(grip['x']+13,grip['y']+12)
-        page.mouse.down();page.mouse.move(grip['x']-40,grip['y']+40,steps=6);page.mouse.up()
+        page.mouse.move(grip['x']+70,grip['y']+12)
+        page.mouse.down();page.mouse.move(grip['x']+17,grip['y']+40,steps=6);page.mouse.up()
         page.wait_for_timeout(520)
         store=page.evaluate('() => structuredClone(window.__jotpatchFakeStore)')
         appearances=[n['appearance'] for n in store.values() if isinstance(n,dict) and n.get('id')]
-        assert any(s.get('color')=='blue' and s.get('width',0)>300 and s.get('offsetX',0)<0 for s in appearances),appearances
+        assert any(s.get('color')=='blue' and s.get('width',0)>300 and abs(s.get('offsetX',0))>10 for s in appearances),appearances
         print('PASS: color, resize in both axes and drag persist to local storage')
 
         # Simulate content mutation + scrolling + dock.

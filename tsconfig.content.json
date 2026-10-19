@@ -20,6 +20,7 @@
     "src/content/conversation.ts",
     "src/content/markdown.ts",
     "src/content/conversation-index.ts",
+    "src/content/rail-layout.ts",
     "src/content/repository.ts",
     "src/content/paper-styles.ts",
     "src/content/app.ts",

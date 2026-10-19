@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "JotPatch",
   "short_name": "JotPatch",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Tiny sticky notes pinned to words and places on webpages.",
   "action": { "default_title": "JotPatch · 打开当前网页的便签" },
   "background": { "service_worker": "dist/background.js" },
