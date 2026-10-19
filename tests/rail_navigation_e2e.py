@@ -109,14 +109,23 @@ def run():
         track=dense.locator('#jotpatch-root #jp-rail-track')
         expect(track).to_have_class('rail-track dense')
         baseline=dense.locator('#jotpatch-root .rail-pin').evaluate_all('els=>els.map(e=>parseFloat(e.style.top))')
-        density_span=max(baseline)-min(baseline)
-        dense.evaluate('''() => window.__jotpatchStage0.setRailFocus('data-turn-key:round-35')''')
+        rail_rect=track.bounding_box()
+        round_y=dense.locator('#jotpatch-root .rail-turn').nth(35).bounding_box()
+        # REAL mouse hover, not an invocation of an internal TS private method.
+        dense.mouse.move(rail_rect['x']+rail_rect['width']-4,round_y['y']+round_y['height']/2,steps=3)
+        expect(dense.locator('#jotpatch-root #jp-rail-lens')).to_be_visible()
+        expect(dense.locator('#jotpatch-root #jp-rail-lens .rail-lens-note')).to_have_count(8)
         expect(track).to_have_class('rail-track dense focused')
-        expanded=dense.locator('#jotpatch-root .rail-pin').evaluate_all('els=>els.map(e=>parseFloat(e.style.top))')
-        assert max(expanded)-min(expanded)>density_span+35,(baseline,expanded)
-        assert min([b-a for a,b in zip(expanded,expanded[1:])])>9,expanded
+        after=dense.locator('#jotpatch-root .rail-pin').evaluate_all('els=>els.map(e=>parseFloat(e.style.top))')
+        assert baseline==after,(baseline,after)
+        lens=dense.locator('#jotpatch-root #jp-rail-lens')
+        assert lens.bounding_box()['width'] >= 120
+        # Click a *particular* note directly in the expanded lens.
+        lens.locator('.rail-lens-note').nth(5).click()
+        expect(lens).to_be_hidden()
+        expect(dense.locator('#jotpatch-root .paper')).to_have_count(1)
         assert dense.locator('#jotpatch-root .rail-note-cluster').count()==0
-        print('PASS: 100-turn dense rail expands eight separate note targets locally on focus')
+        print('PASS: REAL pointer hover expands eight direct targets while stable overview never reflows')
         dense.screenshot(path='/mnt/data/JotPatch-stage18-dense-qa.png')
         dense.close()
 

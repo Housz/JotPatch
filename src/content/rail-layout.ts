@@ -21,15 +21,14 @@ namespace JP {
 
   const TURN_WEIGHT = 14;
   const NOTE_WEIGHT = 15;
-  const LOCAL_GAP = 16;
 
   /**
    * Pure layout function: no DOM, no page scrolling, no collapsed count glyphs.
    * Available height is shared across rounds; rounds containing more notes get
-   * more space. When dense, hovering one round borrows room from other rounds
-   * without changing the underlying order or creating a second-click popover.
+   * more space. When dense, a separate hover lens opens beside the stable
+   * overview without moving any existing markers or the host page.
    */
-  export function layoutConversationRail(groups: RailTurnGroup[], requestedHeight: number, focusedTurn: string | null = null): RailLayout {
+  export function layoutConversationRail(groups: RailTurnGroup[], requestedHeight: number): RailLayout {
     const height = Math.max(50, Number.isFinite(requestedHeight) ? requestedHeight : 400);
     const pad = 5;
     const usable = height - pad * 2;
@@ -40,19 +39,7 @@ namespace JP {
     const weights = groups.map(group => TURN_WEIGHT + group.noteIds.length * NOTE_WEIGHT);
     const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
     const dense = totalWeight > usable;
-    const focused = focusedTurn && dense ? groups.findIndex(group => group.turnId === focusedTurn) : -1;
     const spans = weights.map(weight => weight / totalWeight * usable);
-    if (focused >= 0 && groups[focused].noteIds.length) {
-      const otherWeight = totalWeight - weights[focused];
-      if (otherWeight > 0) {
-        const requested = 11 + (groups[focused].noteIds.length + 1) * LOCAL_GAP;
-        // Do not collapse every other turn to zero to make room for the lens.
-        const focusSpan = Math.min(requested, usable * 0.56, usable - Math.min(otherWeight / TURN_WEIGHT * 2, usable * 0.44));
-        const remainder = usable - focusSpan;
-        for (let index = 0; index < groups.length; index++)
-          spans[index] = index === focused ? focusSpan : (weights[index] / otherWeight) * remainder;
-      }
-    }
 
     let cursor = pad;
     for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {

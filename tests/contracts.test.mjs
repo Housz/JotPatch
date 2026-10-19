@@ -71,7 +71,7 @@ test('stage 1.8 WYSIWYG editor and passive navigation stay local-first', () => {
 
 
 test('0.1.7 rejects missing or stale anchored ranges before showing papers', () => {
-  assert.equal(manifest.version, '0.1.8');
+  assert.equal(manifest.version, '0.1.9');
   const app = readFileSync('src/content/app.ts', 'utf8');
   assert.ok(app.includes('private liveMatch(note:Note):Match|null'));
   assert.ok(app.includes('if(!match||!rect)'));
@@ -92,4 +92,19 @@ test('navigation is passive and has individual note markers with one-way unpin',
   assert.match(css,/\.rail-head\{[^}]*left:50%;transform:translateX\(-50%\)/);
   assert.match(css,/\.note-entry\.nested/);
   assert.equal(manifest.host_permissions,undefined);
+});
+
+
+test('0.1.9 stable dense hover and note color in virtualized pages', () => {
+  const app=readFileSync('src/content/app.ts','utf8');
+  const css=readFileSync('src/content/paper-styles.ts','utf8');
+  assert.equal(manifest.version,'0.1.9');
+  for(const name of ['jp-rail-lens','showRailLens','scheduleRailDismiss','clearRailLens'])
+    assert.ok(app.includes(name),name);
+  assert.ok(app.includes('button.style.background=COLOR_HEX[appearance(note).color]'));
+  assert.match(css,/\.rail-lens\{/);
+  assert.match(css,/\.rail-pin\.missing\{border:1px dashed/);
+  assert.ok(!css.includes('.rail-pin.missing{background:#a9a9a9'));
+  const layout=readFileSync('src/content/rail-layout.ts','utf8');
+  assert.ok(!layout.includes('focusedTurn'));
 });
