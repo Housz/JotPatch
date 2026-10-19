@@ -42,17 +42,23 @@ def run():
             select_text(page,'#answer-4',token)
             page.locator('#jotpatch-root #jp-bubble-pin').click()
             page.locator('#jotpatch-root .paper').last.locator('.note-editor').fill('单独便签 '+token)
-        expect(page.locator('#jotpatch-root .rail-pin')).to_have_count(5)
-        assert page.locator('#jotpatch-root .rail-note-cluster').count()==0
-        positions=[top_px(item) for item in page.locator('#jotpatch-root .rail-pin').all()]
-        assert positions==sorted(positions) and len(set(positions))==5,positions
+        # Four+ notes in a single round produce an ACTUAL multi-stripe overview
+        # even when the whole 12-turn conversation has ample vertical space.
+        overview=page.locator('#jotpatch-root .rail-overview')
+        expect(overview).to_have_count(1)
+        expect(page.locator('#jotpatch-root .rail-pin')).to_have_count(0)
+        expect(overview.locator('.rail-overview-stripe')).to_have_count(5)
+        y=top_px(overview)
         before=top_px(page.locator('#jotpatch-root .rail-turn').nth(4))
         after=top_px(page.locator('#jotpatch-root .rail-turn').nth(5))
-        assert all(before<y<after for y in positions),(before,positions,after)
-        page.locator('#jotpatch-root .rail-pin').nth(2).hover()
-        expect(page.locator('#jotpatch-root #jp-turn-preview')).to_contain_text('单独便签 charlie')
-        page.locator('#jotpatch-root .rail-pin').nth(2).click()
-        print('PASS: five notes in one round have independent hit targets and immediate previews')
+        assert before<y<after,(before,y,after)
+        overview.hover()
+        lens=page.locator('#jotpatch-root #jp-rail-lens')
+        expect(lens).to_be_visible()
+        expect(lens.locator('.rail-lens-note')).to_have_count(5)
+        expect(lens.locator('.rail-lens-note').nth(2)).to_contain_text('charlie')
+        lens.locator('.rail-lens-note').nth(2).click()
+        print('PASS: five-note round is visible as multicolor overview, hover exposes five direct targets')
 
         page.locator('#jotpatch-root #jp-list-toggle').click()
         expect(page.locator('#jotpatch-root .note-entry.nested')).to_have_count(5)
@@ -73,14 +79,14 @@ def run():
         after_rect=paper.bounding_box()
         assert abs(top['x']-after_rect['x'])<5 and abs(top['y']-after_rect['y'])<5,(top,after_rect)
         expect(paper.locator('.paper-pin')).to_be_hidden()
-        expect(page.locator('#jotpatch-root .rail-pin')).to_have_count(4)
+        expect(page.locator('#jotpatch-root .rail-overview')).to_have_count(1)
         expect(page.locator('#jotpatch-root #jp-loose-toggle')).to_be_visible()
         paper.locator('.menu-trigger').click()
         expect(paper.locator('.note-mode')).to_contain_text('本页悬浮')
         paper.locator('.menu-trigger').click()
         page.locator('#jotpatch-root #jp-undo').click()
         expect(paper.locator('.paper-pin')).to_be_visible()
-        expect(page.locator('#jotpatch-root .rail-pin')).to_have_count(5)
+        expect(page.locator('#jotpatch-root .rail-overview')).to_have_count(1)
         print('PASS: one-way unpin preserves screen position, shows distinct menu state and supports undo')
         page.close()
 
@@ -105,10 +111,10 @@ def run():
           }
           return chrome.storage.local.set(items);
         }''')
-        expect(dense.locator('#jotpatch-root .rail-pin')).to_have_count(8)
+        expect(dense.locator('#jotpatch-root .rail-overview')).to_have_count(1)
         track=dense.locator('#jotpatch-root #jp-rail-track')
         expect(track).to_have_class('rail-track dense')
-        baseline=dense.locator('#jotpatch-root .rail-pin').evaluate_all('els=>els.map(e=>parseFloat(e.style.top))')
+        baseline=dense.locator('#jotpatch-root .rail-overview').evaluate_all('els=>els.map(e=>parseFloat(e.style.top))')
         rail_rect=track.bounding_box()
         round_y=dense.locator('#jotpatch-root .rail-turn').nth(35).bounding_box()
         # REAL mouse hover, not an invocation of an internal TS private method.
@@ -116,7 +122,7 @@ def run():
         expect(dense.locator('#jotpatch-root #jp-rail-lens')).to_be_visible()
         expect(dense.locator('#jotpatch-root #jp-rail-lens .rail-lens-note')).to_have_count(8)
         expect(track).to_have_class('rail-track dense focused')
-        after=dense.locator('#jotpatch-root .rail-pin').evaluate_all('els=>els.map(e=>parseFloat(e.style.top))')
+        after=dense.locator('#jotpatch-root .rail-overview').evaluate_all('els=>els.map(e=>parseFloat(e.style.top))')
         assert baseline==after,(baseline,after)
         lens=dense.locator('#jotpatch-root #jp-rail-lens')
         assert lens.bounding_box()['width'] >= 120

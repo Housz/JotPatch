@@ -28,7 +28,7 @@ def seed_eight_notes(page, turn=35):
       }
       return chrome.storage.local.set(items);
     }''',turn)
-    expect(page.locator('#jotpatch-root .rail-pin')).to_have_count(8)
+    expect(page.locator('#jotpatch-root .rail-overview')).to_have_count(1)
 
 
 def move_to_turn(page, turn=35):
@@ -43,7 +43,7 @@ def test_dense(ctx, errors, height):
     page.on('pageerror',lambda error: errors.append(str(error)))
     seed_eight_notes(page)
     expect(page.locator('#jotpatch-root #jp-rail-track')).to_have_class('rail-track dense')
-    note_buttons=page.locator('#jotpatch-root .rail-pin')
+    note_buttons=page.locator('#jotpatch-root .rail-overview')
     before=note_buttons.evaluate_all('els=>els.map(e=>parseFloat(e.style.top))')
     lens=page.locator('#jotpatch-root #jp-rail-lens')
     for cycle in range(4):
