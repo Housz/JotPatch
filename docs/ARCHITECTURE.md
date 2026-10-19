@@ -1,9 +1,9 @@
-# JotPatch architecture — Stage 1.5
+# JotPatch architecture — Stage 1.5.1 / v0.1.6
 
 ## Product invariants
 
 1. **Page Pin is the default**. Notes are scoped by canonical URL and optionally a text quote. The browser tab ID is never used as the durable note identity.
-2. **Paper is the editor**. No permanent title/header/footer/quoted text; UI controls appear softly on hover/focus, rather than claiming reading space.
+2. **Paper is the editor**. A fixed, quiet header/footer reserve space for controls, fade when unfocused, and never obscure the contenteditable rich-text area. No text title or repeated source quote.
 3. **Notes survive transient interface closure**. Closing a note hides its paper only, not its stored content. When a stored quote cannot be found, it remains recoverable via the Dock.
 4. **The browser follow mode (Stage 2) migrates floating cards** between eligible web pages, rather than replacing them with Side Panel. Stage 3 popouts are deferred.
 5. **Privacy first**. No cloud services and no mandatory all-sites host permission.
@@ -23,15 +23,20 @@ Extension Toolbar click         Selected-text context menu          Options page
        |     - quote + context + position capture, unambiguous resolution
        |-- PageKey                  src/content/page-key.ts
        |-- ConversationEngine       src/content/conversation.ts
+       |-- ConversationIndex        src/content/conversation-index.ts
+       |     - ephemeral stable-ID/scroll-hint cache for virtualized turns
        |     - per-site ChatGPT/Gemini DOM adapters, short in-memory turn index
        |     - native navigation detection and turn-to-anchor association
+       |-- Markdown boundary        src/content/markdown.ts
+       |     - tiny safe Markdown/HTML conversion for rich edit
        |-- NoteRepository           src/content/repository.ts
        |     - individual keys + optional appearance + revision / tombstone
        |-- Page UI orchestrator      src/content/app.ts
        |     - small launcher and selection pin
        |     - multiple independent paper cards, overlays and unified navigation Dock
        |     - light conversation strokes, turn previews and active-turn highlighting
-       |     - drag / resize, sparse Markdown keyboard controls
+       |     - fixed drag header, bottom formatting footer, top-left-stable resize
+       |     - plain Markdown clipboard output, font presets and Ctrl+wheel
        |     - serial saves and external chrome.storage.onChanged observation
        |-- Paper styling            src/content/paper-styles.ts
        |
@@ -49,10 +54,10 @@ chrome.storage.local
 - Text-level Pin captures original `TextAnchor { exact, prefix, suffix, start, end }` and never trusts old pixel coordinates. On reload or SPA route change, `resolveAnchor` checks quote occurrences, surrounding text and ambiguity.
 - Page-level Pin has **no** `anchor`: it remains a page-scoped viewport paper without a text marker, but is present in Dock.
 - Anchored paper uses a live DOM `Range` and scroll/resize-dependent placement. Prefer a margin next to the source block; if unavailable, place below/above the block so it does not immediately obscure the selected sentence.
-- User dragging changes `appearance.offsetX/Y` relative to the resolved base placement, **not** the text anchor; user resizing changes `appearance.width/height`. On changed viewport dimensions cards are clamped back into view.
+- User dragging the whole top strip changes `appearance.offsetX/Y` relative to the resolved base placement, **not** the text anchor; user resizing changes `appearance.width/height`. On changed viewport dimensions cards are clamped back into view.
 - When anchor leaves the viewport, its expanded paper/marker is temporarily hidden (not closed) and appears again when original content returns. Dock retains access.
-- On generic pages Dock dots are ordered by text-index offset. On ChatGPT/Gemini with conversation navigation enabled, matched note dots are placed beside their containing user/assistant turn. Their **actual click destination remains the exact quote**. Missing quote resolves to gray dot; card remains editable.
-- Conversation turns (user question + its answer) are **runtime-only DOM references and short previews**: no extra persistent chat index or network access. Third-party DOM is not a stable API; unrecognized or virtualized messages gracefully downgrade to note-only navigation. See [Stage 1.5 specification](STAGE1_5_CONVERSATION.md).
+- On generic pages Dock dots are ordered by text-index offset. On ChatGPT/Gemini with conversation navigation enabled, multiple notes associated with the same turn share a single numbered cluster marker; selecting a note still jumps to its exact text. Their **actual click destination remains the exact quote**. Missing quote resolves to gray dot; card remains editable.
+- Conversation turns are **runtime-only DOM references and short previews**. Discovered turn IDs and approximate scroll hints are cached in memory without retaining detached DOM elements. A user-initiated history scan can index older loadable turns; it cannot guarantee complete history, and never invokes private APIs. Third-party DOM is not a stable API; unrecognized or virtualized messages gracefully downgrade to note-only navigation. See [Stage 1.5 specification](STAGE1_5_CONVERSATION.md).
 
 ## Storage migration and concurrency
 
@@ -66,6 +71,7 @@ interface Note {
   anchor?: TextAnchor; // absent means page-level note
   appearance?: {
     color?: 'yellow'|'pink'|'green'|'blue'|'purple'|'gray';
+    fontSize?: 'sm'|'md'|'lg'; // optional, defaults md
     width?: number; height?: number; offsetX?: number; offsetY?: number;
   };
   revision?: number;
@@ -95,3 +101,5 @@ interface Note {
 - Stage 1.5 separately verifies two ChatGPT markup generations, Gemini, hover previews, active turn, dynamic DOM, unified colored note marker, preferences and long synthetic conversation fixtures.
 - Real Chrome/Edge tests remain required for extension install/update, context-menu integration, permission prompts, Chrome worker lifetime, cross-origin frames, and ChatGPT/Gemini UI changes. The DOM harness is not proof of those browser-specific behaviors.
 - Stage 2 needs cross-tab placement coordination, origin-authorization strategy, and ownership of a single floating follow note across browser windows. It must not reuse the current page-scoped `openIds` as global state.
+
+See [Stage 1.5.1 reliability / UX investigation](STAGE1_6_FIXES.md) for virtualized history indexing, source-to-prompt targeting, clustered rail design, browser edit engine tradeoffs and test coverage.

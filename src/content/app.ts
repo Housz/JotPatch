@@ -46,6 +46,10 @@ namespace JP {
     private conversationNavigation = true;
     private conversation: ConversationSnapshot = { site: null, turns: [], nativeRailPresent: false };
     private conversationTimer = 0;
+    private conversationIndex = new ConversationIndex();
+    private conversationScrollRootRef: Element | null = null;
+    private scanningHistory = false;
+    private stopHistoryScan = false;
     private activeTurnId: string | null = null;
     private refreshTimer = 0;
     private scrollScheduled = false;
@@ -67,8 +71,12 @@ namespace JP {
       await this.loadPage();
       this.refreshConversation();
       this.observer = new MutationObserver((records) => {
+        // Ignore our own Shadow DOM host mutations. Otherwise rebuilding the
+        // Dock repeatedly schedules another expensive conversation scan.
+        const external = records.filter(record => !this.host.contains(record.target));
+        if (!external.length) return;
         this.scheduleRefresh();
-        if (records.some(record => record.type === 'childList')) this.scheduleConversationScan();
+        if (external.some(record => record.type === 'childList')) this.scheduleConversationScan();
       });
       this.observer.observe(document.body, { subtree: true, childList: true, characterData: true });
       // SPA navigation without injecting into page-owned history functions.
@@ -108,6 +116,7 @@ namespace JP {
           <div class="rail-track" id="jp-rail-track"></div>
         </nav>
         <div id="jp-turn-preview" class="turn-preview" role="tooltip" hidden></div>
+        <aside id="jp-note-popover" class="note-popover" aria-label="本轮便签" hidden></aside>
         <aside id="jp-list" class="list" aria-label="本页便签列表" hidden></aside>
         <div id="jp-markers"></div>
         <div id="jp-cards"></div>
@@ -131,6 +140,17 @@ namespace JP {
         this.listOpen = !this.listOpen; this.renderList();
       });
       this.$<HTMLButtonElement>('#jp-undo').addEventListener('click', () => void this.undoDeletion());
+      document.addEventListener('keydown', event => {
+        if(event.key==='Escape') for(const card of this.cards.values()){const menu=card.querySelector<HTMLElement>('.note-menu');if(menu)menu.hidden=true;card.querySelector('.menu-trigger')?.setAttribute('aria-expanded','false');}
+      });
+      document.addEventListener('pointerdown', event => {
+        const path = event.composedPath();
+        if (!path.includes(this.$<HTMLElement>('#jp-note-popover'))) this.hideNotePopover();
+        for (const card of this.cards.values()) {
+          const menu = card.querySelector<HTMLElement>('.note-menu');
+          if (menu && !path.includes(menu) && !path.includes(card.querySelector('.menu-trigger')!)){menu.hidden=true;card.querySelector('.menu-trigger')?.setAttribute('aria-expanded','false');}
+        }
+      }, true);
       document.addEventListener('mouseup', e => this.maybeOfferSelection(e.target, e.altKey));
       document.addEventListener('keyup', e => {
         if (e.key.startsWith('Arrow') || e.key === 'Shift') this.maybeOfferSelection(e.target, e.altKey);
@@ -191,6 +211,9 @@ namespace JP {
       this.$<HTMLElement>('#jp-bubble').hidden = true;
       this.openIds.clear(); this.cards.clear(); this.$<HTMLElement>('#jp-cards').replaceChildren();
       this.listOpen = false;
+      this.stopHistoryScan = true;
+      this.conversationIndex.reset();
+      this.conversationScrollRootRef = null;
       this.conversation = { site: conversationSite(), turns: [], nativeRailPresent: false };
       this.hideTurnPreview();
       void this.loadPage().then(() => this.scheduleConversationScan(true));
@@ -208,7 +231,7 @@ namespace JP {
     }
 
     private rememberSelection(target: EventTarget | null): Range | null {
-      if (target instanceof Node && this.host.contains(target)) return null;
+      if (target instanceof Node && (this.host.contains(target) || target.getRootNode() === this.shadow)) return null;
       const selection = document.getSelection();
       if (!selection || selection.isCollapsed || !selection.rangeCount) return null;
       const range = selection.getRangeAt(0);
@@ -312,17 +335,21 @@ namespace JP {
     private refreshConversation(): void {
       clearTimeout(this.conversationTimer);
       this.conversationTimer = 0;
-      this.conversation = this.conversationNavigation ? collectConversation() :
+      const snapshot = this.conversationNavigation ? collectConversation() :
         { site: conversationSite(), turns: [], nativeRailPresent: false };
+      this.conversation = this.conversationNavigation ? this.conversationIndex.combine(snapshot) : snapshot;
+      const activeSource = this.conversation.turns.find(t=>t.element?.isConnected)?.element;
+      if(activeSource)this.conversationScrollRootRef=conversationScrollRoot(activeSource);
       this.hideTurnPreview();
       this.renderDock();
       this.schedulePosition();
     }
     private hideTurnPreview(): void { this.$<HTMLElement>('#jp-turn-preview').hidden = true; }
     private showTurnPreview(turn: ConversationTurn, button: HTMLButtonElement): void {
+      this.hideNotePopover();
       const preview = this.$<HTMLElement>('#jp-turn-preview');
       preview.replaceChildren();
-      const label = el('small'); label.textContent = `第 ${turn.order + 1} / ${this.conversation.turns.length} 轮`;
+      const label = el('small'); label.textContent = `已发现第 ${turn.order + 1} / ${this.conversation.turns.length} 轮${turn.element?'':' · 暂未挂载'}`;
       const summary = el('span'); summary.textContent = turn.preview;
       preview.append(label, summary);
       const rect = button.getBoundingClientRect();
@@ -331,35 +358,108 @@ namespace JP {
       preview.style.top = `${clamp(rect.top - 13, 8, innerHeight - 96)}px`;
       preview.hidden = false;
     }
-    private jumpToTurn(turn: ConversationTurn): void {
-      this.hideTurnPreview();
-      if (!turn.element.isConnected) {
-        this.toast('该轮内容暂时未加载，请滚动网页后再试');
-        this.scheduleConversationScan(true);
-        return;
+    private async jumpToTurn(turn: ConversationTurn): Promise<void> {
+      this.hideTurnPreview(); this.hideNotePopover();
+      // Always re-resolve the current prompt before navigating: a stale React
+      // wrapper or cached element may have been recycled by the host app.
+      const live = collectConversation().turns.find(t => t.id === turn.id);
+      if (live?.element) {
+        navigateToPrompt(live.element);
+        this.activeTurnId = turn.id; this.schedulePosition(); return;
       }
-      turn.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      this.activeTurnId = turn.id;
-      this.schedulePosition();
+      if (!turn.stableId || !Number.isFinite(turn.scrollHint)) {
+        this.toast('该轮原文尚未加载，继续滚动网页后重试'); return;
+      }
+      const source = this.conversation.turns.find(t => t.element?.isConnected)?.element;
+      const root = source ? conversationScrollRoot(source) :
+        (this.conversationScrollRootRef?.isConnected ? this.conversationScrollRootRef : document.scrollingElement);
+      if (!root) { this.toast('无法确定会话滚动区域'); return; }
+      const hint = turn.scrollHint!;
+      const directions = [0, -0.7, 0.7, -1.4, 1.4];
+      for (const delta of directions) {
+        root.scrollTo({top: Math.max(0, hint + delta * root.clientHeight), behavior:'auto'});
+        await new Promise(resolve => window.setTimeout(resolve, 180));
+        if (!this.visible || !this.conversationNavigation) return;
+        const match = collectConversation().turns.find(t => t.id === turn.id);
+        if (match?.element) {
+          navigateToPrompt(match.element);
+          this.refreshConversation(); this.schedulePosition(); return;
+        }
+      }
+      this.toast('这一轮未能重新加载，已停止跳转；可手动滚动到附近再试');
+      this.refreshConversation();
     }
     private updateActiveTurn(): void {
-      const turns = this.conversation.turns;
-      if (!this.conversationNavigation || !turns.length || this.conversation.nativeRailPresent) return;
-      // DOM order is monotonically scroll-ordered: O(log N) layout reads per frame.
-      let lo = 0, hi = turns.length;
-      const threshold = innerHeight * 0.40;
-      while (lo < hi) {
-        const mid = (lo + hi) >>> 1;
-        if (turns[mid].element.getBoundingClientRect().top <= threshold) lo = mid + 1;
-        else hi = mid;
+      if (!this.conversationNavigation || this.conversation.nativeRailPresent) return;
+      const turns = this.conversation.turns.filter(t => !!t.element?.isConnected);
+      if (!turns.length) return;
+      const threshold = innerHeight * .32;
+      // Elements may be mounted in a virtualized window; compare only live
+      // prompt rectangles instead of assuming the full conversation is mounted.
+      let active = turns[0];
+      for (const turn of turns) {
+        if (turn.element!.getBoundingClientRect().top > threshold) break;
+        active = turn;
       }
-      const turn = turns[Math.max(0, lo - 1)];
-      if (!turn || turn.id === this.activeTurnId) return;
-      this.activeTurnId = turn.id;
-      for (const button of Array.from(this.shadow.querySelectorAll<HTMLButtonElement>('.rail-turn'))) {
-        if (button.dataset.turnId === turn.id) button.setAttribute('aria-current', 'location');
+      if (active.id === this.activeTurnId) return;
+      this.activeTurnId = active.id;
+      for (const button of this.shadow.querySelectorAll<HTMLButtonElement>('.rail-turn')) {
+        if (button.dataset.turnId === active.id) button.setAttribute('aria-current', 'location');
         else button.removeAttribute('aria-current');
       }
+    }
+
+    /** Explicit, reversible history discovery. No undocumented ChatGPT API calls. */
+    private async scanOlderTurns(): Promise<void> {
+      if (this.scanningHistory) { this.stopHistoryScan = true; return; }
+      const source = this.conversation.turns.find(t => t.element?.isConnected)?.element;
+      if (!source || !conversationSite()) { this.toast('尚未找到可滚动的对话'); return; }
+      const root = conversationScrollRoot(source);
+      this.conversationScrollRootRef=root;
+      const originPage = this.page, start = root.scrollTop;
+      this.scanningHistory = true; this.stopHistoryScan = false; this.renderList();
+      let previous = root.scrollTop, stalled = 0, count = 0;
+      try {
+        while (!this.stopHistoryScan && this.page === originPage && root.scrollTop > 2 && count++ < 160) {
+          root.scrollTo({top: Math.max(0, root.scrollTop - Math.max(240, root.clientHeight * .78)), behavior:'auto'});
+          await new Promise(resolve => window.setTimeout(resolve, 160));
+          const now = root.scrollTop;
+          if (Math.abs(now - previous) < 2) stalled++; else stalled = 0;
+          previous = now;
+          // Do not rescan the entire notes index/DOM on every scroll step.
+          this.conversation = this.conversationIndex.combine(collectConversation());
+          if (count % 5 === 0) { this.renderDock(); this.renderList(); }
+          if (stalled > 4) break;
+        }
+      } finally {
+        // Returning to the original reading position is essential; full scan
+        // is user-initiated and may still cause momentary layout shifts.
+        if (this.page === originPage && root.isConnected) {
+          root.scrollTo({top:start,behavior:'auto'});
+          await new Promise(resolve => window.setTimeout(resolve, 220));
+        }
+        this.scanningHistory = false; this.stopHistoryScan = false;
+        this.refreshConversation();
+        this.toast(`已发现 ${this.conversation.turns.length} 轮；无法保证包含未加载的全部历史`);
+      }
+    }
+    private hideNotePopover(): void { this.$<HTMLElement>('#jp-note-popover').hidden = true; }
+    private showNotePopover(notes: Note[], button: HTMLButtonElement): void {
+      this.hideTurnPreview();
+      const panel = this.$<HTMLElement>('#jp-note-popover');
+      panel.replaceChildren();
+      const head = el('div','cluster-title'); head.textContent=`此轮 ${notes.length} 张便签`; panel.appendChild(head);
+      for (const note of notes) {
+        const item = el('button','cluster-item'); item.type = 'button';
+        const dot=el('span','dot'); dot.style.background=COLOR_HEX[appearance(note).color];
+        const label=el('span'); label.textContent=note.text.trim().slice(0,55)||note.anchor?.exact.slice(0,50)||'空白便签';
+        item.append(dot,label);
+        item.addEventListener('click',()=>{this.hideNotePopover();this.goTo(note.id);});
+        panel.appendChild(item);
+      }
+      const rect=button.getBoundingClientRect();
+      panel.style.top=`${clamp(rect.top - 10, 8, innerHeight - Math.min(230, 40 + notes.length*40))}px`;
+      panel.hidden=false;
     }
     private renderDock(): void {
       const rail = this.$<HTMLElement>('#jp-rail');
@@ -370,7 +470,7 @@ namespace JP {
       rail.classList.toggle('native-nav', this.conversation.nativeRailPresent);
       const toggle = this.$<HTMLButtonElement>('#jp-list-toggle');
       toggle.textContent = showTurns ? '≡' : String(this.notes.length);
-      toggle.title = showTurns ? `${turns.length} 轮对话 · ${this.notes.length} 张便签` : `本页 ${this.notes.length} 张便签`;
+      toggle.title = showTurns ? `已发现 ${turns.length} 轮 · ${this.notes.length} 张便签` : `本页 ${this.notes.length} 张便签`;
       const track = this.$<HTMLElement>('#jp-rail-track'); track.replaceChildren();
       if (showTurns) {
         // Prevent densely spaced targets from covering their neighbors.
@@ -384,7 +484,7 @@ namespace JP {
           button.style.height = `${lineHeight}px`;
           button.title = `第 ${turn.order + 1} 轮：${turn.preview}`;
           button.setAttribute('aria-label', button.title);
-          button.addEventListener('click', () => this.jumpToTurn(turn));
+          button.addEventListener('click', () => void this.jumpToTurn(turn));
           button.addEventListener('pointerenter', () => this.showTurnPreview(turn, button));
           button.addEventListener('pointerleave', () => this.hideTurnPreview());
           button.addEventListener('focus', () => this.showTurnPreview(turn, button));
@@ -394,25 +494,45 @@ namespace JP {
       }
       const sorted = this.sortedNotes();
       const textLength = this.index?.text.length || 1;
-      const placed: number[] = [];
-      sorted.forEach((note, i) => {
+      const liveTurns = turns.filter(t => !!t.element?.isConnected);
+      const perTurn = new Map<string, Note[]>();
+      const loose: Note[] = [];
+      for (const note of sorted) {
         const match = this.matches.get(note.id);
-        const linkedTurn = showTurns && match ? turnForRange(match.range, turns) : null;
-        const offset = linkedTurn ? Math.min(1.1, (i % 3) * 0.45) : 0;
-        let pos = linkedTurn ? this.turnPosition(linkedTurn.order, turns.length) + offset
-          : match ? match.start / textLength * 100 : (note.anchor ? 90 + i % 4 * 2 : 3 + i * 3);
-        pos = clamp(pos, 2, 98);
-        if (!showTurns) {
-          while (placed.some(p => Math.abs(p - pos) < 3.4) && pos < 96) pos += 3.4;
+        const associated = showTurns && match ? turnForRange(match.range, liveTurns) : null;
+        if (!associated) { loose.push(note); continue; }
+        const group=perTurn.get(associated.id) || [];
+        group.push(note); perTurn.set(associated.id, group);
+      }
+      const placed: number[] = [];
+      const addNotePin=(notes:Note[],position:number) => {
+        const group=notes.length>1;
+        const button=el('button',`rail-pin${group?' rail-note-cluster':''}${notes.some(n=>n.anchor&&!this.matches.has(n.id))?' missing':''}`);
+        button.type='button';button.style.top=`${clamp(position,2,98)}%`;
+        const note=notes[0];
+        button.style.background=COLOR_HEX[appearance(note).color];
+        if(group){button.textContent=String(notes.length);button.dataset.count=String(notes.length);}
+        button.title=group ? `此轮 ${notes.length} 张便签` : note.text.trim().slice(0,70) || note.anchor?.exact.slice(0,50) || '本页便签';
+        button.setAttribute('aria-label',button.title);
+        button.addEventListener('click',()=>{
+          if(group)this.showNotePopover(notes,button);
+          else{this.hideTurnPreview();this.goTo(note.id);}
+        });
+        track.appendChild(button);placed.push(position);
+      };
+      if(showTurns){
+        for(const [turnId,group] of perTurn){
+          const turn=turns.find(t=>t.id===turnId);
+          if(turn)addNotePin(group,this.turnPosition(turn.order,turns.length));
+          else loose.push(...group);
         }
-        placed.push(pos);
-        const button = el('button', `rail-pin${note.anchor && !match ? ' missing' : ''}`);
-        button.type = 'button'; button.style.top = `${pos}%`;
-        button.style.background = note.anchor && !match ? '#aaa' : COLOR_HEX[appearance(note).color];
-        button.title = note.text.trim().slice(0, 70) || (note.anchor?.exact.slice(0, 50) || '本页便签');
-        button.setAttribute('aria-label', `跳转便签：${button.title}`);
-        button.addEventListener('click', () => {this.hideTurnPreview(); this.goTo(note.id);});
-        track.appendChild(button);
+      }
+      loose.forEach((note,i)=>{
+        const match=this.matches.get(note.id);
+        let pos=match?match.start/textLength*100:(note.anchor?90+i%4*2:3+i*3);
+        pos=clamp(pos,2,98);
+        while(placed.some(p=>Math.abs(p-pos)<3.3)&&pos<95)pos+=3.3;
+        addNotePin([note],pos);
       });
       this.activeTurnId = null;
       this.updateActiveTurn();
@@ -429,10 +549,17 @@ namespace JP {
       list.replaceChildren();
       const head = el('div', 'list-header');
       const title = el('span'); title.textContent = turns.length >= 3
-        ? `会话 · ${turns.length} 轮 / ${this.notes.length} 张便签` : `本页便签 · ${this.notes.length}`;
+        ? `已发现 ${turns.length} 轮 · ${this.notes.length} 张便签` : `本页便签 · ${this.notes.length}`;
       const close = el('button'); close.type='button'; close.textContent='×'; close.title='关闭列表';
       close.addEventListener('click', () => {this.listOpen=false; this.renderList();});
       head.append(title,close); list.appendChild(head);
+      if (turns.length >= 3 && conversationSite()) {
+        const scan=el('button','scan-history');scan.type='button';
+        scan.textContent=this.scanningHistory?'停止扫描':'扫描较早轮次';
+        scan.title='按需滚动收集历史轮次，之后恢复阅读位置；虚拟化页面可能仍无法列全';
+        scan.addEventListener('click',()=>void this.scanOlderTurns());
+        list.appendChild(scan);
+      }
       if (turns.length >= 3) {
         const heading = el('div', 'list-section'); heading.textContent = '对话轮次'; list.appendChild(heading);
         for (const turn of turns) {
@@ -440,7 +567,7 @@ namespace JP {
           const count = el('span','turn-order'); count.textContent = String(turn.order + 1);
           const label = el('span'); label.textContent = turn.preview;
           button.append(count,label);
-          button.addEventListener('click',()=>{this.listOpen=false;this.renderList();this.jumpToTurn(turn);});
+          button.addEventListener('click',()=>{this.listOpen=false;this.renderList();void this.jumpToTurn(turn);});
           list.appendChild(button);
         }
       }
@@ -511,7 +638,7 @@ namespace JP {
       this.openIds.add(noteId);
       paper.style.zIndex=String(++this.zOrder);
       this.positionCard(noteId);
-      if(focus) paper.querySelector<HTMLTextAreaElement>('.note-editor')?.focus({preventScroll:true});
+      if(focus) paper.querySelector<HTMLElement>('.note-editor')?.focus({preventScroll:true});
     }
     private closeCard(noteId: string): void {
       void this.saveNow(noteId);
@@ -521,79 +648,104 @@ namespace JP {
 
     private makePaper(note: Note): HTMLElement {
       const paper=el('section','paper');
-      paper.dataset.noteId=note.id; paper.setAttribute('aria-label','JotPatch 便签');
+      paper.dataset.noteId=note.id;paper.setAttribute('aria-label','JotPatch 便签');
       const style=appearance(note);
       paper.style.setProperty('--paper',COLOR_HEX[style.color]);
-      paper.style.width=`${style.width}px`; paper.style.height=`${style.height}px`;
+      paper.style.setProperty('--jp-font-size',this.fontPixels(style.fontSize));
+      paper.style.width=`${style.width}px`;paper.style.height=`${style.height}px`;
+      // Fixed header and footer take actual layout space; no controls overlap text.
       paper.innerHTML=`
-        <textarea class="note-editor" aria-label="便签内容" placeholder="写点什么…" spellcheck="true"></textarea>
-        <div class="note-preview" aria-label="便签预览，点击编辑" tabindex="0" hidden></div>
-        <div class="note-tools">
-          <div class="tool-group"><button class="drag-handle" title="拖动便签位置" aria-label="拖动便签位置" type="button">⠿</button></div>
-          <div class="tool-group">
-            <button class="jump" title="跳转到原文" aria-label="跳转到原文" type="button">↗</button>
-            <button class="menu-trigger" title="更多操作" aria-label="更多操作" type="button">···</button>
+        <header class="paper-head drag-region" title="拖动整条顶栏移动便签" aria-label="拖动便签位置">
+          <span class="paper-grab" aria-hidden="true">··</span>
+          <div class="paper-head-actions">
+            <button class="copy" title="复制 Markdown 源码" aria-label="复制 Markdown 源码" type="button">⧉</button>
+            <button class="jump" title="返回原文" aria-label="返回原文" type="button">↗</button>
+            <button class="menu-trigger" title="更多操作" aria-label="更多操作" type="button" aria-expanded="false">···</button>
             <button class="close" title="收起便签" aria-label="收起便签" type="button">×</button>
           </div>
-        </div>
-        <div class="note-actions">
+        </header>
+        <div class="note-editor" contenteditable="true" role="textbox" aria-multiline="true"
+          aria-label="便签内容" spellcheck="true" data-placeholder="写点什么…"></div>
+        <footer class="paper-foot">
           <button class="bold" title="加粗 (Ctrl/⌘+B)" aria-label="加粗" type="button"><b>B</b></button>
           <button class="italic" title="斜体 (Ctrl/⌘+I)" aria-label="斜体" type="button"><i>I</i></button>
           <button class="bullet" title="项目列表" aria-label="项目列表" type="button">≡</button>
           <button class="number" title="编号列表" aria-label="编号列表" type="button">1.</button>
-          <span class="spacer"></span><button class="copy" title="复制便签" aria-label="复制便签" type="button">⧉</button>
-        </div>
+          <span class="paper-foot-spacer"></span>
+          <span class="save-indicator" aria-live="polite"></span>
+        </footer>
         <div class="note-menu" hidden>
           <div class="colors" role="group" aria-label="便签颜色"></div>
-          <button class="menu-action copy-menu" type="button">复制内容</button>
+          <div class="font-label">字号</div>
+          <div class="font-choices" role="group" aria-label="字号">
+            <button class="font-size" data-font="sm" type="button">小</button>
+            <button class="font-size" data-font="md" type="button">中</button>
+            <button class="font-size" data-font="lg" type="button">大</button>
+          </div>
           <button class="menu-action delete-menu danger" type="button">删除便签</button>
         </div>
-        <span class="save-indicator" aria-live="polite"></span>
         <div class="resize-handle" role="separator" aria-label="拖动调整便签大小" title="拖动调整便签大小"></div>`;
-      const editor=paper.querySelector<HTMLTextAreaElement>('.note-editor')!;
-      editor.value=note.text;
-      editor.addEventListener('input',()=>{
-        note.text=editor.value; note.updatedAt=Date.now(); this.dirty.add(note.id);
-        this.scheduleSave(note.id); this.renderList();
+      const editor=paper.querySelector<HTMLElement>('.note-editor')!;
+      renderMarkdown(editor,note.text);
+      const changed=()=>{
+        note.text=markdownFromEditor(editor);
+        editor.dataset.empty=String(!note.text.trim());
+        this.touchNote(note);this.renderList();
+      };
+      editor.dataset.empty=String(!note.text.trim());
+      editor.addEventListener('input',changed);
+      editor.addEventListener('blur',()=>void this.saveNow(note.id));
+      editor.addEventListener('paste',event=>{
+        // Paste plain text only. HTML from source websites must not enter our
+        // editable DOM or storage, even if the clipboard contains rich HTML.
+        event.preventDefault();
+        document.execCommand('insertText',false,event.clipboardData?.getData('text/plain')||'');
       });
-      editor.addEventListener('focus',()=>{
-        paper.querySelector<HTMLElement>('.note-preview')!.hidden=true;
-        editor.hidden=false;
-      });
-      editor.addEventListener('blur',()=>{
-        this.updatePreview(paper,note);
-        void this.saveNow(note.id);
-      });
-      paper.querySelector<HTMLElement>('.note-preview')!.addEventListener('click',()=>{
-        paper.querySelector<HTMLElement>('.note-preview')!.hidden=true;
-        editor.hidden=false;editor.focus({preventScroll:true});
-      });
-      paper.querySelector<HTMLElement>('.note-preview')!.addEventListener('keydown',e=>{
-        if(e.key==='Enter'||e.key===' '){e.preventDefault();
-          paper.querySelector<HTMLElement>('.note-preview')!.hidden=true;
-          editor.hidden=false;editor.focus({preventScroll:true});}
-      });
-      editor.addEventListener('keydown',(e: KeyboardEvent)=>{
-        if ((e.ctrlKey||e.metaKey) && !e.altKey) {
-          const lower=e.key.toLowerCase();
-          if (lower==='b'||lower==='i') { e.preventDefault(); this.format(editor,lower==='b'?'bold':'italic'); }
-          if(e.shiftKey && e.key==='7'){e.preventDefault(); this.format(editor,'number');}
-          if(e.shiftKey && e.key==='8'){e.preventDefault(); this.format(editor,'bullet');}
+      editor.addEventListener('keydown',(event:KeyboardEvent)=>{
+        if((event.ctrlKey||event.metaKey)&&!event.altKey){
+          const key=event.key.toLowerCase();
+          if(key==='b'||key==='i'){
+            event.preventDefault();this.format(editor,key==='b'?'bold':'italic');
+          }else if(event.shiftKey && event.key==='7'){
+            event.preventDefault();this.format(editor,'number');
+          }else if(event.shiftKey && event.key==='8'){
+            event.preventDefault();this.format(editor,'bullet');
+          }
         }
       });
-      paper.addEventListener('pointerdown',()=>{ paper.style.zIndex=String(++this.zOrder); });
-      for(const name of ['bold','italic','bullet','number'] as const) {
-        const btn=paper.querySelector<HTMLButtonElement>(`.${name}`)!;
-        btn.addEventListener('pointerdown',e=>e.preventDefault());
-        btn.addEventListener('click',()=>this.format(editor,name));
+      paper.addEventListener('pointerdown',()=>{paper.style.zIndex=String(++this.zOrder);});
+      paper.addEventListener('focusin',()=>{paper.style.zIndex=String(++this.zOrder);});
+      paper.addEventListener('wheel',(event:WheelEvent)=>{
+        // Cancel browser zoom only while the pointer is inside a note.
+        if(!event.ctrlKey || !event.cancelable)return;
+        event.preventDefault();event.stopPropagation();
+        const steps:NoteFontSize[]=['sm','md','lg'];
+        const current=appearance(note).fontSize;
+        const direction=event.deltaY<0?1:-1;
+        const next=steps[clamp(steps.indexOf(current)+direction,0,steps.length-1)];
+        this.setFontSize(note,paper,next);
+      },{passive:false});
+      for(const name of ['bold','italic','bullet','number'] as const){
+        const button=paper.querySelector<HTMLButtonElement>(`.${name}`)!;
+        button.addEventListener('pointerdown',event=>event.preventDefault());
+        button.addEventListener('click',()=>this.format(editor,name));
       }
       paper.querySelector('.copy')!.addEventListener('click',()=>void this.copyNote(note.id));
       paper.querySelector('.jump')!.addEventListener('click',()=>this.goTo(note.id,false));
       paper.querySelector('.close')!.addEventListener('click',()=>this.closeCard(note.id));
       const menu=paper.querySelector<HTMLElement>('.note-menu')!;
-      paper.querySelector('.menu-trigger')!.addEventListener('click',()=>{menu.hidden=!menu.hidden;});
-      paper.querySelector('.copy-menu')!.addEventListener('click',()=>{menu.hidden=true;void this.copyNote(note.id);});
+      const menuTrigger=paper.querySelector<HTMLButtonElement>('.menu-trigger')!;
+      menuTrigger.addEventListener('click',()=>{
+        for(const other of this.cards.values())if(other!==paper){
+          const otherMenu=other.querySelector<HTMLElement>('.note-menu');if(otherMenu)otherMenu.hidden=true;
+        }
+        menu.hidden=!menu.hidden;menuTrigger.setAttribute('aria-expanded',String(!menu.hidden));
+      });
       paper.querySelector('.delete-menu')!.addEventListener('click',()=>{menu.hidden=true;void this.deleteNote(note.id);});
+      for(const button of paper.querySelectorAll<HTMLButtonElement>('.font-size')){
+        button.setAttribute('aria-pressed',String(button.dataset.font===style.fontSize));
+        button.addEventListener('click',()=>this.setFontSize(note,paper,button.dataset.font as NoteFontSize));
+      }
       const colors=paper.querySelector<HTMLElement>('.colors')!;
       COLOR_ORDER.forEach(color=>{
         const btn=el('button');btn.type='button';btn.title=color;
@@ -602,90 +754,65 @@ namespace JP {
         btn.addEventListener('click',()=>{
           note.appearance={...appearance(note),color};
           paper.style.setProperty('--paper',COLOR_HEX[color]);
-          colors.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b===btn)));
+          colors.querySelectorAll('button').forEach(button=>button.setAttribute('aria-pressed',String(button===btn)));
           this.touchNote(note);this.renderDock();this.renderMarkers();
         });
         colors.appendChild(btn);
       });
-      this.installDrag(paper.querySelector<HTMLElement>('.drag-handle')!,note,'move');
+      this.installDrag(paper.querySelector<HTMLElement>('.drag-region')!,note,'move');
       this.installDrag(paper.querySelector<HTMLElement>('.resize-handle')!,note,'resize');
-      this.updatePreview(paper,note);
       return paper;
     }
 
-    private updatePreview(paper:HTMLElement,note:Note):void {
-      const editor=paper.querySelector<HTMLTextAreaElement>('.note-editor')!;
-      const preview=paper.querySelector<HTMLElement>('.note-preview')!;
-      if (editor===(paper.getRootNode() as ShadowRoot).activeElement) return;
-      // Markdown is a small supported subset, parsed into safe DOM nodes.
-      // Text from webpages is never fed into innerHTML.
-      const hasFormat=/(?:\*\*[^\n*]+\*\*|\*[^\n*]+\*|^\s*(?:- |\d+\. ))/m.test(note.text);
-      if(!hasFormat){preview.hidden=true;editor.hidden=false;return;}
-      preview.replaceChildren();
-      const appendInline=(parent:HTMLElement,line:string)=>{
-        const tokens=line.split(/(\*\*[^\n*]+\*\*|\*[^\n*]+\*)/g);
-        for(const token of tokens){
-          let child:HTMLElement|null=null;
-          if(token.startsWith('**')&&token.endsWith('**')&&token.length>4){
-            child=el('strong');child.textContent=token.slice(2,-2);
-          }else if(token.startsWith('*')&&token.endsWith('*')&&token.length>2){
-            child=el('em');child.textContent=token.slice(1,-1);
-          }
-          if(child) parent.appendChild(child);
-          else parent.appendChild(document.createTextNode(token));
-        }
-      };
-      let list:HTMLOListElement|HTMLUListElement|null=null;
-      let listType='';
-      for(const line of note.text.split('\n')){
-        const bullet=line.match(/^\s*- (.*)$/),number=line.match(/^\s*\d+\. (.*)$/);
-        const type=bullet?'ul':number?'ol':'';
-        if(type){
-          if(!list||listType!==type){list=el(type==='ul'?'ul':'ol');preview.appendChild(list);listType=type;}
-          const li=el('li');appendInline(li,(bullet||number)![1]);list.appendChild(li);
-        }else{
-          list=null;listType='';const para=el('p');
-          appendInline(para,line||'\u00a0');preview.appendChild(para);
-        }
-      }
-      editor.hidden=true;preview.hidden=false;
+    private fontPixels(size:NoteFontSize):string {
+      return size==='sm'?'12px':size==='lg'?'17px':'14px';
     }
-
-    private format(editor: HTMLTextAreaElement, type: 'bold'|'italic'|'bullet'|'number'): void {
-      if (editor.readOnly) return;
+    private setFontSize(note:Note,paper:HTMLElement,size:NoteFontSize):void {
+      if(!['sm','md','lg'].includes(size)||appearance(note).fontSize===size)return;
+      note.appearance={...appearance(note),fontSize:size};
+      paper.style.setProperty('--jp-font-size',this.fontPixels(size));
+      for(const button of paper.querySelectorAll<HTMLButtonElement>('.font-size')){
+        button.setAttribute('aria-pressed',String(button.dataset.font===size));
+      }
+      this.touchNote(note);
+    }
+    private format(editor:HTMLElement,type:'bold'|'italic'|'bullet'|'number'):void {
       editor.focus({preventScroll:true});
-      const start=editor.selectionStart, end=editor.selectionEnd, value=editor.value;
-      if(type==='bold'||type==='italic') {
-        const marker=type==='bold'?'**':'*';
-        editor.setRangeText(marker+value.slice(start,end)+marker,start,end,'select');
-        editor.setSelectionRange(start+marker.length,end+marker.length);
-      } else {
-        const lineStart=value.lastIndexOf('\n',start-1)+1;
-        let lineEnd=value.indexOf('\n',end);
-        if(lineEnd===-1)lineEnd=value.length;
-        const lines=value.slice(lineStart,lineEnd).split('\n');
-        const replacement=lines.map((line,i)=>`${type==='bullet'?'- ':`${i+1}. `}${line}`).join('\n');
-        editor.setRangeText(replacement,lineStart,lineEnd,'end');
-      }
-      editor.dispatchEvent(new Event('input',{bubbles:true}));
+      // Chromium's native edit commands preserve browser selection and undo;
+      // only generated safe HTML is persisted as canonical Markdown.
+      const command={bold:'bold',italic:'italic',bullet:'insertUnorderedList',number:'insertOrderedList'}[type];
+      const changed=document.execCommand(command,false);
+      if(changed)editor.dispatchEvent(new Event('input',{bubbles:true}));
     }
-    private installDrag(handle: HTMLElement,note: Note,mode: 'move'|'resize'):void {
+    private installDrag(handle:HTMLElement,note:Note,mode:'move'|'resize'):void {
       handle.addEventListener('pointerdown',(event:PointerEvent)=>{
         if(event.button!==0)return;
+        // Entire fixed header is draggable, but its buttons remain clickable.
+        if(mode==='move' && (event.target as Element).closest('button'))return;
         event.preventDefault();event.stopPropagation();
         handle.setPointerCapture(event.pointerId);
         const initial=appearance(note),startX=event.clientX,startY=event.clientY;
+        const paper=this.cards.get(note.id) || handle.closest<HTMLElement>('.paper');
+        const startRect=paper?.getBoundingClientRect();
         const move=(e:PointerEvent)=>{
           if(e.pointerId!==event.pointerId)return;
           const dx=e.clientX-startX,dy=e.clientY-startY;
-          const updated:NoteAppearance=mode==='move'
-            ?{...initial,offsetX:initial.offsetX+dx,offsetY:initial.offsetY+dy}
-            :{...initial,width:clamp(initial.width+dx,180,Math.min(560,innerWidth-15)),
-              height:clamp(initial.height+dy,132,Math.min(620,innerHeight-15))};
+          let updated:NoteAppearance=mode==='move'
+            ? {...initial,offsetX:initial.offsetX+dx,offsetY:initial.offsetY+dy}
+            : {...initial,
+              width:clamp(initial.width+dx,180,Math.min(560,innerWidth-15-(startRect?.left||0))),
+              height:clamp(initial.height+dy,132,Math.min(620,innerHeight-15-(startRect?.top||0)))};
           note.appearance=updated;
-          const card=this.cards.get(note.id);
-          if(card){card.style.width=`${updated.width}px`;card.style.height=`${updated.height}px`;}
+          if(paper){paper.style.width=`${updated.width}px`;paper.style.height=`${updated.height}px`;}
           this.positionCard(note.id);
+          if(mode==='resize' && startRect && paper){
+            // When the chosen source-relative placement reflows with width,
+            // compensate offsets to keep the actual TOP-LEFT corner fixed.
+            const adjusted=paper.getBoundingClientRect();
+            updated={...updated,offsetX:updated.offsetX+startRect.left-adjusted.left,
+              offsetY:updated.offsetY+startRect.top-adjusted.top};
+            note.appearance=updated;this.positionCard(note.id);
+          }
         };
         const finish=(e:PointerEvent)=>{
           if(e.pointerId!==event.pointerId)return;
@@ -793,9 +920,10 @@ namespace JP {
       Object.assign(old,fresh);this.knownRevisions.set(fresh.id,fresh.revision||0);
       const paper=this.cards.get(fresh.id);
       if(paper){
-        const editor=paper.querySelector<HTMLTextAreaElement>('.note-editor');if(editor)editor.value=fresh.text;
-        this.updatePreview(paper,old);
+        const editor=paper.querySelector<HTMLElement>('.note-editor');
+        if(editor){renderMarkdown(editor,fresh.text);editor.dataset.empty=String(!fresh.text.trim());}
         paper.style.setProperty('--paper',COLOR_HEX[appearance(fresh).color]);
+        paper.style.setProperty('--jp-font-size',this.fontPixels(appearance(fresh).fontSize));
         paper.style.width=`${appearance(fresh).width}px`;paper.style.height=`${appearance(fresh).height}px`;
       }
       this.refreshAnchors();

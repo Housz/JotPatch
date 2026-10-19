@@ -15,9 +15,11 @@ namespace JP {
 
   export type NoteColor = 'yellow' | 'pink' | 'green' | 'blue' | 'purple' | 'gray';
   export type SelectionTrigger = 'always' | 'alt' | 'off';
+  export type NoteFontSize = 'sm' | 'md' | 'lg';
 
   export interface NoteAppearance {
     color: NoteColor;
+    fontSize: NoteFontSize;
     width: number;
     height: number;
     offsetX: number;

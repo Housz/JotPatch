@@ -2,7 +2,11 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "none",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "strict": true,
     "skipLibCheck": true,
     "outFile": "dist/content.js",
@@ -14,6 +18,8 @@
     "src/content/page-key.ts",
     "src/content/anchor.ts",
     "src/content/conversation.ts",
+    "src/content/markdown.ts",
+    "src/content/conversation-index.ts",
     "src/content/repository.ts",
     "src/content/paper-styles.ts",
     "src/content/app.ts",
