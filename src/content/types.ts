@@ -37,6 +37,12 @@ namespace JP {
     // Optional stable turn ID, captured only after matching a real prompt.
     // Lets the rail retain an accurate group when virtualized DOM unloads.
     conversationTurnId?: string;
+    /** Optional absolute placement hints; backward-compatible with old notes. */
+    spatial?: {
+      withinTurnProgress?: number;
+      pageProgress?: number;
+      confidence: 'geometry' | 'text' | 'estimated';
+    };
     text: string;
     appearance?: Partial<NoteAppearance>;
     createdAt: number;

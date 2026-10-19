@@ -71,7 +71,7 @@ test('stage 1.8 WYSIWYG editor and passive navigation stay local-first', () => {
 
 
 test('0.1.7 rejects missing or stale anchored ranges before showing papers', () => {
-  assert.equal(manifest.version, '0.1.10');
+  assert.equal(manifest.version, '0.1.11');
   const app = readFileSync('src/content/app.ts', 'utf8');
   assert.ok(app.includes('private liveMatch(note:Note):Match|null'));
   assert.ok(app.includes('if(!match||!rect)'));
@@ -81,44 +81,29 @@ test('0.1.7 rejects missing or stale anchored ranges before showing papers', () 
 });
 
 
-test('navigation is passive and has individual note markers with one-way unpin', () => {
+test('spatial rail keeps all note markers, one-way unpin and no new permissions', () => {
   const app=readFileSync('src/content/app.ts','utf8');
-  assert.ok(!app.includes('scanOlderTurns'));
-  assert.ok(!app.includes('scan-history'));
-  assert.ok(!app.includes('jp-note-popover'));
-  for(const name of ['associateNotesToTurns','addRailNote','applyRailLayout','setRailFocus',
-    'unpinNote','undoLastAction','rail-loose','conversationTurnId']) assert.ok(app.includes(name),name);
   const css=readFileSync('src/content/paper-styles.ts','utf8');
+  const layout=readFileSync('src/content/rail-layout.ts','utf8');
+  for (const name of ['associateNotesToTurns','spatialProgress','pageProgress','addRailNote',
+      'applyRailLayout','handleRailPointer','applyRailFisheye','resetRailFisheye',
+      'unpinNote','undoLastAction','rail-loose','conversationTurnId'])
+    assert.ok(app.includes(name),name);
   assert.match(css,/\.rail-head\{[^}]*left:50%;transform:translateX\(-50%\)/);
   assert.match(css,/\.note-entry\.nested/);
+  assert.match(css,/\.rail-track\.fisheye/);
+  assert.match(css,/\.rail-pin\.missing\{border:1px dashed/);
+  assert.ok(!app.includes('scanOlderTurns'));
+  assert.ok(!app.includes('addRailOverview'));
+  assert.ok(!app.includes('jp-rail-lens'));
+  assert.ok(!layout.includes('OVERVIEW_NOTE_THRESHOLD'));
   assert.equal(manifest.host_permissions,undefined);
 });
 
-
-test('0.1.9 stable dense hover and note color in virtualized pages', () => {
-  const app=readFileSync('src/content/app.ts','utf8');
-  const css=readFileSync('src/content/paper-styles.ts','utf8');
-  assert.equal(manifest.version,'0.1.10');
-  for(const name of ['jp-rail-lens','showRailLens','scheduleRailDismiss','clearRailLens'])
-    assert.ok(app.includes(name),name);
-  assert.ok(app.includes('button.style.background=COLOR_HEX[appearance(note).color]'));
-  assert.match(css,/\.rail-lens\{/);
-  assert.match(css,/\.rail-pin\.missing\{border:1px dashed/);
-  assert.ok(!css.includes('.rail-pin.missing{background:#a9a9a9'));
-  const layout=readFileSync('src/content/rail-layout.ts','utf8');
-  assert.ok(!layout.includes('focusedTurn'));
-});
-
-
-test('v0.1.10 renders visible multicolor summaries and has no global-only hover gate',()=>{
-  const app=readFileSync('src/content/app.ts','utf8');
-  const css=readFileSync('src/content/paper-styles.ts','utf8');
-  const layout=readFileSync('src/content/rail-layout.ts','utf8');
-  for(const token of ['addRailOverview','rail-overview-stripe','groupPageRailPoints',
-    'compactGroups.has(turn.id)','setRailFocus(groupId)'])
-    assert.ok((app+layout+css).includes(token),token);
-  assert.match(css,/\.rail-overview\{/);
-  assert.match(css,/\.rail-overview-stripe\{/);
-  assert.match(layout,/OVERVIEW_NOTE_THRESHOLD = 4/);
-  assert.ok(!app.includes('if(this.railLayoutBase?.dense && button.closest'));
+test('new spatial hints are optional; old note schema and colors are preserved', () => {
+  const types=readFileSync('src/content/types.ts','utf8');
+  assert.match(types,/spatial\?:\s*\{/);
+  assert.match(types,/withinTurnProgress\?: number/);
+  assert.ok(content.includes('jotpatch:note:v1:'));
+  assert.match(readFileSync('src/content/paper-styles.ts','utf8'),/\.rail-pin\.missing\{border:1px dashed/);
 });
