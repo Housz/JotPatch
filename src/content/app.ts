@@ -38,6 +38,8 @@ namespace JP {
     private observer!: MutationObserver;
     private pendingRange: Range | null = null;
     private openIds = new Set<string>();
+    // Only a direct user action may open a paper with an unresolved text anchor.
+    private explicitlyDetachedIds = new Set<string>();
     private cards = new Map<string, HTMLElement>();
     private visible = true;
     private launcherOpen = false;
@@ -209,7 +211,7 @@ namespace JP {
       this.page = next;
       this.pendingRange = null;
       this.$<HTMLElement>('#jp-bubble').hidden = true;
-      this.openIds.clear(); this.cards.clear(); this.$<HTMLElement>('#jp-cards').replaceChildren();
+      this.openIds.clear(); this.explicitlyDetachedIds.clear(); this.cards.clear(); this.$<HTMLElement>('#jp-cards').replaceChildren();
       this.listOpen = false;
       this.stopHistoryScan = true;
       this.conversationIndex.reset();
@@ -608,9 +610,25 @@ namespace JP {
         this.updateActiveTurn();
       });
     }
+    /** A virtualized conversation may detach a Range before MutationObserver reindexes it.
+     *  Never treat a stale or missing text match as a screen-positioned page note. */
+    private liveMatch(note:Note):Match|null {
+      if(!note.anchor)return null;
+      const match=this.matches.get(note.id);
+      if(!match)return null;
+      const {range}=match;
+      if(!range.startContainer.isConnected||!range.endContainer.isConnected)return null;
+      // Fast identity check for the common case: the whole quote is in one
+      // text node. React sometimes rewrites an existing Text node in place.
+      if(range.startContainer===range.endContainer && range.startContainer.nodeType===Node.TEXT_NODE &&
+         (range.startContainer as Text).data.slice(range.startOffset,range.endOffset)!==note.anchor.exact)return null;
+      return match;
+    }
     private positionMarkers(): void {
+      const notesById=new Map(this.notes.map(note=>[note.id,note]));
       for (const marker of Array.from(this.shadow.querySelectorAll<HTMLButtonElement>('.marker'))) {
-        const range=this.matches.get(marker.dataset.noteId||'')?.range;
+        const note=notesById.get(marker.dataset.noteId||'');
+        const range=note&&this.liveMatch(note)?.range;
         const rect=range&&visibleRect(range);
         if (!rect||rect.bottom<0||rect.top>innerHeight||rect.right<0||rect.left>innerWidth) {
           marker.hidden=true; continue;
@@ -621,18 +639,24 @@ namespace JP {
       }
     }
     private goTo(noteId: string, show=true): void {
-      const match=this.matches.get(noteId);
+      const note=this.notes.find(n=>n.id===noteId);
+      if(!note)return;
+      const match=this.liveMatch(note);
       if (match) {
         const node=match.range.startContainer;
         const target=node.nodeType===Node.ELEMENT_NODE ? node as Element : node.parentElement;
         target?.scrollIntoView({behavior:'smooth',block:'center'});
         this.schedulePosition();
-      } else if(this.notes.find(n=>n.id===noteId)?.anchor) this.toast('原文暂时未找到，便签仍已保存');
-      if(show) this.showCard(noteId);
+      } else if(note.anchor) this.toast('原文暂时未找到，便签仍已保存');
+      // An explicit Dock/list click is allowed to open an orphaned note for
+      // editing. Passive DOM mutations and scrolls are NEVER allowed to do so.
+      if(show) this.showCard(noteId,false,!!note.anchor&&!match);
     }
 
-    private showCard(noteId: string, focus=false): void {
+    private showCard(noteId: string, focus=false, openDetached=false): void {
       const note=this.notes.find(n=>n.id===noteId); if(!note) return;
+      if(openDetached)this.explicitlyDetachedIds.add(noteId);
+      else this.explicitlyDetachedIds.delete(noteId);
       let paper=this.cards.get(noteId);
       if(!paper) { paper=this.makePaper(note); this.cards.set(noteId,paper); this.$<HTMLElement>('#jp-cards').appendChild(paper); }
       this.openIds.add(noteId);
@@ -643,6 +667,7 @@ namespace JP {
     private closeCard(noteId: string): void {
       void this.saveNow(noteId);
       this.openIds.delete(noteId);
+      this.explicitlyDetachedIds.delete(noteId);
       this.cards.get(noteId)?.remove(); this.cards.delete(noteId);
     }
 
@@ -826,14 +851,31 @@ namespace JP {
         handle.addEventListener('pointercancel',finish);
       });
     }
+    private concealCard(card:HTMLElement):void {
+      if(card.hidden)return;
+      // Prevent an editor detached by React virtualization from retaining an
+      // invisible keyboard focus, and flush pending input through blur/save.
+      const active=this.shadow.activeElement;
+      if(active instanceof HTMLElement && card.contains(active))active.blur();
+      card.hidden=true;
+    }
     private positionCard(noteId:string):void {
       const card=this.cards.get(noteId),note=this.notes.find(n=>n.id===noteId);
       if(!card||!note||!this.openIds.has(noteId))return;
       const dimensions=appearance(note);
-      const match=this.matches.get(noteId);
+      const match=this.liveMatch(note);
       const rect=match&&visibleRect(match.range);
-      if(note.anchor && match && (!rect||rect.bottom<0||rect.top>innerHeight||rect.right<0||rect.left>innerWidth)){
-        card.hidden=true;return;
+      if(note.anchor){
+        if(!match||!rect){
+          // A missing DOM anchor is NOT a page-level note. Never use the
+          // fallback viewport position unless the user explicitly opened it.
+          if(!this.explicitlyDetachedIds.has(noteId)){this.concealCard(card);return;}
+        }else{
+          this.explicitlyDetachedIds.delete(noteId);
+          if(rect.bottom<0||rect.top>innerHeight||rect.right<0||rect.left>innerWidth){
+            this.concealCard(card);return;
+          }
+        }
       }
       card.hidden=false;
       const width=Math.min(dimensions.width,Math.max(180,innerWidth-14));

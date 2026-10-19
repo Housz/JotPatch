@@ -42,7 +42,6 @@ test('right-click action and selection-trigger preference are included', () => {
 });
 
 test('stage 1.5 conversation adapters and unified rail compile without wider permissions', () => {
-  assert.equal(manifest.version, '0.1.6');
   assert.equal(manifest.host_permissions, undefined);
   for (const symbol of ['collectConversation', 'turnForRange', 'rail-turn', 'jp-turn-preview']) {
     assert.ok(content.includes(symbol), `${symbol} missing in bundled content script`);
@@ -68,4 +67,15 @@ test('stage 1.6 WYSIWYG editor and history navigation stay local-first', () => {
   assert.ok(md.includes('markdownFromEditor') && md.includes('renderMarkdown'));
   assert.ok(ui.includes('navigator.clipboard.writeText(note.text)'));
   assert.equal(manifest.host_permissions, undefined);
+});
+
+
+test('0.1.7 rejects missing or stale anchored ranges before showing papers', () => {
+  assert.equal(manifest.version, '0.1.7');
+  const app = readFileSync('src/content/app.ts', 'utf8');
+  assert.ok(app.includes('private liveMatch(note:Note):Match|null'));
+  assert.ok(app.includes('if(!match||!rect)'));
+  assert.ok(app.includes('explicitlyDetachedIds.has(noteId)'));
+  assert.ok(app.includes('range.startContainer.isConnected'));
+  assert.ok(app.includes('this.concealCard(card)'));
 });
