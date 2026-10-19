@@ -2,7 +2,7 @@ namespace JP {
   export const PAPER_STYLES = `
     :host{all:initial;font:13px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif;color:#37342e}
     *,*::before,*::after{box-sizing:border-box} [hidden]{display:none!important}
-    button{font:inherit;border:0;cursor:pointer} button:focus-visible,textarea:focus-visible{outline:2px solid #7461ae;outline-offset:2px}
+    button{font:inherit;border:0;cursor:pointer} button:focus-visible,[contenteditable]:focus-visible{outline:2px solid #7461ae;outline-offset:2px}
     .launcher{position:fixed;top:14px;right:42px;display:flex;gap:3px;align-items:center;padding:3px;
       background:#fffdf8f0;border:1px solid #e8e3d8;border-radius:20px;box-shadow:0 4px 16px #0002;pointer-events:auto}
     .launcher button{width:29px;height:29px;border-radius:50%;background:transparent;color:#5f5b51;font-size:17px}
@@ -48,37 +48,66 @@ namespace JP {
     .entry small{display:block;color:#8b8477;font-size:11px}
     .marker{position:fixed;z-index:4;width:19px;height:19px;pointer-events:auto;border-radius:50%;padding:0;
       box-shadow:0 2px 7px #0003;color:#755d24;font-size:11px;border:1px solid #fff9}
-    .paper{--paper:#fff1b8;position:fixed;z-index:8;background:var(--paper);border:1px solid #00000010;
-      border-radius:5px;box-shadow:0 5px 18px #0002;pointer-events:auto;min-width:180px;min-height:132px;overflow:hidden}
+    .rail-note-cluster{width:16px!important;height:16px!important;left:-2px!important;
+      font-size:10px;font-weight:650;color:#413626;text-align:center;line-height:14px}
+    .note-popover{position:fixed;right:47px;width:min(235px,75vw);max-height:48vh;overflow-y:auto;
+      padding:6px;pointer-events:auto;background:#fffefa;border-radius:9px;border:1px solid #e7dfcf;
+      box-shadow:0 7px 22px #0002;z-index:40}
+    .cluster-title{font-size:11px;padding:7px 9px;color:#89816f}
+    .cluster-item{display:flex;gap:8px;align-items:center;width:100%;padding:9px 7px;border-radius:5px;
+      background:transparent;text-align:left;font-size:12px;color:#37332c}
+    .cluster-item:hover{background:#f4f1e9}
+    .cluster-item span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .cluster-item .dot{width:9px;height:9px;flex:0 0 9px;border-radius:50%}
+    .scan-history{display:block;width:calc(100% - 12px);margin:4px 6px 7px;padding:7px;
+      font-size:11px;border-radius:6px;color:#635c4d;background:#f1ece3}
+    .scan-history:hover{background:#eae2d3}
+    .paper{--paper:#fff1b8;--jp-font-size:14px;position:fixed;z-index:8;display:flex;flex-direction:column;
+      background:var(--paper);border:1px solid #0000000d;border-radius:4px;box-shadow:0 5px 18px #0002;
+      pointer-events:auto;min-width:180px;min-height:132px;overflow:hidden}
     .paper:focus-within{box-shadow:0 6px 24px #0003}.paper:hover{box-shadow:0 6px 21px #0003}
-    .note-editor,.note-preview{display:block;width:100%;height:100%;border:0;outline:none!important;resize:none;
-      background:transparent;color:#393329;font:14px/1.5 system-ui,-apple-system,'Segoe UI',sans-serif;
-      padding:30px 13px 26px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
-    .note-editor::placeholder{color:#8d8270aa}.note-editor{caret-color:#534529}
-    .note-preview{cursor:text}.note-preview p{margin:0 0 .25em}.note-preview ul,.note-preview ol{margin:0 0 .25em;padding-left:22px}
-    .note-preview li{padding:0}.note-preview strong{font-weight:700}.note-preview em{font-style:italic}
-    .note-tools{position:absolute;top:4px;left:4px;right:4px;display:flex;align-items:center;justify-content:space-between;
-      opacity:.12;transition:opacity .12s ease;pointer-events:none}
-    .paper:hover .note-tools,.paper:focus-within .note-tools{opacity:1;pointer-events:auto}
-    .tool-group{display:flex;gap:1px;align-items:center}.note-tools button,.note-actions button{padding:0;width:23px;height:23px;
-      border-radius:5px;background:transparent;color:#625743;font-size:13px;display:inline-flex;justify-content:center;align-items:center}
-    .note-tools button:hover,.note-actions button:hover{background:#00000013}
-    .drag-handle{cursor:grab;touch-action:none;user-select:none}.drag-handle:active{cursor:grabbing}
-    .note-actions{position:absolute;bottom:3px;left:9px;right:18px;display:flex;align-items:center;gap:2px;
-      opacity:0;transition:opacity .12s ease;pointer-events:none}
-    .paper:hover .note-actions,.paper:focus-within .note-actions{opacity:.82;pointer-events:auto}
-    .note-actions button{width:21px;height:20px;font-size:12px}.note-actions .spacer{flex:1}
-    .resize-handle{position:absolute;bottom:0;right:0;width:18px;height:18px;cursor:nwse-resize;
-      touch-action:none;opacity:.15;background:linear-gradient(135deg,transparent 55%,#736a5666 55%,#736a5666 60%,transparent 60%)}
+    .paper-head,.paper-foot{width:100%;display:flex;align-items:center;flex:0 0 28px;
+      padding:2px 5px;user-select:none;border-color:transparent;transition:background .13s ease}
+    .paper-head{justify-content:space-between;cursor:grab;touch-action:none}
+    .paper-head:active{cursor:grabbing}
+    .paper-foot{justify-content:flex-start;gap:2px;flex:0 0 27px}
+    .paper:hover .paper-head,.paper:focus-within .paper-head{background:#00000006;border-bottom:1px solid #0000000b}
+    .paper:hover .paper-foot,.paper:focus-within .paper-foot{background:#00000006;border-top:1px solid #0000000b}
+    .paper-grab{width:20px;font-size:15px;line-height:1;text-align:center;color:#6d625433;pointer-events:none}
+    .paper-head-actions{display:flex;gap:1px;opacity:0;pointer-events:auto;transition:opacity .14s ease}
+    .paper-foot>button,.paper-foot>.save-indicator{opacity:0;pointer-events:auto;transition:opacity .14s ease}
+    .paper:hover .paper-head-actions,.paper:focus-within .paper-head-actions,
+    .paper:hover .paper-foot>button,.paper:focus-within .paper-foot>button,
+    .paper[data-save=conflict] .save-indicator,.paper[data-save=error] .save-indicator{
+      opacity:.9;pointer-events:auto}
+    .paper-head button,.paper-foot button{padding:0;width:25px;height:22px;border-radius:4px;background:transparent;
+      color:#625743;font-size:13px;display:inline-flex;align-items:center;justify-content:center}
+    .paper-head button:hover,.paper-foot button:hover{background:#00000014}
+    .paper-foot-spacer{flex:1}
+    .note-editor{display:block;min-height:0;flex:1;width:100%;border:0;outline:none!important;
+      background:transparent;color:#393329;position:relative;font:var(--jp-font-size)/1.5 system-ui,-apple-system,'Segoe UI',sans-serif;
+      padding:7px 12px 8px;overflow-y:auto;overflow-x:hidden;white-space:pre-wrap;overflow-wrap:anywhere;
+      caret-color:#534529;user-select:text}
+    .note-editor[data-empty="true"]::before{content:attr(data-placeholder);position:absolute;top:7px;left:12px;
+      pointer-events:none;color:#8c806c86}
+    .note-editor p,.note-editor div{margin:0;min-height:1.5em}
+    .note-editor ul,.note-editor ol{margin:0 0 3px;padding-left:21px}
+    .note-editor li{margin:0;min-height:1.5em}
+    .note-editor b,.note-editor strong{font-weight:700}.note-editor i,.note-editor em{font-style:italic}
+    .resize-handle{position:absolute;bottom:0;right:0;width:15px;height:15px;cursor:nwse-resize;
+      touch-action:none;opacity:.12;background:linear-gradient(135deg,transparent 54%,#736a5666 55%,#736a5666 61%,transparent 62%)}
     .paper:hover .resize-handle,.paper:focus-within .resize-handle{opacity:.75}
-    .note-menu{position:absolute;right:5px;top:29px;width:190px;padding:7px;background:#fffcf4;border:1px solid #e2d9c4;
-      border-radius:8px;box-shadow:0 7px 21px #0003;z-index:4}
-    .colors{display:flex;gap:5px;padding:6px 4px 10px}.colors button{width:22px;height:22px;border-radius:50%;border:1px solid #0002;padding:0}
+    .note-menu{position:absolute;right:5px;top:29px;width:183px;padding:8px;background:#fffcf4;
+      border:1px solid #e2d9c4;border-radius:8px;box-shadow:0 7px 21px #0003;z-index:8}
+    .colors{display:flex;gap:5px;padding:6px 4px 9px}.colors button{width:21px;height:21px;border-radius:50%;border:1px solid #0002;padding:0}
     .colors button[aria-pressed=true]{outline:2px solid #7567a1;outline-offset:2px}
+    .font-label{font-size:11px;color:#857b68;margin:4px 4px 7px}
+    .font-choices{display:flex;gap:4px;margin:0 3px 9px}
+    .font-size{flex:1;background:transparent;border:1px solid #ded6c7;border-radius:5px;padding:5px;color:#595044}
+    .font-size[aria-pressed=true]{background:#e6decf;border-color:#c8b9a2}
     .menu-action{display:block;text-align:left;width:100%;padding:7px;border-radius:5px;background:transparent;color:#4b463b}
     .menu-action:hover{background:#eee8d8}.menu-action.danger{color:#9b4440}
-    .save-indicator{position:absolute;bottom:7px;right:28px;font-size:11px;opacity:0;color:#625847;pointer-events:none}
-    .paper[data-save=error] .save-indicator,.paper[data-save=conflict] .save-indicator{opacity:1;color:#9b4141}
+    .save-indicator{font-size:10px;color:#9b4141;pointer-events:none}
     .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:50;pointer-events:auto;
       background:#34302c;color:#fff;border-radius:8px;padding:9px 12px;box-shadow:0 3px 14px #0003;
       display:flex;gap:12px;align-items:center;max-width:min(440px,92vw);font-size:12px}

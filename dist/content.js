@@ -201,7 +201,6 @@ var JP;
 (function (JP) {
     const CHATGPT = {
         site: 'chatgpt',
-        // Support multiple observed generations of markup; these are not official APIs.
         selectors: [
             'article[data-turn="user"]', '[data-turn="user"]',
             '[data-message-author-role="user"]', '[data-user-message-bubble]',
@@ -210,18 +209,23 @@ var JP;
         canonical(node) {
             return node.closest('article[data-turn="user"], article[data-testid^="conversation-turn-"], [data-turn-key]') || node;
         },
-        textSource(node) {
-            return node.querySelector('[data-user-message-bubble], .user-message-bubble-color, [data-message-author-role="user"] .whitespace-pre-wrap, [data-message-author-role="user"], [data-testid="user-message"]') || node;
+        prompt(node, wrapper) {
+            // The wrapper can contain *both* user and assistant content. Scroll to
+            // the prompt bubble itself, not the wrapper midpoint.
+            const bubble = wrapper.querySelector('[data-user-message-bubble], [data-testid="user-message"]');
+            if (bubble && (bubble.contains(node) || node.contains(bubble)))
+                return bubble;
+            if (node.matches('[data-user-message-bubble], [data-testid="user-message"]'))
+                return node;
+            return node.querySelector('[data-user-message-bubble], .user-message-bubble-color, .whitespace-pre-wrap') || node;
         }
     };
     const GEMINI = {
         site: 'gemini',
         selectors: 'user-query, [data-test-id="user-query"], [data-testid="user-query"]',
-        canonical(node) {
-            return node.closest('user-query') || node;
-        },
-        textSource(node) {
-            return node.querySelector('.query-text, .user-query-content, .query-content, [data-test-id="query-text"], .query-text-line, .text-query') || node;
+        canonical(node) { return node.closest('user-query') || node; },
+        prompt(node, wrapper) {
+            return wrapper.querySelector('.query-text, .user-query-content, .query-content, [data-test-id="query-text"], .query-text-line, .text-query') || node;
         }
     };
     function conversationSite(url = new URL(location.href)) {
@@ -234,80 +238,107 @@ var JP;
     }
     JP.conversationSite = conversationSite;
     function compactText(node) {
-        // innerText excludes display:none labels where supported and preserves visible lines.
-        const readable = node.innerText || node.textContent || '';
-        return readable.replace(/\s+/g, ' ').trim().slice(0, 110);
+        return (node.innerText || node.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 110);
     }
-    function isCandidateUsable(node) {
-        if (!node.isConnected || node.closest('nav, aside, [role="dialog"], [aria-hidden="true"], [data-jotpatch-exclude]'))
-            return false;
-        // getClientRects is non-empty for scroll-offscreen nodes, but empty for display:none.
-        return node.getClientRects().length > 0;
+    function usable(node) {
+        return node.isConnected && !node.closest('nav, aside, [role="dialog"], [aria-hidden="true"], [data-jotpatch-exclude]') &&
+            node.getClientRects().length > 0;
     }
     function sourceId(node) {
-        for (const candidate of [node, node.querySelector('[data-message-id], [data-turn-id], [data-turn-key]')]) {
+        const candidates = [node, node.querySelector('[data-message-id], [data-turn-id], [data-turn-key]')];
+        for (const candidate of candidates) {
             if (!candidate)
                 continue;
-            for (const attr of ['data-turn-id', 'data-turn-key', 'data-message-id']) {
-                const value = candidate.getAttribute(attr);
+            for (const key of ['data-turn-key', 'data-turn-id', 'data-message-id']) {
+                const value = candidate.getAttribute(key);
                 if (value && value.length <= 200)
-                    return `${attr}:${value}`;
+                    return `${key}:${value}`;
             }
         }
+        const identifier = node.id;
+        // Stable-looking public HTML IDs are a fallback for Gemini user-query.
+        // Do not cache arbitrary ephemeral React-generated IDs.
+        if (identifier && identifier.length <= 160 && /(?:turn|message|query|conversation)/i.test(identifier))
+            return `id:${identifier}`;
         return null;
     }
-    function nativeChatGPTRailPresent() {
-        // Conservative opt-out: only recognize explicitly identified native navigation.
-        // A generic <nav> might be the history sidebar and must NOT disable JotPatch.
-        const native = document.querySelector('[data-testid="conversation-timeline"], [data-testid="conversation-navigation"], ' +
-            '[aria-label="Conversation navigation"], [aria-label="对话导航"]');
-        return !!native && native.getClientRects().length > 0;
+    function nativeRail() {
+        const node = document.querySelector('[data-testid="conversation-timeline"], [data-testid="conversation-navigation"], [aria-label="Conversation navigation"], [aria-label="对话导航"]');
+        return !!node && node.getClientRects().length > 0;
     }
+    function conversationScrollRoot(element) {
+        let ancestor = element.parentElement;
+        while (ancestor && ancestor !== document.body && ancestor !== document.documentElement) {
+            const style = getComputedStyle(ancestor);
+            if (/(auto|scroll)/.test(style.overflowY) && ancestor.scrollHeight > ancestor.clientHeight + 15)
+                return ancestor;
+            ancestor = ancestor.parentElement;
+        }
+        return document.scrollingElement || document.documentElement;
+    }
+    JP.conversationScrollRoot = conversationScrollRoot;
+    function conversationScrollHint(element) {
+        const root = conversationScrollRoot(element);
+        if (root === document.scrollingElement)
+            return root.scrollTop + element.getBoundingClientRect().top;
+        return root.scrollTop + element.getBoundingClientRect().top - root.getBoundingClientRect().top;
+    }
+    JP.conversationScrollHint = conversationScrollHint;
+    function navigateToPrompt(element) {
+        const root = conversationScrollRoot(element);
+        const top = element.getBoundingClientRect().top;
+        const rootTop = root === document.scrollingElement ? 0 : root.getBoundingClientRect().top;
+        // Align the precise user message bubble near the TOP, not the answer midpoint.
+        const desired = Math.max(0, root.scrollTop + top - rootTop - 86);
+        root.scrollTo({ top: desired, behavior: 'auto' });
+    }
+    JP.navigateToPrompt = navigateToPrompt;
     function collectConversation(url = new URL(location.href)) {
         const site = conversationSite(url);
-        const empty = { site, turns: [], nativeRailPresent: false };
         if (!site || !document.body)
-            return empty;
+            return { site, turns: [], nativeRailPresent: false };
         const adapter = site === 'chatgpt' ? CHATGPT : GEMINI;
         const seen = new Set();
         const turns = [];
         for (const candidate of Array.from(document.querySelectorAll(adapter.selectors))) {
             const wrapper = adapter.canonical(candidate);
-            if (seen.has(wrapper) || !isCandidateUsable(wrapper))
+            if (seen.has(wrapper))
+                continue;
+            const prompt = adapter.prompt(candidate, wrapper);
+            if (!usable(prompt))
                 continue;
             seen.add(wrapper);
-            const textTarget = adapter.textSource(wrapper);
-            const preview = compactText(textTarget) || '非文本提问';
-            const rawId = sourceId(wrapper) || sourceId(candidate);
-            // The fallback is intentionally ephemeral; never store it as a note anchor.
-            turns.push({ id: rawId || `ordinal:${turns.length}`, order: turns.length, preview, element: wrapper });
-            // Protect against pathological site markup with thousands of repeated nodes.
+            const stableId = sourceId(wrapper) || sourceId(candidate) || sourceId(prompt) || undefined;
+            turns.push({ id: stableId || `ordinal:${turns.length}`, order: turns.length,
+                preview: compactText(prompt) || '非文本提问', element: prompt, stableId,
+                scrollHint: conversationScrollHint(prompt) });
             if (turns.length >= 1200)
                 break;
         }
-        // querySelectorAll traverses in document order, even with multiple selector alternatives.
-        // Duplicate upstream IDs are not trusted as stable identities.
         const used = new Set();
         for (const turn of turns) {
-            if (used.has(turn.id))
+            if (used.has(turn.id)) {
+                turn.stableId = undefined;
                 turn.id = `ordinal:${turn.order}`;
+            }
             used.add(turn.id);
         }
-        return { site, turns, nativeRailPresent: site === 'chatgpt' && nativeChatGPTRailPresent() };
+        return { site, turns, nativeRailPresent: site === 'chatgpt' && nativeRail() };
     }
     JP.collectConversation = collectConversation;
-    /** Associate notes with the most recent preceding user question, not the quote text. */
     function turnForRange(range, turns) {
         if (!turns.length)
             return null;
         let previous = null;
         const point = range.startContainer;
         for (const turn of turns) {
+            if (!turn.element || !turn.element.isConnected)
+                continue;
             if (turn.element.contains(point))
                 return turn;
             const relation = turn.element.compareDocumentPosition(point);
             if (relation & Node.DOCUMENT_POSITION_DISCONNECTED)
-                return null;
+                continue;
             if (relation & Node.DOCUMENT_POSITION_FOLLOWING)
                 previous = turn;
             else
@@ -319,14 +350,169 @@ var JP;
 })(JP || (JP = {}));
 var JP;
 (function (JP) {
+    /** Minimal, safe Markdown <> rich text boundary: bold, italic, bullets and ordered lists only.
+     * No HTML content is accepted from the clipboard or serialized to storage. */
+    function appendInlineMarkdown(parent, value) {
+        const pieces = value.split(/(\*\*[^*\n]+\*\*|\*[^*\n]+\*)/g);
+        for (const piece of pieces) {
+            if (!piece)
+                continue;
+            if (piece.startsWith('**') && piece.endsWith('**') && piece.length > 4) {
+                const tag = document.createElement('strong');
+                tag.textContent = piece.slice(2, -2);
+                parent.appendChild(tag);
+            }
+            else if (piece.startsWith('*') && piece.endsWith('*') && piece.length > 2) {
+                const tag = document.createElement('em');
+                tag.textContent = piece.slice(1, -1);
+                parent.appendChild(tag);
+            }
+            else
+                parent.appendChild(document.createTextNode(piece));
+        }
+    }
+    function renderMarkdown(editor, markdown) {
+        const fragment = document.createDocumentFragment();
+        let list = null;
+        let kind = '';
+        for (const line of markdown.split('\n')) {
+            const bullet = line.match(/^\s*[-+] (.*)$/);
+            const numbered = line.match(/^\s*\d+\. (.*)$/);
+            const next = bullet ? 'ul' : numbered ? 'ol' : '';
+            if (next) {
+                if (!list || kind !== next) {
+                    list = document.createElement(next);
+                    fragment.appendChild(list);
+                    kind = next;
+                }
+                const li = document.createElement('li');
+                appendInlineMarkdown(li, (bullet || numbered)[1]);
+                if (!li.childNodes.length)
+                    li.appendChild(document.createElement('br'));
+                list.appendChild(li);
+            }
+            else {
+                list = null;
+                kind = '';
+                const p = document.createElement('p');
+                appendInlineMarkdown(p, line);
+                if (!p.childNodes.length)
+                    p.appendChild(document.createElement('br'));
+                fragment.appendChild(p);
+            }
+        }
+        editor.replaceChildren(fragment);
+    }
+    JP.renderMarkdown = renderMarkdown;
+    function richInline(node) {
+        if (node.nodeType === Node.TEXT_NODE)
+            return node.textContent || '';
+        if (node.nodeType !== Node.ELEMENT_NODE)
+            return '';
+        const element = node;
+        if (element.tagName === 'BR')
+            return '\n';
+        const text = Array.from(element.childNodes, richInline).join('');
+        if (!text.trim())
+            return text;
+        if (element.matches('strong,b') || element.style.fontWeight === 'bold' || Number(element.style.fontWeight) >= 600)
+            return `**${text}**`;
+        if (element.matches('em,i') || element.style.fontStyle === 'italic')
+            return `*${text}*`;
+        return text;
+    }
+    /** Serializes only the four supported formats. Nested HTML from paste is never retained. */
+    function markdownFromEditor(editor) {
+        const lines = [];
+        let loose = '';
+        const flush = () => { if (loose) {
+            lines.push(loose);
+            loose = '';
+        } };
+        const visit = (node) => {
+            if (node.nodeType === Node.TEXT_NODE) {
+                loose += node.textContent || '';
+                return;
+            }
+            if (node.nodeType !== Node.ELEMENT_NODE)
+                return;
+            const item = node;
+            if (item.matches('ul,ol')) {
+                flush();
+                const ordered = item.tagName === 'OL';
+                let order = Number(item.getAttribute('start')) || 1;
+                for (const li of Array.from(item.children).filter(x => x.tagName === 'LI')) {
+                    const inner = Array.from(li.childNodes, richInline).join('').replace(/\n+$/, '');
+                    lines.push(`${ordered ? `${order++}.` : '-'} ${inner}`);
+                }
+            }
+            else if (item.matches('p,div')) {
+                // Chromium execCommand can nest UL/OL inside P. Walk nested blocks
+                // instead of flattening the list into plain italic/bold text.
+                const children = Array.from(item.childNodes);
+                if (children.some(x => x instanceof Element && x.matches('ul,ol,p,div'))) {
+                    flush();
+                    children.forEach(visit);
+                    flush();
+                }
+                else {
+                    flush();
+                    lines.push(children.map(richInline).join('').replace(/\n$/, ''));
+                }
+            }
+            else if (item.tagName === 'BR') {
+                flush();
+                lines.push('');
+            }
+            else
+                loose += richInline(item);
+        };
+        Array.from(editor.childNodes).forEach(visit);
+        flush();
+        return lines.join('\n').replace(/\n{3,}$/, '\n\n');
+    }
+    JP.markdownFromEditor = markdownFromEditor;
+})(JP || (JP = {}));
+var JP;
+(function (JP) {
+    /** In-memory navigation cache for DOM virtualization. Does not persist prompt text. */
+    class ConversationIndex {
+        discovered = new Map();
+        reset() { this.discovered.clear(); }
+        combine(snapshot) {
+            const present = new Set();
+            for (const turn of snapshot.turns) {
+                present.add(turn.id);
+                // Only stable site IDs can safely survive unmounts. Repeated prompts
+                // without stable identifiers are ephemeral to avoid false matches.
+                if (turn.stableId)
+                    this.discovered.set(turn.stableId, { ...turn, element: null });
+            }
+            const historical = [];
+            for (const turn of this.discovered.values()) {
+                if (present.has(turn.id))
+                    continue;
+                historical.push({ ...turn, element: null });
+            }
+            const turns = [...snapshot.turns, ...historical].sort((a, b) => (a.scrollHint ?? Infinity) - (b.scrollHint ?? Infinity) || a.id.localeCompare(b.id));
+            turns.forEach((turn, order) => { turn.order = order; });
+            return { ...snapshot, turns };
+        }
+        discoveredCount() { return this.discovered.size; }
+    }
+    JP.ConversationIndex = ConversationIndex;
+})(JP || (JP = {}));
+var JP;
+(function (JP) {
     const PREFIX = 'jotpatch:note:v1:';
     const PREFERENCES_KEY = 'jotpatch:preferences:v1';
     const COLORS = ['yellow', 'pink', 'green', 'blue', 'purple', 'gray'];
-    const DEFAULTS = { color: 'yellow', width: 256, height: 202, offsetX: 0, offsetY: 0 };
+    const DEFAULTS = { color: 'yellow', fontSize: 'md', width: 256, height: 202, offsetX: 0, offsetY: 0 };
     function appearance(note) {
         const style = note.appearance || {};
         return {
             color: COLORS.includes(style.color) ? style.color : DEFAULTS.color,
+            fontSize: style.fontSize === 'sm' || style.fontSize === 'lg' ? style.fontSize : 'md',
             width: Math.min(560, Math.max(180, Number(style.width) || DEFAULTS.width)),
             height: Math.min(620, Math.max(132, Number(style.height) || DEFAULTS.height)),
             offsetX: Number.isFinite(style.offsetX) ? style.offsetX : DEFAULTS.offsetX,
@@ -395,7 +581,7 @@ var JP;
     JP.PAPER_STYLES = `
     :host{all:initial;font:13px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif;color:#37342e}
     *,*::before,*::after{box-sizing:border-box} [hidden]{display:none!important}
-    button{font:inherit;border:0;cursor:pointer} button:focus-visible,textarea:focus-visible{outline:2px solid #7461ae;outline-offset:2px}
+    button{font:inherit;border:0;cursor:pointer} button:focus-visible,[contenteditable]:focus-visible{outline:2px solid #7461ae;outline-offset:2px}
     .launcher{position:fixed;top:14px;right:42px;display:flex;gap:3px;align-items:center;padding:3px;
       background:#fffdf8f0;border:1px solid #e8e3d8;border-radius:20px;box-shadow:0 4px 16px #0002;pointer-events:auto}
     .launcher button{width:29px;height:29px;border-radius:50%;background:transparent;color:#5f5b51;font-size:17px}
@@ -441,37 +627,66 @@ var JP;
     .entry small{display:block;color:#8b8477;font-size:11px}
     .marker{position:fixed;z-index:4;width:19px;height:19px;pointer-events:auto;border-radius:50%;padding:0;
       box-shadow:0 2px 7px #0003;color:#755d24;font-size:11px;border:1px solid #fff9}
-    .paper{--paper:#fff1b8;position:fixed;z-index:8;background:var(--paper);border:1px solid #00000010;
-      border-radius:5px;box-shadow:0 5px 18px #0002;pointer-events:auto;min-width:180px;min-height:132px;overflow:hidden}
+    .rail-note-cluster{width:16px!important;height:16px!important;left:-2px!important;
+      font-size:10px;font-weight:650;color:#413626;text-align:center;line-height:14px}
+    .note-popover{position:fixed;right:47px;width:min(235px,75vw);max-height:48vh;overflow-y:auto;
+      padding:6px;pointer-events:auto;background:#fffefa;border-radius:9px;border:1px solid #e7dfcf;
+      box-shadow:0 7px 22px #0002;z-index:40}
+    .cluster-title{font-size:11px;padding:7px 9px;color:#89816f}
+    .cluster-item{display:flex;gap:8px;align-items:center;width:100%;padding:9px 7px;border-radius:5px;
+      background:transparent;text-align:left;font-size:12px;color:#37332c}
+    .cluster-item:hover{background:#f4f1e9}
+    .cluster-item span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .cluster-item .dot{width:9px;height:9px;flex:0 0 9px;border-radius:50%}
+    .scan-history{display:block;width:calc(100% - 12px);margin:4px 6px 7px;padding:7px;
+      font-size:11px;border-radius:6px;color:#635c4d;background:#f1ece3}
+    .scan-history:hover{background:#eae2d3}
+    .paper{--paper:#fff1b8;--jp-font-size:14px;position:fixed;z-index:8;display:flex;flex-direction:column;
+      background:var(--paper);border:1px solid #0000000d;border-radius:4px;box-shadow:0 5px 18px #0002;
+      pointer-events:auto;min-width:180px;min-height:132px;overflow:hidden}
     .paper:focus-within{box-shadow:0 6px 24px #0003}.paper:hover{box-shadow:0 6px 21px #0003}
-    .note-editor,.note-preview{display:block;width:100%;height:100%;border:0;outline:none!important;resize:none;
-      background:transparent;color:#393329;font:14px/1.5 system-ui,-apple-system,'Segoe UI',sans-serif;
-      padding:30px 13px 26px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
-    .note-editor::placeholder{color:#8d8270aa}.note-editor{caret-color:#534529}
-    .note-preview{cursor:text}.note-preview p{margin:0 0 .25em}.note-preview ul,.note-preview ol{margin:0 0 .25em;padding-left:22px}
-    .note-preview li{padding:0}.note-preview strong{font-weight:700}.note-preview em{font-style:italic}
-    .note-tools{position:absolute;top:4px;left:4px;right:4px;display:flex;align-items:center;justify-content:space-between;
-      opacity:.12;transition:opacity .12s ease;pointer-events:none}
-    .paper:hover .note-tools,.paper:focus-within .note-tools{opacity:1;pointer-events:auto}
-    .tool-group{display:flex;gap:1px;align-items:center}.note-tools button,.note-actions button{padding:0;width:23px;height:23px;
-      border-radius:5px;background:transparent;color:#625743;font-size:13px;display:inline-flex;justify-content:center;align-items:center}
-    .note-tools button:hover,.note-actions button:hover{background:#00000013}
-    .drag-handle{cursor:grab;touch-action:none;user-select:none}.drag-handle:active{cursor:grabbing}
-    .note-actions{position:absolute;bottom:3px;left:9px;right:18px;display:flex;align-items:center;gap:2px;
-      opacity:0;transition:opacity .12s ease;pointer-events:none}
-    .paper:hover .note-actions,.paper:focus-within .note-actions{opacity:.82;pointer-events:auto}
-    .note-actions button{width:21px;height:20px;font-size:12px}.note-actions .spacer{flex:1}
-    .resize-handle{position:absolute;bottom:0;right:0;width:18px;height:18px;cursor:nwse-resize;
-      touch-action:none;opacity:.15;background:linear-gradient(135deg,transparent 55%,#736a5666 55%,#736a5666 60%,transparent 60%)}
+    .paper-head,.paper-foot{width:100%;display:flex;align-items:center;flex:0 0 28px;
+      padding:2px 5px;user-select:none;border-color:transparent;transition:background .13s ease}
+    .paper-head{justify-content:space-between;cursor:grab;touch-action:none}
+    .paper-head:active{cursor:grabbing}
+    .paper-foot{justify-content:flex-start;gap:2px;flex:0 0 27px}
+    .paper:hover .paper-head,.paper:focus-within .paper-head{background:#00000006;border-bottom:1px solid #0000000b}
+    .paper:hover .paper-foot,.paper:focus-within .paper-foot{background:#00000006;border-top:1px solid #0000000b}
+    .paper-grab{width:20px;font-size:15px;line-height:1;text-align:center;color:#6d625433;pointer-events:none}
+    .paper-head-actions{display:flex;gap:1px;opacity:0;pointer-events:auto;transition:opacity .14s ease}
+    .paper-foot>button,.paper-foot>.save-indicator{opacity:0;pointer-events:auto;transition:opacity .14s ease}
+    .paper:hover .paper-head-actions,.paper:focus-within .paper-head-actions,
+    .paper:hover .paper-foot>button,.paper:focus-within .paper-foot>button,
+    .paper[data-save=conflict] .save-indicator,.paper[data-save=error] .save-indicator{
+      opacity:.9;pointer-events:auto}
+    .paper-head button,.paper-foot button{padding:0;width:25px;height:22px;border-radius:4px;background:transparent;
+      color:#625743;font-size:13px;display:inline-flex;align-items:center;justify-content:center}
+    .paper-head button:hover,.paper-foot button:hover{background:#00000014}
+    .paper-foot-spacer{flex:1}
+    .note-editor{display:block;min-height:0;flex:1;width:100%;border:0;outline:none!important;
+      background:transparent;color:#393329;position:relative;font:var(--jp-font-size)/1.5 system-ui,-apple-system,'Segoe UI',sans-serif;
+      padding:7px 12px 8px;overflow-y:auto;overflow-x:hidden;white-space:pre-wrap;overflow-wrap:anywhere;
+      caret-color:#534529;user-select:text}
+    .note-editor[data-empty="true"]::before{content:attr(data-placeholder);position:absolute;top:7px;left:12px;
+      pointer-events:none;color:#8c806c86}
+    .note-editor p,.note-editor div{margin:0;min-height:1.5em}
+    .note-editor ul,.note-editor ol{margin:0 0 3px;padding-left:21px}
+    .note-editor li{margin:0;min-height:1.5em}
+    .note-editor b,.note-editor strong{font-weight:700}.note-editor i,.note-editor em{font-style:italic}
+    .resize-handle{position:absolute;bottom:0;right:0;width:15px;height:15px;cursor:nwse-resize;
+      touch-action:none;opacity:.12;background:linear-gradient(135deg,transparent 54%,#736a5666 55%,#736a5666 61%,transparent 62%)}
     .paper:hover .resize-handle,.paper:focus-within .resize-handle{opacity:.75}
-    .note-menu{position:absolute;right:5px;top:29px;width:190px;padding:7px;background:#fffcf4;border:1px solid #e2d9c4;
-      border-radius:8px;box-shadow:0 7px 21px #0003;z-index:4}
-    .colors{display:flex;gap:5px;padding:6px 4px 10px}.colors button{width:22px;height:22px;border-radius:50%;border:1px solid #0002;padding:0}
+    .note-menu{position:absolute;right:5px;top:29px;width:183px;padding:8px;background:#fffcf4;
+      border:1px solid #e2d9c4;border-radius:8px;box-shadow:0 7px 21px #0003;z-index:8}
+    .colors{display:flex;gap:5px;padding:6px 4px 9px}.colors button{width:21px;height:21px;border-radius:50%;border:1px solid #0002;padding:0}
     .colors button[aria-pressed=true]{outline:2px solid #7567a1;outline-offset:2px}
+    .font-label{font-size:11px;color:#857b68;margin:4px 4px 7px}
+    .font-choices{display:flex;gap:4px;margin:0 3px 9px}
+    .font-size{flex:1;background:transparent;border:1px solid #ded6c7;border-radius:5px;padding:5px;color:#595044}
+    .font-size[aria-pressed=true]{background:#e6decf;border-color:#c8b9a2}
     .menu-action{display:block;text-align:left;width:100%;padding:7px;border-radius:5px;background:transparent;color:#4b463b}
     .menu-action:hover{background:#eee8d8}.menu-action.danger{color:#9b4440}
-    .save-indicator{position:absolute;bottom:7px;right:28px;font-size:11px;opacity:0;color:#625847;pointer-events:none}
-    .paper[data-save=error] .save-indicator,.paper[data-save=conflict] .save-indicator{opacity:1;color:#9b4141}
+    .save-indicator{font-size:10px;color:#9b4141;pointer-events:none}
     .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:50;pointer-events:auto;
       background:#34302c;color:#fff;border-radius:8px;padding:9px 12px;box-shadow:0 3px 14px #0003;
       display:flex;gap:12px;align-items:center;max-width:min(440px,92vw);font-size:12px}
@@ -529,6 +744,10 @@ var JP;
         conversationNavigation = true;
         conversation = { site: null, turns: [], nativeRailPresent: false };
         conversationTimer = 0;
+        conversationIndex = new JP.ConversationIndex();
+        conversationScrollRootRef = null;
+        scanningHistory = false;
+        stopHistoryScan = false;
         activeTurnId = null;
         refreshTimer = 0;
         scrollScheduled = false;
@@ -549,8 +768,13 @@ var JP;
             await this.loadPage();
             this.refreshConversation();
             this.observer = new MutationObserver((records) => {
+                // Ignore our own Shadow DOM host mutations. Otherwise rebuilding the
+                // Dock repeatedly schedules another expensive conversation scan.
+                const external = records.filter(record => !this.host.contains(record.target));
+                if (!external.length)
+                    return;
                 this.scheduleRefresh();
-                if (records.some(record => record.type === 'childList'))
+                if (external.some(record => record.type === 'childList'))
                     this.scheduleConversationScan();
             });
             this.observer.observe(document.body, { subtree: true, childList: true, characterData: true });
@@ -600,6 +824,7 @@ var JP;
           <div class="rail-track" id="jp-rail-track"></div>
         </nav>
         <div id="jp-turn-preview" class="turn-preview" role="tooltip" hidden></div>
+        <aside id="jp-note-popover" class="note-popover" aria-label="本轮便签" hidden></aside>
         <aside id="jp-list" class="list" aria-label="本页便签列表" hidden></aside>
         <div id="jp-markers"></div>
         <div id="jp-cards"></div>
@@ -623,6 +848,27 @@ var JP;
                 this.renderList();
             });
             this.$('#jp-undo').addEventListener('click', () => void this.undoDeletion());
+            document.addEventListener('keydown', event => {
+                if (event.key === 'Escape')
+                    for (const card of this.cards.values()) {
+                        const menu = card.querySelector('.note-menu');
+                        if (menu)
+                            menu.hidden = true;
+                        card.querySelector('.menu-trigger')?.setAttribute('aria-expanded', 'false');
+                    }
+            });
+            document.addEventListener('pointerdown', event => {
+                const path = event.composedPath();
+                if (!path.includes(this.$('#jp-note-popover')))
+                    this.hideNotePopover();
+                for (const card of this.cards.values()) {
+                    const menu = card.querySelector('.note-menu');
+                    if (menu && !path.includes(menu) && !path.includes(card.querySelector('.menu-trigger'))) {
+                        menu.hidden = true;
+                        card.querySelector('.menu-trigger')?.setAttribute('aria-expanded', 'false');
+                    }
+                }
+            }, true);
             document.addEventListener('mouseup', e => this.maybeOfferSelection(e.target, e.altKey));
             document.addEventListener('keyup', e => {
                 if (e.key.startsWith('Arrow') || e.key === 'Shift')
@@ -706,6 +952,9 @@ var JP;
             this.cards.clear();
             this.$('#jp-cards').replaceChildren();
             this.listOpen = false;
+            this.stopHistoryScan = true;
+            this.conversationIndex.reset();
+            this.conversationScrollRootRef = null;
             this.conversation = { site: JP.conversationSite(), turns: [], nativeRailPresent: false };
             this.hideTurnPreview();
             void this.loadPage().then(() => this.scheduleConversationScan(true));
@@ -728,7 +977,7 @@ var JP;
             }
         }
         rememberSelection(target) {
-            if (target instanceof Node && this.host.contains(target))
+            if (target instanceof Node && (this.host.contains(target) || target.getRootNode() === this.shadow))
                 return null;
             const selection = document.getSelection();
             if (!selection || selection.isCollapsed || !selection.rangeCount)
@@ -867,18 +1116,23 @@ var JP;
         refreshConversation() {
             clearTimeout(this.conversationTimer);
             this.conversationTimer = 0;
-            this.conversation = this.conversationNavigation ? JP.collectConversation() :
+            const snapshot = this.conversationNavigation ? JP.collectConversation() :
                 { site: JP.conversationSite(), turns: [], nativeRailPresent: false };
+            this.conversation = this.conversationNavigation ? this.conversationIndex.combine(snapshot) : snapshot;
+            const activeSource = this.conversation.turns.find(t => t.element?.isConnected)?.element;
+            if (activeSource)
+                this.conversationScrollRootRef = JP.conversationScrollRoot(activeSource);
             this.hideTurnPreview();
             this.renderDock();
             this.schedulePosition();
         }
         hideTurnPreview() { this.$('#jp-turn-preview').hidden = true; }
         showTurnPreview(turn, button) {
+            this.hideNotePopover();
             const preview = this.$('#jp-turn-preview');
             preview.replaceChildren();
             const label = el('small');
-            label.textContent = `第 ${turn.order + 1} / ${this.conversation.turns.length} 轮`;
+            label.textContent = `已发现第 ${turn.order + 1} / ${this.conversation.turns.length} 轮${turn.element ? '' : ' · 暂未挂载'}`;
             const summary = el('span');
             summary.textContent = turn.preview;
             preview.append(label, summary);
@@ -888,41 +1142,145 @@ var JP;
             preview.style.top = `${clamp(rect.top - 13, 8, innerHeight - 96)}px`;
             preview.hidden = false;
         }
-        jumpToTurn(turn) {
+        async jumpToTurn(turn) {
             this.hideTurnPreview();
-            if (!turn.element.isConnected) {
-                this.toast('该轮内容暂时未加载，请滚动网页后再试');
-                this.scheduleConversationScan(true);
+            this.hideNotePopover();
+            // Always re-resolve the current prompt before navigating: a stale React
+            // wrapper or cached element may have been recycled by the host app.
+            const live = JP.collectConversation().turns.find(t => t.id === turn.id);
+            if (live?.element) {
+                JP.navigateToPrompt(live.element);
+                this.activeTurnId = turn.id;
+                this.schedulePosition();
                 return;
             }
-            turn.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            this.activeTurnId = turn.id;
-            this.schedulePosition();
+            if (!turn.stableId || !Number.isFinite(turn.scrollHint)) {
+                this.toast('该轮原文尚未加载，继续滚动网页后重试');
+                return;
+            }
+            const source = this.conversation.turns.find(t => t.element?.isConnected)?.element;
+            const root = source ? JP.conversationScrollRoot(source) :
+                (this.conversationScrollRootRef?.isConnected ? this.conversationScrollRootRef : document.scrollingElement);
+            if (!root) {
+                this.toast('无法确定会话滚动区域');
+                return;
+            }
+            const hint = turn.scrollHint;
+            const directions = [0, -0.7, 0.7, -1.4, 1.4];
+            for (const delta of directions) {
+                root.scrollTo({ top: Math.max(0, hint + delta * root.clientHeight), behavior: 'auto' });
+                await new Promise(resolve => window.setTimeout(resolve, 180));
+                if (!this.visible || !this.conversationNavigation)
+                    return;
+                const match = JP.collectConversation().turns.find(t => t.id === turn.id);
+                if (match?.element) {
+                    JP.navigateToPrompt(match.element);
+                    this.refreshConversation();
+                    this.schedulePosition();
+                    return;
+                }
+            }
+            this.toast('这一轮未能重新加载，已停止跳转；可手动滚动到附近再试');
+            this.refreshConversation();
         }
         updateActiveTurn() {
-            const turns = this.conversation.turns;
-            if (!this.conversationNavigation || !turns.length || this.conversation.nativeRailPresent)
+            if (!this.conversationNavigation || this.conversation.nativeRailPresent)
                 return;
-            // DOM order is monotonically scroll-ordered: O(log N) layout reads per frame.
-            let lo = 0, hi = turns.length;
-            const threshold = innerHeight * 0.40;
-            while (lo < hi) {
-                const mid = (lo + hi) >>> 1;
-                if (turns[mid].element.getBoundingClientRect().top <= threshold)
-                    lo = mid + 1;
-                else
-                    hi = mid;
+            const turns = this.conversation.turns.filter(t => !!t.element?.isConnected);
+            if (!turns.length)
+                return;
+            const threshold = innerHeight * .32;
+            // Elements may be mounted in a virtualized window; compare only live
+            // prompt rectangles instead of assuming the full conversation is mounted.
+            let active = turns[0];
+            for (const turn of turns) {
+                if (turn.element.getBoundingClientRect().top > threshold)
+                    break;
+                active = turn;
             }
-            const turn = turns[Math.max(0, lo - 1)];
-            if (!turn || turn.id === this.activeTurnId)
+            if (active.id === this.activeTurnId)
                 return;
-            this.activeTurnId = turn.id;
-            for (const button of Array.from(this.shadow.querySelectorAll('.rail-turn'))) {
-                if (button.dataset.turnId === turn.id)
+            this.activeTurnId = active.id;
+            for (const button of this.shadow.querySelectorAll('.rail-turn')) {
+                if (button.dataset.turnId === active.id)
                     button.setAttribute('aria-current', 'location');
                 else
                     button.removeAttribute('aria-current');
             }
+        }
+        /** Explicit, reversible history discovery. No undocumented ChatGPT API calls. */
+        async scanOlderTurns() {
+            if (this.scanningHistory) {
+                this.stopHistoryScan = true;
+                return;
+            }
+            const source = this.conversation.turns.find(t => t.element?.isConnected)?.element;
+            if (!source || !JP.conversationSite()) {
+                this.toast('尚未找到可滚动的对话');
+                return;
+            }
+            const root = JP.conversationScrollRoot(source);
+            this.conversationScrollRootRef = root;
+            const originPage = this.page, start = root.scrollTop;
+            this.scanningHistory = true;
+            this.stopHistoryScan = false;
+            this.renderList();
+            let previous = root.scrollTop, stalled = 0, count = 0;
+            try {
+                while (!this.stopHistoryScan && this.page === originPage && root.scrollTop > 2 && count++ < 160) {
+                    root.scrollTo({ top: Math.max(0, root.scrollTop - Math.max(240, root.clientHeight * .78)), behavior: 'auto' });
+                    await new Promise(resolve => window.setTimeout(resolve, 160));
+                    const now = root.scrollTop;
+                    if (Math.abs(now - previous) < 2)
+                        stalled++;
+                    else
+                        stalled = 0;
+                    previous = now;
+                    // Do not rescan the entire notes index/DOM on every scroll step.
+                    this.conversation = this.conversationIndex.combine(JP.collectConversation());
+                    if (count % 5 === 0) {
+                        this.renderDock();
+                        this.renderList();
+                    }
+                    if (stalled > 4)
+                        break;
+                }
+            }
+            finally {
+                // Returning to the original reading position is essential; full scan
+                // is user-initiated and may still cause momentary layout shifts.
+                if (this.page === originPage && root.isConnected) {
+                    root.scrollTo({ top: start, behavior: 'auto' });
+                    await new Promise(resolve => window.setTimeout(resolve, 220));
+                }
+                this.scanningHistory = false;
+                this.stopHistoryScan = false;
+                this.refreshConversation();
+                this.toast(`已发现 ${this.conversation.turns.length} 轮；无法保证包含未加载的全部历史`);
+            }
+        }
+        hideNotePopover() { this.$('#jp-note-popover').hidden = true; }
+        showNotePopover(notes, button) {
+            this.hideTurnPreview();
+            const panel = this.$('#jp-note-popover');
+            panel.replaceChildren();
+            const head = el('div', 'cluster-title');
+            head.textContent = `此轮 ${notes.length} 张便签`;
+            panel.appendChild(head);
+            for (const note of notes) {
+                const item = el('button', 'cluster-item');
+                item.type = 'button';
+                const dot = el('span', 'dot');
+                dot.style.background = COLOR_HEX[JP.appearance(note).color];
+                const label = el('span');
+                label.textContent = note.text.trim().slice(0, 55) || note.anchor?.exact.slice(0, 50) || '空白便签';
+                item.append(dot, label);
+                item.addEventListener('click', () => { this.hideNotePopover(); this.goTo(note.id); });
+                panel.appendChild(item);
+            }
+            const rect = button.getBoundingClientRect();
+            panel.style.top = `${clamp(rect.top - 10, 8, innerHeight - Math.min(230, 40 + notes.length * 40))}px`;
+            panel.hidden = false;
         }
         renderDock() {
             const rail = this.$('#jp-rail');
@@ -933,7 +1291,7 @@ var JP;
             rail.classList.toggle('native-nav', this.conversation.nativeRailPresent);
             const toggle = this.$('#jp-list-toggle');
             toggle.textContent = showTurns ? '≡' : String(this.notes.length);
-            toggle.title = showTurns ? `${turns.length} 轮对话 · ${this.notes.length} 张便签` : `本页 ${this.notes.length} 张便签`;
+            toggle.title = showTurns ? `已发现 ${turns.length} 轮 · ${this.notes.length} 张便签` : `本页 ${this.notes.length} 张便签`;
             const track = this.$('#jp-rail-track');
             track.replaceChildren();
             if (showTurns) {
@@ -948,7 +1306,7 @@ var JP;
                     button.style.height = `${lineHeight}px`;
                     button.title = `第 ${turn.order + 1} 轮：${turn.preview}`;
                     button.setAttribute('aria-label', button.title);
-                    button.addEventListener('click', () => this.jumpToTurn(turn));
+                    button.addEventListener('click', () => void this.jumpToTurn(turn));
                     button.addEventListener('pointerenter', () => this.showTurnPreview(turn, button));
                     button.addEventListener('pointerleave', () => this.hideTurnPreview());
                     button.addEventListener('focus', () => this.showTurnPreview(turn, button));
@@ -958,27 +1316,61 @@ var JP;
             }
             const sorted = this.sortedNotes();
             const textLength = this.index?.text.length || 1;
-            const placed = [];
-            sorted.forEach((note, i) => {
+            const liveTurns = turns.filter(t => !!t.element?.isConnected);
+            const perTurn = new Map();
+            const loose = [];
+            for (const note of sorted) {
                 const match = this.matches.get(note.id);
-                const linkedTurn = showTurns && match ? JP.turnForRange(match.range, turns) : null;
-                const offset = linkedTurn ? Math.min(1.1, (i % 3) * 0.45) : 0;
-                let pos = linkedTurn ? this.turnPosition(linkedTurn.order, turns.length) + offset
-                    : match ? match.start / textLength * 100 : (note.anchor ? 90 + i % 4 * 2 : 3 + i * 3);
-                pos = clamp(pos, 2, 98);
-                if (!showTurns) {
-                    while (placed.some(p => Math.abs(p - pos) < 3.4) && pos < 96)
-                        pos += 3.4;
+                const associated = showTurns && match ? JP.turnForRange(match.range, liveTurns) : null;
+                if (!associated) {
+                    loose.push(note);
+                    continue;
                 }
-                placed.push(pos);
-                const button = el('button', `rail-pin${note.anchor && !match ? ' missing' : ''}`);
+                const group = perTurn.get(associated.id) || [];
+                group.push(note);
+                perTurn.set(associated.id, group);
+            }
+            const placed = [];
+            const addNotePin = (notes, position) => {
+                const group = notes.length > 1;
+                const button = el('button', `rail-pin${group ? ' rail-note-cluster' : ''}${notes.some(n => n.anchor && !this.matches.has(n.id)) ? ' missing' : ''}`);
                 button.type = 'button';
-                button.style.top = `${pos}%`;
-                button.style.background = note.anchor && !match ? '#aaa' : COLOR_HEX[JP.appearance(note).color];
-                button.title = note.text.trim().slice(0, 70) || (note.anchor?.exact.slice(0, 50) || '本页便签');
-                button.setAttribute('aria-label', `跳转便签：${button.title}`);
-                button.addEventListener('click', () => { this.hideTurnPreview(); this.goTo(note.id); });
+                button.style.top = `${clamp(position, 2, 98)}%`;
+                const note = notes[0];
+                button.style.background = COLOR_HEX[JP.appearance(note).color];
+                if (group) {
+                    button.textContent = String(notes.length);
+                    button.dataset.count = String(notes.length);
+                }
+                button.title = group ? `此轮 ${notes.length} 张便签` : note.text.trim().slice(0, 70) || note.anchor?.exact.slice(0, 50) || '本页便签';
+                button.setAttribute('aria-label', button.title);
+                button.addEventListener('click', () => {
+                    if (group)
+                        this.showNotePopover(notes, button);
+                    else {
+                        this.hideTurnPreview();
+                        this.goTo(note.id);
+                    }
+                });
                 track.appendChild(button);
+                placed.push(position);
+            };
+            if (showTurns) {
+                for (const [turnId, group] of perTurn) {
+                    const turn = turns.find(t => t.id === turnId);
+                    if (turn)
+                        addNotePin(group, this.turnPosition(turn.order, turns.length));
+                    else
+                        loose.push(...group);
+                }
+            }
+            loose.forEach((note, i) => {
+                const match = this.matches.get(note.id);
+                let pos = match ? match.start / textLength * 100 : (note.anchor ? 90 + i % 4 * 2 : 3 + i * 3);
+                pos = clamp(pos, 2, 98);
+                while (placed.some(p => Math.abs(p - pos) < 3.3) && pos < 95)
+                    pos += 3.3;
+                addNotePin([note], pos);
             });
             this.activeTurnId = null;
             this.updateActiveTurn();
@@ -997,7 +1389,7 @@ var JP;
             const head = el('div', 'list-header');
             const title = el('span');
             title.textContent = turns.length >= 3
-                ? `会话 · ${turns.length} 轮 / ${this.notes.length} 张便签` : `本页便签 · ${this.notes.length}`;
+                ? `已发现 ${turns.length} 轮 · ${this.notes.length} 张便签` : `本页便签 · ${this.notes.length}`;
             const close = el('button');
             close.type = 'button';
             close.textContent = '×';
@@ -1005,6 +1397,14 @@ var JP;
             close.addEventListener('click', () => { this.listOpen = false; this.renderList(); });
             head.append(title, close);
             list.appendChild(head);
+            if (turns.length >= 3 && JP.conversationSite()) {
+                const scan = el('button', 'scan-history');
+                scan.type = 'button';
+                scan.textContent = this.scanningHistory ? '停止扫描' : '扫描较早轮次';
+                scan.title = '按需滚动收集历史轮次，之后恢复阅读位置；虚拟化页面可能仍无法列全';
+                scan.addEventListener('click', () => void this.scanOlderTurns());
+                list.appendChild(scan);
+            }
             if (turns.length >= 3) {
                 const heading = el('div', 'list-section');
                 heading.textContent = '对话轮次';
@@ -1017,7 +1417,7 @@ var JP;
                     const label = el('span');
                     label.textContent = turn.preview;
                     button.append(count, label);
-                    button.addEventListener('click', () => { this.listOpen = false; this.renderList(); this.jumpToTurn(turn); });
+                    button.addEventListener('click', () => { this.listOpen = false; this.renderList(); void this.jumpToTurn(turn); });
                     list.appendChild(button);
                 }
             }
@@ -1128,93 +1528,114 @@ var JP;
             paper.setAttribute('aria-label', 'JotPatch 便签');
             const style = JP.appearance(note);
             paper.style.setProperty('--paper', COLOR_HEX[style.color]);
+            paper.style.setProperty('--jp-font-size', this.fontPixels(style.fontSize));
             paper.style.width = `${style.width}px`;
             paper.style.height = `${style.height}px`;
+            // Fixed header and footer take actual layout space; no controls overlap text.
             paper.innerHTML = `
-        <textarea class="note-editor" aria-label="便签内容" placeholder="写点什么…" spellcheck="true"></textarea>
-        <div class="note-preview" aria-label="便签预览，点击编辑" tabindex="0" hidden></div>
-        <div class="note-tools">
-          <div class="tool-group"><button class="drag-handle" title="拖动便签位置" aria-label="拖动便签位置" type="button">⠿</button></div>
-          <div class="tool-group">
-            <button class="jump" title="跳转到原文" aria-label="跳转到原文" type="button">↗</button>
-            <button class="menu-trigger" title="更多操作" aria-label="更多操作" type="button">···</button>
+        <header class="paper-head drag-region" title="拖动整条顶栏移动便签" aria-label="拖动便签位置">
+          <span class="paper-grab" aria-hidden="true">··</span>
+          <div class="paper-head-actions">
+            <button class="copy" title="复制 Markdown 源码" aria-label="复制 Markdown 源码" type="button">⧉</button>
+            <button class="jump" title="返回原文" aria-label="返回原文" type="button">↗</button>
+            <button class="menu-trigger" title="更多操作" aria-label="更多操作" type="button" aria-expanded="false">···</button>
             <button class="close" title="收起便签" aria-label="收起便签" type="button">×</button>
           </div>
-        </div>
-        <div class="note-actions">
+        </header>
+        <div class="note-editor" contenteditable="true" role="textbox" aria-multiline="true"
+          aria-label="便签内容" spellcheck="true" data-placeholder="写点什么…"></div>
+        <footer class="paper-foot">
           <button class="bold" title="加粗 (Ctrl/⌘+B)" aria-label="加粗" type="button"><b>B</b></button>
           <button class="italic" title="斜体 (Ctrl/⌘+I)" aria-label="斜体" type="button"><i>I</i></button>
           <button class="bullet" title="项目列表" aria-label="项目列表" type="button">≡</button>
           <button class="number" title="编号列表" aria-label="编号列表" type="button">1.</button>
-          <span class="spacer"></span><button class="copy" title="复制便签" aria-label="复制便签" type="button">⧉</button>
-        </div>
+          <span class="paper-foot-spacer"></span>
+          <span class="save-indicator" aria-live="polite"></span>
+        </footer>
         <div class="note-menu" hidden>
           <div class="colors" role="group" aria-label="便签颜色"></div>
-          <button class="menu-action copy-menu" type="button">复制内容</button>
+          <div class="font-label">字号</div>
+          <div class="font-choices" role="group" aria-label="字号">
+            <button class="font-size" data-font="sm" type="button">小</button>
+            <button class="font-size" data-font="md" type="button">中</button>
+            <button class="font-size" data-font="lg" type="button">大</button>
+          </div>
           <button class="menu-action delete-menu danger" type="button">删除便签</button>
         </div>
-        <span class="save-indicator" aria-live="polite"></span>
         <div class="resize-handle" role="separator" aria-label="拖动调整便签大小" title="拖动调整便签大小"></div>`;
             const editor = paper.querySelector('.note-editor');
-            editor.value = note.text;
-            editor.addEventListener('input', () => {
-                note.text = editor.value;
-                note.updatedAt = Date.now();
-                this.dirty.add(note.id);
-                this.scheduleSave(note.id);
+            JP.renderMarkdown(editor, note.text);
+            const changed = () => {
+                note.text = JP.markdownFromEditor(editor);
+                editor.dataset.empty = String(!note.text.trim());
+                this.touchNote(note);
                 this.renderList();
+            };
+            editor.dataset.empty = String(!note.text.trim());
+            editor.addEventListener('input', changed);
+            editor.addEventListener('blur', () => void this.saveNow(note.id));
+            editor.addEventListener('paste', event => {
+                // Paste plain text only. HTML from source websites must not enter our
+                // editable DOM or storage, even if the clipboard contains rich HTML.
+                event.preventDefault();
+                document.execCommand('insertText', false, event.clipboardData?.getData('text/plain') || '');
             });
-            editor.addEventListener('focus', () => {
-                paper.querySelector('.note-preview').hidden = true;
-                editor.hidden = false;
-            });
-            editor.addEventListener('blur', () => {
-                this.updatePreview(paper, note);
-                void this.saveNow(note.id);
-            });
-            paper.querySelector('.note-preview').addEventListener('click', () => {
-                paper.querySelector('.note-preview').hidden = true;
-                editor.hidden = false;
-                editor.focus({ preventScroll: true });
-            });
-            paper.querySelector('.note-preview').addEventListener('keydown', e => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    paper.querySelector('.note-preview').hidden = true;
-                    editor.hidden = false;
-                    editor.focus({ preventScroll: true });
-                }
-            });
-            editor.addEventListener('keydown', (e) => {
-                if ((e.ctrlKey || e.metaKey) && !e.altKey) {
-                    const lower = e.key.toLowerCase();
-                    if (lower === 'b' || lower === 'i') {
-                        e.preventDefault();
-                        this.format(editor, lower === 'b' ? 'bold' : 'italic');
+            editor.addEventListener('keydown', (event) => {
+                if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+                    const key = event.key.toLowerCase();
+                    if (key === 'b' || key === 'i') {
+                        event.preventDefault();
+                        this.format(editor, key === 'b' ? 'bold' : 'italic');
                     }
-                    if (e.shiftKey && e.key === '7') {
-                        e.preventDefault();
+                    else if (event.shiftKey && event.key === '7') {
+                        event.preventDefault();
                         this.format(editor, 'number');
                     }
-                    if (e.shiftKey && e.key === '8') {
-                        e.preventDefault();
+                    else if (event.shiftKey && event.key === '8') {
+                        event.preventDefault();
                         this.format(editor, 'bullet');
                     }
                 }
             });
             paper.addEventListener('pointerdown', () => { paper.style.zIndex = String(++this.zOrder); });
+            paper.addEventListener('focusin', () => { paper.style.zIndex = String(++this.zOrder); });
+            paper.addEventListener('wheel', (event) => {
+                // Cancel browser zoom only while the pointer is inside a note.
+                if (!event.ctrlKey || !event.cancelable)
+                    return;
+                event.preventDefault();
+                event.stopPropagation();
+                const steps = ['sm', 'md', 'lg'];
+                const current = JP.appearance(note).fontSize;
+                const direction = event.deltaY < 0 ? 1 : -1;
+                const next = steps[clamp(steps.indexOf(current) + direction, 0, steps.length - 1)];
+                this.setFontSize(note, paper, next);
+            }, { passive: false });
             for (const name of ['bold', 'italic', 'bullet', 'number']) {
-                const btn = paper.querySelector(`.${name}`);
-                btn.addEventListener('pointerdown', e => e.preventDefault());
-                btn.addEventListener('click', () => this.format(editor, name));
+                const button = paper.querySelector(`.${name}`);
+                button.addEventListener('pointerdown', event => event.preventDefault());
+                button.addEventListener('click', () => this.format(editor, name));
             }
             paper.querySelector('.copy').addEventListener('click', () => void this.copyNote(note.id));
             paper.querySelector('.jump').addEventListener('click', () => this.goTo(note.id, false));
             paper.querySelector('.close').addEventListener('click', () => this.closeCard(note.id));
             const menu = paper.querySelector('.note-menu');
-            paper.querySelector('.menu-trigger').addEventListener('click', () => { menu.hidden = !menu.hidden; });
-            paper.querySelector('.copy-menu').addEventListener('click', () => { menu.hidden = true; void this.copyNote(note.id); });
+            const menuTrigger = paper.querySelector('.menu-trigger');
+            menuTrigger.addEventListener('click', () => {
+                for (const other of this.cards.values())
+                    if (other !== paper) {
+                        const otherMenu = other.querySelector('.note-menu');
+                        if (otherMenu)
+                            otherMenu.hidden = true;
+                    }
+                menu.hidden = !menu.hidden;
+                menuTrigger.setAttribute('aria-expanded', String(!menu.hidden));
+            });
             paper.querySelector('.delete-menu').addEventListener('click', () => { menu.hidden = true; void this.deleteNote(note.id); });
+            for (const button of paper.querySelectorAll('.font-size')) {
+                button.setAttribute('aria-pressed', String(button.dataset.font === style.fontSize));
+                button.addEventListener('click', () => this.setFontSize(note, paper, button.dataset.font));
+            }
             const colors = paper.querySelector('.colors');
             COLOR_ORDER.forEach(color => {
                 const btn = el('button');
@@ -1226,120 +1647,76 @@ var JP;
                 btn.addEventListener('click', () => {
                     note.appearance = { ...JP.appearance(note), color };
                     paper.style.setProperty('--paper', COLOR_HEX[color]);
-                    colors.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+                    colors.querySelectorAll('button').forEach(button => button.setAttribute('aria-pressed', String(button === btn)));
                     this.touchNote(note);
                     this.renderDock();
                     this.renderMarkers();
                 });
                 colors.appendChild(btn);
             });
-            this.installDrag(paper.querySelector('.drag-handle'), note, 'move');
+            this.installDrag(paper.querySelector('.drag-region'), note, 'move');
             this.installDrag(paper.querySelector('.resize-handle'), note, 'resize');
-            this.updatePreview(paper, note);
             return paper;
         }
-        updatePreview(paper, note) {
-            const editor = paper.querySelector('.note-editor');
-            const preview = paper.querySelector('.note-preview');
-            if (editor === paper.getRootNode().activeElement)
+        fontPixels(size) {
+            return size === 'sm' ? '12px' : size === 'lg' ? '17px' : '14px';
+        }
+        setFontSize(note, paper, size) {
+            if (!['sm', 'md', 'lg'].includes(size) || JP.appearance(note).fontSize === size)
                 return;
-            // Markdown is a small supported subset, parsed into safe DOM nodes.
-            // Text from webpages is never fed into innerHTML.
-            const hasFormat = /(?:\*\*[^\n*]+\*\*|\*[^\n*]+\*|^\s*(?:- |\d+\. ))/m.test(note.text);
-            if (!hasFormat) {
-                preview.hidden = true;
-                editor.hidden = false;
-                return;
+            note.appearance = { ...JP.appearance(note), fontSize: size };
+            paper.style.setProperty('--jp-font-size', this.fontPixels(size));
+            for (const button of paper.querySelectorAll('.font-size')) {
+                button.setAttribute('aria-pressed', String(button.dataset.font === size));
             }
-            preview.replaceChildren();
-            const appendInline = (parent, line) => {
-                const tokens = line.split(/(\*\*[^\n*]+\*\*|\*[^\n*]+\*)/g);
-                for (const token of tokens) {
-                    let child = null;
-                    if (token.startsWith('**') && token.endsWith('**') && token.length > 4) {
-                        child = el('strong');
-                        child.textContent = token.slice(2, -2);
-                    }
-                    else if (token.startsWith('*') && token.endsWith('*') && token.length > 2) {
-                        child = el('em');
-                        child.textContent = token.slice(1, -1);
-                    }
-                    if (child)
-                        parent.appendChild(child);
-                    else
-                        parent.appendChild(document.createTextNode(token));
-                }
-            };
-            let list = null;
-            let listType = '';
-            for (const line of note.text.split('\n')) {
-                const bullet = line.match(/^\s*- (.*)$/), number = line.match(/^\s*\d+\. (.*)$/);
-                const type = bullet ? 'ul' : number ? 'ol' : '';
-                if (type) {
-                    if (!list || listType !== type) {
-                        list = el(type === 'ul' ? 'ul' : 'ol');
-                        preview.appendChild(list);
-                        listType = type;
-                    }
-                    const li = el('li');
-                    appendInline(li, (bullet || number)[1]);
-                    list.appendChild(li);
-                }
-                else {
-                    list = null;
-                    listType = '';
-                    const para = el('p');
-                    appendInline(para, line || '\u00a0');
-                    preview.appendChild(para);
-                }
-            }
-            editor.hidden = true;
-            preview.hidden = false;
+            this.touchNote(note);
         }
         format(editor, type) {
-            if (editor.readOnly)
-                return;
             editor.focus({ preventScroll: true });
-            const start = editor.selectionStart, end = editor.selectionEnd, value = editor.value;
-            if (type === 'bold' || type === 'italic') {
-                const marker = type === 'bold' ? '**' : '*';
-                editor.setRangeText(marker + value.slice(start, end) + marker, start, end, 'select');
-                editor.setSelectionRange(start + marker.length, end + marker.length);
-            }
-            else {
-                const lineStart = value.lastIndexOf('\n', start - 1) + 1;
-                let lineEnd = value.indexOf('\n', end);
-                if (lineEnd === -1)
-                    lineEnd = value.length;
-                const lines = value.slice(lineStart, lineEnd).split('\n');
-                const replacement = lines.map((line, i) => `${type === 'bullet' ? '- ' : `${i + 1}. `}${line}`).join('\n');
-                editor.setRangeText(replacement, lineStart, lineEnd, 'end');
-            }
-            editor.dispatchEvent(new Event('input', { bubbles: true }));
+            // Chromium's native edit commands preserve browser selection and undo;
+            // only generated safe HTML is persisted as canonical Markdown.
+            const command = { bold: 'bold', italic: 'italic', bullet: 'insertUnorderedList', number: 'insertOrderedList' }[type];
+            const changed = document.execCommand(command, false);
+            if (changed)
+                editor.dispatchEvent(new Event('input', { bubbles: true }));
         }
         installDrag(handle, note, mode) {
             handle.addEventListener('pointerdown', (event) => {
                 if (event.button !== 0)
                     return;
+                // Entire fixed header is draggable, but its buttons remain clickable.
+                if (mode === 'move' && event.target.closest('button'))
+                    return;
                 event.preventDefault();
                 event.stopPropagation();
                 handle.setPointerCapture(event.pointerId);
                 const initial = JP.appearance(note), startX = event.clientX, startY = event.clientY;
+                const paper = this.cards.get(note.id) || handle.closest('.paper');
+                const startRect = paper?.getBoundingClientRect();
                 const move = (e) => {
                     if (e.pointerId !== event.pointerId)
                         return;
                     const dx = e.clientX - startX, dy = e.clientY - startY;
-                    const updated = mode === 'move'
+                    let updated = mode === 'move'
                         ? { ...initial, offsetX: initial.offsetX + dx, offsetY: initial.offsetY + dy }
-                        : { ...initial, width: clamp(initial.width + dx, 180, Math.min(560, innerWidth - 15)),
-                            height: clamp(initial.height + dy, 132, Math.min(620, innerHeight - 15)) };
+                        : { ...initial,
+                            width: clamp(initial.width + dx, 180, Math.min(560, innerWidth - 15 - (startRect?.left || 0))),
+                            height: clamp(initial.height + dy, 132, Math.min(620, innerHeight - 15 - (startRect?.top || 0))) };
                     note.appearance = updated;
-                    const card = this.cards.get(note.id);
-                    if (card) {
-                        card.style.width = `${updated.width}px`;
-                        card.style.height = `${updated.height}px`;
+                    if (paper) {
+                        paper.style.width = `${updated.width}px`;
+                        paper.style.height = `${updated.height}px`;
                     }
                     this.positionCard(note.id);
+                    if (mode === 'resize' && startRect && paper) {
+                        // When the chosen source-relative placement reflows with width,
+                        // compensate offsets to keep the actual TOP-LEFT corner fixed.
+                        const adjusted = paper.getBoundingClientRect();
+                        updated = { ...updated, offsetX: updated.offsetX + startRect.left - adjusted.left,
+                            offsetY: updated.offsetY + startRect.top - adjusted.top };
+                        note.appearance = updated;
+                        this.positionCard(note.id);
+                    }
                 };
                 const finish = (e) => {
                     if (e.pointerId !== event.pointerId)
@@ -1491,10 +1868,12 @@ var JP;
             const paper = this.cards.get(fresh.id);
             if (paper) {
                 const editor = paper.querySelector('.note-editor');
-                if (editor)
-                    editor.value = fresh.text;
-                this.updatePreview(paper, old);
+                if (editor) {
+                    JP.renderMarkdown(editor, fresh.text);
+                    editor.dataset.empty = String(!fresh.text.trim());
+                }
                 paper.style.setProperty('--paper', COLOR_HEX[JP.appearance(fresh).color]);
+                paper.style.setProperty('--jp-font-size', this.fontPixels(JP.appearance(fresh).fontSize));
                 paper.style.width = `${JP.appearance(fresh).width}px`;
                 paper.style.height = `${JP.appearance(fresh).height}px`;
             }

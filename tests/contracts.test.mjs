@@ -42,7 +42,7 @@ test('right-click action and selection-trigger preference are included', () => {
 });
 
 test('stage 1.5 conversation adapters and unified rail compile without wider permissions', () => {
-  assert.equal(manifest.version, '0.1.5');
+  assert.equal(manifest.version, '0.1.6');
   assert.equal(manifest.host_permissions, undefined);
   for (const symbol of ['collectConversation', 'turnForRange', 'rail-turn', 'jp-turn-preview']) {
     assert.ok(content.includes(symbol), `${symbol} missing in bundled content script`);
@@ -51,8 +51,21 @@ test('stage 1.5 conversation adapters and unified rail compile without wider per
   assert.ok(source.includes('data-message-author-role'));
   assert.ok(source.includes('data-user-message-bubble'));
   assert.ok(source.includes('user-query'));
-  assert.ok(source.includes('nativeChatGPTRailPresent'));
+  assert.ok(source.includes('nativeRail'));
   assert.ok(source.includes('interface ConversationSnapshot'));
   assert.ok(readFileSync('options.html', 'utf8').includes('id="conversation-navigation"'));
   assert.ok(readFileSync('options.js', 'utf8').includes('...current, ...patch'));
+});
+
+
+test('stage 1.6 WYSIWYG editor and history navigation stay local-first', () => {
+  const ui = readFileSync('src/content/app.ts', 'utf8');
+  const md = readFileSync('src/content/markdown.ts', 'utf8');
+  for(const mark of ['contenteditable="true"', 'markdownFromEditor', 'font-size', 'scanOlderTurns', 'jp-note-popover'])
+    assert.ok(ui.includes(mark), mark);
+  for(const command of ['insertUnorderedList','insertOrderedList','bold','italic'])
+    assert.ok(ui.includes(command),command);
+  assert.ok(md.includes('markdownFromEditor') && md.includes('renderMarkdown'));
+  assert.ok(ui.includes('navigator.clipboard.writeText(note.text)'));
+  assert.equal(manifest.host_permissions, undefined);
 });

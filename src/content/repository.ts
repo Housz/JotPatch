@@ -2,12 +2,13 @@ namespace JP {
   const PREFIX = 'jotpatch:note:v1:';
   const PREFERENCES_KEY = 'jotpatch:preferences:v1';
   const COLORS: readonly NoteColor[] = ['yellow', 'pink', 'green', 'blue', 'purple', 'gray'];
-  const DEFAULTS: NoteAppearance = { color: 'yellow', width: 256, height: 202, offsetX: 0, offsetY: 0 };
+  const DEFAULTS: NoteAppearance = { color: 'yellow', fontSize: 'md', width: 256, height: 202, offsetX: 0, offsetY: 0 };
 
   export function appearance(note: Note): NoteAppearance {
     const style = note.appearance || {};
     return {
       color: COLORS.includes(style.color as NoteColor) ? style.color as NoteColor : DEFAULTS.color,
+      fontSize: style.fontSize === 'sm' || style.fontSize === 'lg' ? style.fontSize : 'md',
       width: Math.min(560, Math.max(180, Number(style.width) || DEFAULTS.width)),
       height: Math.min(620, Math.max(132, Number(style.height) || DEFAULTS.height)),
       offsetX: Number.isFinite(style.offsetX) ? style.offsetX! : DEFAULTS.offsetX,

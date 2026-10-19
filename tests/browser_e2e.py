@@ -128,8 +128,10 @@ def run():
         page.mouse.down();page.mouse.move(handle['x']+80,handle['y']+50,steps=6);page.mouse.up()
         grew=paper.bounding_box()
         assert grew['width']>initial['width']+40 and grew['height']>initial['height']+20,(initial,grew)
-        grip=paper.locator('.drag-handle').bounding_box()
-        page.mouse.move(grip['x']+8,grip['y']+8)
+        assert abs(grew['x']-initial['x']) < 3 and abs(grew['y']-initial['y']) < 3,(initial,grew)
+        print('PASS: resize preserves original top-left corner')
+        grip=paper.locator('.drag-region').bounding_box()
+        page.mouse.move(grip['x']+13,grip['y']+12)
         page.mouse.down();page.mouse.move(grip['x']-40,grip['y']+40,steps=6);page.mouse.up()
         page.wait_for_timeout(520)
         store=page.evaluate('() => structuredClone(window.__jotpatchFakeStore)')
@@ -181,23 +183,39 @@ def run():
         assert any(n.get('anchor') is None for n in store.values() if isinstance(n,dict) and n.get('id'))
         print('PASS: page-level note without a selected quote')
 
-        # Markdown shortcuts apply to current textarea, without a title/footer.
+        # WYSIWYG means the editing surface shows semantic HTML, never Markdown syntax.
         editor=page.locator('#jotpatch-root .paper').last.locator('.note-editor')
         editor.fill('an idea')
-        editor.evaluate('(node) => node.setSelectionRange(0,7)')
-        editor.press('Control+b')
-        assert editor.input_value()=='**an idea**',editor.input_value()
-        print('PASS: minimalist Markdown keyboard formatting')
-        # The sparse editor is also a readable, safely rendered paper when blurred.
-        editor.evaluate('(node)=>node.blur()')
-        expect(page.locator('#jotpatch-root .paper').last.locator('.note-preview strong')).to_have_text('an idea')
-        page.locator('#jotpatch-root .paper').last.locator('.note-preview').click()
-        expect(editor).to_be_visible()
-        print('PASS: inline Markdown preview and return to editor')
+        editor.press('Control+a');editor.press('Control+b')
+        expect(editor.locator('b,strong')).to_have_text('an idea')
+        assert editor.inner_text()=='an idea',editor.inner_text()
+        page.wait_for_timeout(500)
+        store=page.evaluate("""() => Object.values(window.__jotpatchFakeStore)
+          .find(item=>item && item.text?.includes('an idea'))?.text""")
+        assert store=='**an idea**',store
+        print('PASS: real WYSIWYG bold and standard Markdown source in persistent storage')
+
+        # Normal fixed header/footer plus font preset, wheel and menu-dismiss.
+        last=page.locator('#jotpatch-root .paper').last
+        expect(last.locator('.paper-head')).to_have_count(1)
+        expect(last.locator('.paper-foot')).to_have_count(1)
+        assert last.locator('.drag-handle').count()==0
+        last.locator('.menu-trigger').click()
+        last.locator('.font-size[data-font="lg"]').click()
+        assert last.evaluate("node=>node.style.getPropertyValue('--jp-font-size')")=='17px'
+        last.locator('.menu-trigger').click()
+        last.locator('.note-editor').dispatch_event('wheel',{'ctrlKey':True,'deltaY':100,'cancelable':True})
+        assert last.evaluate("node=>node.style.getPropertyValue('--jp-font-size')")=='14px'
+        last.locator('.menu-trigger').click()
+        expect(last.locator('.note-menu')).to_be_visible()
+        page.locator('#anchor-target').click()
+        expect(last.locator('.note-menu')).to_be_hidden()
+        print('PASS: top/bottom bars, font presets, Ctrl+wheel font step and click-outside menu dismissal')
 
         # Delete and undo keep the original id and content.
         last=page.locator('#jotpatch-root .paper').last
-        last.locator('.menu-trigger').click();last.locator('.delete-menu').click()
+        last.locator('.menu-trigger').click(timeout=4500)
+        last.locator('.delete-menu').click(timeout=4500)
         expect(page.locator('#jotpatch-root #jp-undo')).to_be_visible()
         page.locator('#jotpatch-root #jp-undo').click()
         expect(page.locator('#jotpatch-root .paper')).to_have_count(4)
