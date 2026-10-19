@@ -532,44 +532,116 @@ var JP;
 (function (JP) {
     const TURN_WEIGHT = 14;
     const NOTE_WEIGHT = 15;
-    /**
-     * Pure layout function: no DOM, no page scrolling, no collapsed count glyphs.
-     * Available height is shared across rounds; rounds containing more notes get
-     * more space. When dense, a separate hover lens opens beside the stable
-     * overview without moving any existing markers or the host page.
-     */
+    const MIN_INDIVIDUAL_PITCH = 12;
+    // Product threshold, independent of conversation length. Four notes within a
+    // single turn are enough to earn a multi-color overview and hover expansion.
+    JP.OVERVIEW_NOTE_THRESHOLD = 4;
+    /** Pure layout: one stable overview, never reflowed by hovering. */
     function layoutConversationRail(groups, requestedHeight) {
         const height = Math.max(50, Number.isFinite(requestedHeight) ? requestedHeight : 400);
         const pad = 5;
-        const usable = height - pad * 2;
+        const usable = Math.max(1, height - 2 * pad);
         const positions = new Map();
         const regions = [];
+        const compactGroups = new Set();
         if (!groups.length)
-            return { positions, regions, dense: false, height };
-        const weights = groups.map(group => TURN_WEIGHT + group.noteIds.length * NOTE_WEIGHT);
-        const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
-        const dense = totalWeight > usable;
-        const spans = weights.map(weight => weight / totalWeight * usable);
+            return { positions, regions, compactGroups, dense: false, height };
+        const uncompressed = groups.map(g => TURN_WEIGHT + g.noteIds.length * NOTE_WEIGHT);
+        const required = uncompressed.reduce((sum, weight) => sum + weight, 0);
+        // Decide local compression from *real pixel budgets*, not just total notes
+        // or number of turns. A 5-note/10-turn conversation should also show the
+        // overview, while one or two comfortably separated notes remain direct.
+        groups.forEach((group, index) => {
+            const count = group.noteIds.length;
+            const nominalSpan = uncompressed[index] / required * usable;
+            if (count >= JP.OVERVIEW_NOTE_THRESHOLD ||
+                (count >= 2 && nominalSpan / (count + 1) < MIN_INDIVIDUAL_PITCH)) {
+                compactGroups.add(group.turnId);
+            }
+        });
+        // A compact group needs *one* summary slot, not N full-height slots.
+        // Otherwise an 8-note group creates excessive blank space in the rail.
+        const weights = groups.map(group => compactGroups.has(group.turnId)
+            ? TURN_WEIGHT + 12 + Math.min(group.noteIds.length, 5) * 2
+            : TURN_WEIGHT + group.noteIds.length * NOTE_WEIGHT);
+        const total = weights.reduce((sum, weight) => sum + weight, 0);
         let cursor = pad;
         for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
             const group = groups[groupIndex];
-            const span = spans[groupIndex];
+            const span = weights[groupIndex] / total * usable;
             regions.push({ turnId: group.turnId, start: cursor, end: cursor + span });
-            positions.set(`turn:${group.turnId}`, cursor + Math.min(3, span * 0.17));
-            const length = group.noteIds.length;
-            const usableSpan = Math.max(0, span - Math.min(6, span * .22));
-            for (let i = 0; i < length; i++) {
-                const fraction = Math.max(0, Math.min(1, group.fractions[i] ?? (i + .5) / length));
-                // Blend source-relative position and equal spacing. Equal spacing
-                // preserves independent markers even when all quotes are adjacent.
-                const slot = (i + 1) / (length + 1) * 0.76 + fraction * 0.24;
-                positions.set(`note:${group.noteIds[i]}`, cursor + Math.min(6, span * .23) + usableSpan * slot);
+            positions.set(`turn:${group.turnId}`, cursor + Math.min(3, span * .17));
+            const count = group.noteIds.length;
+            const inset = Math.min(6, span * .23);
+            const noteSpan = Math.max(0, span - inset);
+            for (let i = 0; i < count; i++) {
+                const fraction = Math.max(0, Math.min(1, group.fractions[i] ?? (i + .5) / count));
+                const slot = (i + 1) / (count + 1) * .76 + fraction * .24;
+                positions.set(`note:${group.noteIds[i]}`, cursor + inset + noteSpan * slot);
             }
+            if (compactGroups.has(group.turnId))
+                positions.set(`overview:${group.turnId}`, cursor + inset + noteSpan * .58);
             cursor += span;
         }
-        return { positions, regions, dense, height };
+        return { positions, regions, compactGroups, dense: required > usable || compactGroups.size > 0, height };
     }
     JP.layoutConversationRail = layoutConversationRail;
+    /**
+     * Page-only fallback, e.g. an AI page whose DOM currently has <3 mounted
+     * turns. A dense *note-only* rail must still show a visible multi-color
+     * overview and the same hover lens, rather than endless overlapping dots.
+     */
+    function groupPageRailPoints(points, height) {
+        if (!points.length)
+            return [];
+        const safeHeight = Math.max(100, height);
+        const crowded = points.length >= 14 && safeHeight / points.length < 34;
+        const bin = crowded ? Math.min(52, Math.max(25, safeHeight / 12)) : 18;
+        const buckets = new Map();
+        for (const point of points) {
+            const y = Math.max(0, Math.min(1, point.fraction)) * safeHeight;
+            const slot = Math.floor(Math.min(safeHeight - 0.001, y) / bin);
+            const bucket = buckets.get(slot) || [];
+            bucket.push(point);
+            buckets.set(slot, bucket);
+        }
+        return [...buckets.entries()].sort(([a], [b]) => a - b).map(([slot, entries]) => {
+            const start = slot * bin, end = Math.min(safeHeight, (slot + 1) * bin);
+            return { id: `page-region-${slot}`, noteIds: entries.map(e => e.noteId),
+                center: entries.reduce((sum, e) => sum + Math.max(0, Math.min(1, e.fraction)) * safeHeight, 0) / entries.length,
+                start, end };
+        });
+    }
+    JP.groupPageRailPoints = groupPageRailPoints;
+    function groupCrowdedTurnNotes(groups, layout) {
+        const noteCount = groups.reduce((sum, g) => sum + g.noteIds.length, 0);
+        if (noteCount < 14 || layout.height / noteCount >= 28)
+            return [];
+        const bin = Math.min(52, Math.max(32, layout.height / 12));
+        const bins = new Map();
+        for (const group of groups) {
+            if (layout.compactGroups.has(group.turnId))
+                continue;
+            for (const id of group.noteIds) {
+                const y = layout.positions.get(`note:${id}`);
+                if (y == null)
+                    continue;
+                const slot = Math.floor(Math.min(layout.height - .001, Math.max(0, y)) / bin);
+                const bucket = bins.get(slot) || [];
+                bucket.push({ id, y });
+                bins.set(slot, bucket);
+            }
+        }
+        return [...bins.entries()].sort(([a], [b]) => a - b).flatMap(([slot, items]) => {
+            if (items.length < 2)
+                return [];
+            items.sort((a, b) => a.y - b.y);
+            return [{ id: `cross-region-${slot}`, noteIds: items.map(x => x.id),
+                    center: items.reduce((sum, x) => sum + x.y, 0) / items.length,
+                    start: slot * bin, end: Math.min(layout.height, (slot + 1) * bin) }];
+        });
+    }
+    JP.groupCrowdedTurnNotes = groupCrowdedTurnNotes;
 })(JP || (JP = {}));
 var JP;
 (function (JP) {
@@ -679,6 +751,19 @@ var JP;
     .rail.with-conversation .rail-pin{left:2px;width:13px;height:7px;z-index:3;border-radius:9px}
     /* Dense lens lives beside the rail. The overview never jumps on hover. */
     .rail-track.focused .rail-pin,.rail-track.focused .rail-turn{transition:none}
+    /* An actual compact overview: several colored micro-stripes in one slot.
+       The larger transparent hit area belongs to the whole summary, not one
+       tiny stripe; the hover lens reveals each note as an individual target. */
+    .rail-overview{position:absolute;left:1px;width:17px;height:11px;z-index:5;
+      transform:translateY(-50%);display:flex;align-items:center;gap:1px;padding:2px;
+      border:1px solid #0002;border-radius:5px;background:#fffdf8e8;
+      box-shadow:0 1px 5px #0002;cursor:zoom-in;pointer-events:auto}
+    .rail-overview-stripe{display:block;flex:1;min-width:1px;height:6px;
+      border-radius:1px;box-shadow:inset 0 0 0 .2px #0002}
+    .rail-overview:hover,.rail-overview:focus-visible{outline:2px solid #7562a4;
+      outline-offset:2px;border-color:#9583be;z-index:9}
+    .rail-track.dense .rail-overview[data-tight="true"]{height:7px;padding:1px}
+    .rail-track.dense .rail-overview[data-tight="true"] .rail-overview-stripe{height:4px}
     .rail-lens{position:fixed;width:min(204px,64vw);max-height:min(320px,68vh);overflow:auto;
       pointer-events:auto;z-index:35;padding:5px;background:#fffdf9f7;
       border:1px solid #e5ddd1;border-radius:10px;box-shadow:0 8px 25px #0003}
@@ -686,8 +771,11 @@ var JP;
       background:transparent;color:#555049;padding:3px 7px;border-radius:6px;text-align:left;
       white-space:nowrap;overflow:hidden;font-size:12px}
     .rail-lens button:hover,.rail-lens button:focus-visible{background:#f1ede5}
-    .rail-lens-turn{font-weight:600;border-bottom:1px solid #ede9e1!important;
-      border-radius:5px 5px 0 0!important;}
+    .rail-lens-turn{font-size:12px;line-height:1.35;color:#565047;font-weight:600;
+      border-bottom:1px solid #ede9e1;padding:8px 7px;white-space:nowrap;
+      overflow:hidden;text-overflow:ellipsis}
+    .rail-lens-turn[role="button"]{cursor:pointer}
+    .rail-lens-turn[role="button"]:hover{background:#f1ede5}
     .rail-lens-dot{flex:0 0 12px;height:8px;border-radius:5px;border:1px solid #0002}
     .rail-lens-dot.missing{border:1px dashed #716b66;opacity:.85}
     .rail-lens-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
@@ -847,6 +935,7 @@ var JP;
         conversationIndex = new JP.ConversationIndex();
         conversationScrollRootRef = null;
         railGroups = [];
+        railSupplementalGroups = [];
         railLayoutBase = null;
         railFocus = null;
         railDismissTimer = 0;
@@ -960,13 +1049,21 @@ var JP;
             });
             const track = this.$('#jp-rail-track');
             track.addEventListener('pointermove', event => {
-                if (!this.railLayoutBase?.dense)
+                const layout = this.railLayoutBase;
+                if (!layout?.compactGroups.size)
                     return;
-                // Use the *unchanged overview layout* to hit-test turns. Expanding
-                // markers inside that same track made the pointer lose its target.
+                // Hovering the *colored summary itself* is always authoritative. This
+                // also works when a 6px-dense overview overlaps neighboring hit areas.
+                const target = event.target.closest('.rail-overview');
+                if (target?.dataset.railGroup) {
+                    this.setRailFocus(target.dataset.railGroup);
+                    return;
+                }
+                // For compressed 100+ turn rails, the track is more usable as a hit
+                // surface than individually targeting a miniature 2px strip.
                 const y = event.clientY - track.getBoundingClientRect().top;
-                const region = this.railLayoutBase.regions.find(r => y >= r.start && y < r.end);
-                if (region)
+                const region = layout.regions.find(r => y >= r.start && y < r.end);
+                if (region && layout.compactGroups.has(region.turnId))
                     this.setRailFocus(region.turnId);
             });
             track.addEventListener('pointerleave', () => this.scheduleRailDismiss());
@@ -1106,6 +1203,7 @@ var JP;
             this.listOpen = false;
             this.railFocus = null;
             this.railGroups = [];
+            this.railSupplementalGroups = [];
             this.railLayoutBase = null;
             this.conversationIndex.reset();
             this.conversationScrollRootRef = null;
@@ -1285,8 +1383,6 @@ var JP;
         }
         hideTurnPreview() { this.$('#jp-turn-preview').hidden = true; }
         showTurnPreview(turn, button) {
-            if (this.railLayoutBase?.dense && button.closest('.rail-track'))
-                return;
             const preview = this.$('#jp-turn-preview');
             preview.replaceChildren();
             const label = el('small');
@@ -1367,8 +1463,6 @@ var JP;
         }
         /** A tiny preview is shared by turn bars and individual colored notes. */
         showNotePreview(note, button) {
-            if (this.railLayoutBase?.dense && button.closest('.rail-track'))
-                return;
             const preview = this.$('#jp-turn-preview');
             preview.replaceChildren();
             const label = el('small');
@@ -1413,6 +1507,7 @@ var JP;
             this.clearRailLens();
             track.replaceChildren();
             this.railGroups = [];
+            this.railSupplementalGroups = [];
             this.railLayoutBase = null;
             const live = turns.filter(turn => turn.element?.isConnected);
             const perTurn = new Map();
@@ -1432,6 +1527,7 @@ var JP;
             if (showTurns) {
                 if (this.railFocus && !turns.some(t => t.id === this.railFocus))
                     this.railFocus = null;
+                const ordered = new Map();
                 for (const turn of turns) {
                     const notes = (perTurn.get(turn.id) || []).sort((a, b) => (this.matches.get(a.id)?.start ?? a.anchor?.start ?? Infinity) -
                         (this.matches.get(b.id)?.start ?? b.anchor?.start ?? Infinity) || a.createdAt - b.createdAt);
@@ -1443,6 +1539,14 @@ var JP;
                         return start == null ? .5 : highest > lowest ? (start - lowest) / (highest - lowest) : (.5 + (index - (notes.length - 1) / 2) * .08);
                     });
                     this.railGroups.push({ turnId: turn.id, noteIds: notes.map(n => n.id), fractions });
+                    ordered.set(turn.id, notes);
+                }
+                const height = track.clientHeight || Math.max(170, innerHeight * .68 - 65);
+                const plan = JP.layoutConversationRail(this.railGroups, height);
+                const crossGroups = JP.groupCrowdedTurnNotes(this.railGroups, plan);
+                const hiddenInCrossGroups = new Set(crossGroups.flatMap(group => group.noteIds));
+                for (const turn of turns) {
+                    const notes = ordered.get(turn.id) || [];
                     const bar = el('button', 'rail-turn');
                     bar.type = 'button';
                     bar.dataset.turnId = turn.id;
@@ -1451,31 +1555,49 @@ var JP;
                     bar.title = `已发现第 ${turn.order + 1} 轮：${turn.preview}`;
                     bar.setAttribute('aria-label', bar.title);
                     bar.addEventListener('click', () => void this.jumpToTurn(turn));
-                    bar.addEventListener('pointerenter', () => this.showTurnPreview(turn, bar));
+                    bar.addEventListener('pointerenter', () => {
+                        if (plan.compactGroups.has(turn.id))
+                            this.setRailFocus(turn.id);
+                        else
+                            this.showTurnPreview(turn, bar);
+                    });
                     bar.addEventListener('pointerleave', () => this.hideTurnPreview());
-                    bar.addEventListener('focus', () => { this.setRailFocus(turn.id); this.showTurnPreview(turn, bar); });
+                    bar.addEventListener('focus', () => {
+                        if (plan.compactGroups.has(turn.id))
+                            this.setRailFocus(turn.id);
+                        else
+                            this.showTurnPreview(turn, bar);
+                    });
                     bar.addEventListener('blur', () => this.hideTurnPreview());
                     track.appendChild(bar);
-                    for (const note of notes)
-                        this.addRailNote(track, note, turn.id);
+                    if (plan.compactGroups.has(turn.id))
+                        this.addRailOverview(track, notes, turn.id);
+                    else
+                        for (const note of notes) {
+                            if (!hiddenInCrossGroups.has(note.id))
+                                this.addRailNote(track, note, turn.id);
+                        }
                 }
                 this.applyRailLayout();
+                // Cross-turn overviews share the SAME time axis but do not replace
+                // gray prompt bars. Store only their lens lookup & pixel centers.
+                const actual = this.railLayoutBase;
+                const noteMap = new Map(this.notes.map(note => [note.id, note]));
+                for (const group of crossGroups) {
+                    const notes = group.noteIds.map(id => noteMap.get(id)).filter((note) => !!note);
+                    this.railSupplementalGroups.push({ turnId: group.id, noteIds: group.noteIds, fractions: [] });
+                    actual.compactGroups.add(group.id);
+                    actual.positions.set(`overview:${group.id}`, group.center);
+                    actual.regions.push({ turnId: group.id, start: group.start, end: group.end });
+                    const marker = this.addRailOverview(track, notes, group.id);
+                    marker.style.top = `${group.center}px`;
+                }
             }
             else {
-                // Other websites, or a site whose native timeline is already visible:
-                // retain the compact note-only Dock without inventing conversation turns.
-                const total = Math.max(1, this.index?.text.length || 1);
-                const placed = [];
-                this.sortedNotes().forEach((note, index) => {
-                    const match = this.liveMatch(note);
-                    let position = match ? match.start / total * 100 : (note.anchor ? 90 + index % 4 * 2 : 3 + index * 3);
-                    position = clamp(position, 2, 98);
-                    while (placed.some(p => Math.abs(p - position) < 3.3) && position < 95)
-                        position += 3.3;
-                    placed.push(position);
-                    const button = this.addRailNote(track, note);
-                    button.style.top = `${position}%`;
-                });
+                // When a site reveals fewer than three turns (or none at all), the
+                // note-only rail STILL compresses dozens of nearby notes. Otherwise
+                // users can create 30 notes and never see an overview or hover lens.
+                this.renderPageNoteRail(track);
             }
             const extras = showTurns ? loose : [];
             const bottom = this.$('#jp-loose-toggle');
@@ -1487,6 +1609,71 @@ var JP;
             this.activeTurnId = null;
             this.updateActiveTurn();
             this.renderList();
+        }
+        /** A visible multi-color overview, not N overlapping yellow dots.
+         *  Same-color notes still render as multiple separated stripes. */
+        addRailOverview(track, notes, groupId) {
+            const button = el('button', 'rail-overview');
+            button.type = 'button';
+            button.dataset.railGroup = groupId;
+            button.dataset.railKey = `overview:${groupId}`;
+            button.dataset.noteCount = String(notes.length);
+            button.title = `${notes.length} 张便签 · 悬停展开逐条查看`;
+            button.setAttribute('aria-label', `${notes.length} 张便签，悬停展开并逐条跳转`);
+            const samples = Math.min(6, notes.length);
+            for (let i = 0; i < samples; i++) {
+                const source = notes[Math.floor(i * notes.length / samples)];
+                const strip = el('span', 'rail-overview-stripe');
+                strip.style.background = COLOR_HEX[JP.appearance(source).color];
+                strip.setAttribute('aria-hidden', 'true');
+                button.appendChild(strip);
+            }
+            button.addEventListener('pointerenter', () => this.setRailFocus(groupId));
+            button.addEventListener('focus', () => this.setRailFocus(groupId));
+            button.addEventListener('click', () => this.setRailFocus(groupId));
+            track.appendChild(button);
+            return button;
+        }
+        /** Note-only fallback uses stable document-position bins when crowded. */
+        renderPageNoteRail(track) {
+            const sorted = this.sortedNotes();
+            const textLength = Math.max(1, this.index?.text.length || 1);
+            const height = track.clientHeight || Math.max(170, innerHeight * .68 - 65);
+            this.railLayoutHeight = height;
+            const notesById = new Map(sorted.map(note => [note.id, note]));
+            const points = sorted.map((note, i) => {
+                const match = this.liveMatch(note);
+                const fraction = match ? match.start / textLength :
+                    note.anchor ? .90 + (i % 4) * .02 : .03 + i * .025;
+                return { noteId: note.id, fraction: clamp(fraction, .02, .98) };
+            });
+            const groups = JP.groupPageRailPoints(points, height);
+            const fractions = new Map(points.map(point => [point.noteId, point.fraction]));
+            const positions = new Map(), regions = [], compactGroups = new Set();
+            for (const group of groups) {
+                const shouldCompact = group.noteIds.length >= JP.OVERVIEW_NOTE_THRESHOLD ||
+                    (group.noteIds.length >= 2 && points.length >= 14 && height / points.length < 34);
+                if (shouldCompact) {
+                    compactGroups.add(group.id);
+                    this.railGroups.push({ turnId: group.id, noteIds: group.noteIds, fractions: [] });
+                    regions.push({ turnId: group.id, start: group.start, end: group.end });
+                    const notes = group.noteIds.map(id => notesById.get(id)).filter((n) => !!n);
+                    const button = this.addRailOverview(track, notes, group.id);
+                    button.style.top = `${group.center}px`;
+                    positions.set(`overview:${group.id}`, group.center);
+                }
+                else {
+                    for (const id of group.noteIds) {
+                        const note = notesById.get(id);
+                        if (!note)
+                            continue;
+                        const button = this.addRailNote(track, note);
+                        button.style.top = `${clamp(fractions.get(id) ?? .5, .02, .98) * 100}%`;
+                    }
+                }
+            }
+            this.railLayoutBase = { positions, regions, compactGroups, dense: compactGroups.size > 0, height };
+            track.classList.toggle('dense', compactGroups.size > 0);
         }
         addRailNote(track, note, groupId) {
             const button = el('button', `rail-pin${note.anchor && !this.liveMatch(note) ? ' missing' : ''}`);
@@ -1501,7 +1688,12 @@ var JP;
             button.title = (note.anchor && !this.liveMatch(note) ? '原文暂未加载 · ' : '') + (note.text.trim().slice(0, 90) || note.anchor?.exact.slice(0, 70) || '本页便签');
             button.setAttribute('aria-label', `跳转便签：${button.title}`);
             button.addEventListener('click', () => this.goTo(note.id));
-            button.addEventListener('pointerenter', () => this.showNotePreview(note, button));
+            button.addEventListener('pointerenter', () => {
+                if (groupId && this.railLayoutBase?.compactGroups.has(groupId))
+                    this.setRailFocus(groupId);
+                else
+                    this.showNotePreview(note, button);
+            });
             button.addEventListener('pointerleave', () => this.hideTurnPreview());
             button.addEventListener('focus', () => { if (groupId)
                 this.setRailFocus(groupId); this.showNotePreview(note, button); });
@@ -1547,7 +1739,7 @@ var JP;
             this.shadow.querySelector('#jp-rail-track')?.classList.remove('focused');
         }
         setRailFocus(turnId) {
-            if (!turnId || !this.railLayoutBase?.dense) {
+            if (!turnId || !this.railLayoutBase?.compactGroups.has(turnId)) {
                 this.clearRailLens();
                 return;
             }
@@ -1561,20 +1753,31 @@ var JP;
          *  preliminary click before selecting a note or a question. */
         showRailLens(turnId) {
             const layout = this.railLayoutBase;
-            const group = this.railGroups.find(g => g.turnId === turnId);
+            const group = this.railGroups.find(g => g.turnId === turnId) ||
+                this.railSupplementalGroups.find(g => g.turnId === turnId);
             const turn = this.conversation.turns.find(t => t.id === turnId);
             const lens = this.$('#jp-rail-lens');
-            if (!layout || !layout.dense || !group || !turn) {
+            if (!layout || !layout.compactGroups.has(turnId) || !group) {
                 this.clearRailLens();
                 return;
             }
             this.hideTurnPreview();
             lens.replaceChildren();
-            const title = el('button', 'rail-lens-turn');
-            title.type = 'button';
-            title.textContent = `${turn.order + 1} · ${turn.preview}`;
-            title.title = `第 ${turn.order + 1} 轮：${turn.preview}`;
-            title.addEventListener('click', () => { this.clearRailLens(); void this.jumpToTurn(turn); });
+            const title = el('div', 'rail-lens-turn');
+            title.textContent = turn ? `${turn.order + 1} · ${turn.preview}` : `附近 ${group.noteIds.length} 张便签`;
+            title.title = title.textContent;
+            if (turn) {
+                title.setAttribute('role', 'button');
+                title.setAttribute('tabindex', '0');
+                title.addEventListener('click', () => { this.clearRailLens(); void this.jumpToTurn(turn); });
+                title.addEventListener('keydown', event => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        this.clearRailLens();
+                        void this.jumpToTurn(turn);
+                    }
+                });
+            }
             lens.appendChild(title);
             for (const noteId of group.noteIds) {
                 const note = this.notes.find(n => n.id === noteId);
@@ -1705,7 +1908,7 @@ var JP;
                 this.positionMarkers();
                 const track = this.$('#jp-rail-track');
                 if (this.railGroups.length && track.clientHeight !== this.railLayoutHeight)
-                    this.applyRailLayout();
+                    this.renderDock();
                 for (const id of this.openIds)
                     this.positionCard(id);
                 this.updateActiveTurn();

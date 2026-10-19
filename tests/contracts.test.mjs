@@ -71,7 +71,7 @@ test('stage 1.8 WYSIWYG editor and passive navigation stay local-first', () => {
 
 
 test('0.1.7 rejects missing or stale anchored ranges before showing papers', () => {
-  assert.equal(manifest.version, '0.1.9');
+  assert.equal(manifest.version, '0.1.10');
   const app = readFileSync('src/content/app.ts', 'utf8');
   assert.ok(app.includes('private liveMatch(note:Note):Match|null'));
   assert.ok(app.includes('if(!match||!rect)'));
@@ -98,7 +98,7 @@ test('navigation is passive and has individual note markers with one-way unpin',
 test('0.1.9 stable dense hover and note color in virtualized pages', () => {
   const app=readFileSync('src/content/app.ts','utf8');
   const css=readFileSync('src/content/paper-styles.ts','utf8');
-  assert.equal(manifest.version,'0.1.9');
+  assert.equal(manifest.version,'0.1.10');
   for(const name of ['jp-rail-lens','showRailLens','scheduleRailDismiss','clearRailLens'])
     assert.ok(app.includes(name),name);
   assert.ok(app.includes('button.style.background=COLOR_HEX[appearance(note).color]'));
@@ -107,4 +107,18 @@ test('0.1.9 stable dense hover and note color in virtualized pages', () => {
   assert.ok(!css.includes('.rail-pin.missing{background:#a9a9a9'));
   const layout=readFileSync('src/content/rail-layout.ts','utf8');
   assert.ok(!layout.includes('focusedTurn'));
+});
+
+
+test('v0.1.10 renders visible multicolor summaries and has no global-only hover gate',()=>{
+  const app=readFileSync('src/content/app.ts','utf8');
+  const css=readFileSync('src/content/paper-styles.ts','utf8');
+  const layout=readFileSync('src/content/rail-layout.ts','utf8');
+  for(const token of ['addRailOverview','rail-overview-stripe','groupPageRailPoints',
+    'compactGroups.has(turn.id)','setRailFocus(groupId)'])
+    assert.ok((app+layout+css).includes(token),token);
+  assert.match(css,/\.rail-overview\{/);
+  assert.match(css,/\.rail-overview-stripe\{/);
+  assert.match(layout,/OVERVIEW_NOTE_THRESHOLD = 4/);
+  assert.ok(!app.includes('if(this.railLayoutBase?.dense && button.closest'));
 });

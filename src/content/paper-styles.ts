@@ -31,6 +31,19 @@ namespace JP {
     .rail.with-conversation .rail-pin{left:2px;width:13px;height:7px;z-index:3;border-radius:9px}
     /* Dense lens lives beside the rail. The overview never jumps on hover. */
     .rail-track.focused .rail-pin,.rail-track.focused .rail-turn{transition:none}
+    /* An actual compact overview: several colored micro-stripes in one slot.
+       The larger transparent hit area belongs to the whole summary, not one
+       tiny stripe; the hover lens reveals each note as an individual target. */
+    .rail-overview{position:absolute;left:1px;width:17px;height:11px;z-index:5;
+      transform:translateY(-50%);display:flex;align-items:center;gap:1px;padding:2px;
+      border:1px solid #0002;border-radius:5px;background:#fffdf8e8;
+      box-shadow:0 1px 5px #0002;cursor:zoom-in;pointer-events:auto}
+    .rail-overview-stripe{display:block;flex:1;min-width:1px;height:6px;
+      border-radius:1px;box-shadow:inset 0 0 0 .2px #0002}
+    .rail-overview:hover,.rail-overview:focus-visible{outline:2px solid #7562a4;
+      outline-offset:2px;border-color:#9583be;z-index:9}
+    .rail-track.dense .rail-overview[data-tight="true"]{height:7px;padding:1px}
+    .rail-track.dense .rail-overview[data-tight="true"] .rail-overview-stripe{height:4px}
     .rail-lens{position:fixed;width:min(204px,64vw);max-height:min(320px,68vh);overflow:auto;
       pointer-events:auto;z-index:35;padding:5px;background:#fffdf9f7;
       border:1px solid #e5ddd1;border-radius:10px;box-shadow:0 8px 25px #0003}
@@ -38,8 +51,11 @@ namespace JP {
       background:transparent;color:#555049;padding:3px 7px;border-radius:6px;text-align:left;
       white-space:nowrap;overflow:hidden;font-size:12px}
     .rail-lens button:hover,.rail-lens button:focus-visible{background:#f1ede5}
-    .rail-lens-turn{font-weight:600;border-bottom:1px solid #ede9e1!important;
-      border-radius:5px 5px 0 0!important;}
+    .rail-lens-turn{font-size:12px;line-height:1.35;color:#565047;font-weight:600;
+      border-bottom:1px solid #ede9e1;padding:8px 7px;white-space:nowrap;
+      overflow:hidden;text-overflow:ellipsis}
+    .rail-lens-turn[role="button"]{cursor:pointer}
+    .rail-lens-turn[role="button"]:hover{background:#f1ede5}
     .rail-lens-dot{flex:0 0 12px;height:8px;border-radius:5px;border:1px solid #0002}
     .rail-lens-dot.missing{border:1px dashed #716b66;opacity:.85}
     .rail-lens-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}

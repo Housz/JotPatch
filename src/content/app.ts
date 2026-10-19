@@ -51,6 +51,7 @@ namespace JP {
     private conversationIndex = new ConversationIndex();
     private conversationScrollRootRef: Element | null = null;
     private railGroups: RailTurnGroup[] = [];
+    private railSupplementalGroups: RailTurnGroup[] = [];
     private railLayoutBase: RailLayout | null = null;
     private railFocus: string | null = null;
     private railDismissTimer = 0;
@@ -153,12 +154,17 @@ namespace JP {
       });
       const track=this.$<HTMLElement>('#jp-rail-track');
       track.addEventListener('pointermove', event => {
-        if (!this.railLayoutBase?.dense) return;
-        // Use the *unchanged overview layout* to hit-test turns. Expanding
-        // markers inside that same track made the pointer lose its target.
+        const layout=this.railLayoutBase;
+        if(!layout?.compactGroups.size)return;
+        // Hovering the *colored summary itself* is always authoritative. This
+        // also works when a 6px-dense overview overlaps neighboring hit areas.
+        const target=(event.target as Element).closest<HTMLElement>('.rail-overview');
+        if(target?.dataset.railGroup){this.setRailFocus(target.dataset.railGroup);return;}
+        // For compressed 100+ turn rails, the track is more usable as a hit
+        // surface than individually targeting a miniature 2px strip.
         const y=event.clientY-track.getBoundingClientRect().top;
-        const region=this.railLayoutBase.regions.find(r=>y>=r.start && y<r.end);
-        if(region)this.setRailFocus(region.turnId);
+        const region=layout.regions.find(r=>y>=r.start&&y<r.end);
+        if(region && layout.compactGroups.has(region.turnId))this.setRailFocus(region.turnId);
       });
       track.addEventListener('pointerleave',()=>this.scheduleRailDismiss());
       const lens=this.$<HTMLElement>('#jp-rail-lens');
@@ -257,7 +263,7 @@ namespace JP {
       this.unpinUndo=null;
       this.openIds.clear(); this.explicitlyDetachedIds.clear(); this.cards.clear(); this.$<HTMLElement>('#jp-cards').replaceChildren();
       this.listOpen = false;
-      this.railFocus = null; this.railGroups = []; this.railLayoutBase = null;
+      this.railFocus = null; this.railGroups = []; this.railSupplementalGroups=[]; this.railLayoutBase = null;
       this.conversationIndex.reset();
       this.conversationScrollRootRef = null;
       this.conversation = { site: conversationSite(), turns: [], nativeRailPresent: false };
@@ -394,7 +400,6 @@ namespace JP {
     }
     private hideTurnPreview(): void { this.$<HTMLElement>('#jp-turn-preview').hidden = true; }
     private showTurnPreview(turn: ConversationTurn, button: HTMLButtonElement): void {
-      if(this.railLayoutBase?.dense && button.closest('.rail-track'))return;
       const preview = this.$<HTMLElement>('#jp-turn-preview');
       preview.replaceChildren();
       const label = el('small'); label.textContent = `已发现第 ${turn.order + 1} / ${this.conversation.turns.length} 轮${turn.element?'':' · 暂未挂载'}`;
@@ -459,7 +464,6 @@ namespace JP {
 
     /** A tiny preview is shared by turn bars and individual colored notes. */
     private showNotePreview(note:Note,button:HTMLButtonElement):void {
-      if(this.railLayoutBase?.dense && button.closest('.rail-track'))return;
       const preview=this.$<HTMLElement>('#jp-turn-preview');
       preview.replaceChildren();
       const label=el('small');
@@ -502,7 +506,7 @@ namespace JP {
       const track=this.$<HTMLElement>('#jp-rail-track');
       this.clearRailLens();
       track.replaceChildren();
-      this.railGroups=[];this.railLayoutBase=null;
+      this.railGroups=[];this.railSupplementalGroups=[];this.railLayoutBase=null;
       const live=turns.filter(turn=>turn.element?.isConnected);
       const perTurn=new Map<string,Note[]>();
       const loose:Note[]=[];
@@ -519,6 +523,7 @@ namespace JP {
 
       if(showTurns){
         if(this.railFocus && !turns.some(t=>t.id===this.railFocus))this.railFocus=null;
+        const ordered=new Map<string,Note[]>();
         for(const turn of turns){
           const notes=(perTurn.get(turn.id)||[]).sort((a,b)=>
             (this.matches.get(a.id)?.start??a.anchor?.start??Infinity)-
@@ -531,39 +536,124 @@ namespace JP {
             return start==null?.5:highest>lowest?(start-lowest)/(highest-lowest):(.5+(index-(notes.length-1)/2)*.08);
           });
           this.railGroups.push({turnId:turn.id,noteIds:notes.map(n=>n.id),fractions});
+          ordered.set(turn.id,notes);
+        }
+        const height=track.clientHeight||Math.max(170,innerHeight*.68-65);
+        const plan=layoutConversationRail(this.railGroups,height);
+        const crossGroups=groupCrowdedTurnNotes(this.railGroups,plan);
+        const hiddenInCrossGroups=new Set(crossGroups.flatMap(group=>group.noteIds));
+        for(const turn of turns){
+          const notes=ordered.get(turn.id)||[];
           const bar=el('button','rail-turn');bar.type='button';
           bar.dataset.turnId=turn.id;bar.dataset.railKey=`turn:${turn.id}`;bar.dataset.railGroup=turn.id;
           bar.title=`已发现第 ${turn.order+1} 轮：${turn.preview}`;
           bar.setAttribute('aria-label',bar.title);
           bar.addEventListener('click',()=>void this.jumpToTurn(turn));
-          bar.addEventListener('pointerenter',()=>this.showTurnPreview(turn,bar));
+          bar.addEventListener('pointerenter',()=>{
+            if(plan.compactGroups.has(turn.id))this.setRailFocus(turn.id);
+            else this.showTurnPreview(turn,bar);
+          });
           bar.addEventListener('pointerleave',()=>this.hideTurnPreview());
-          bar.addEventListener('focus',()=>{this.setRailFocus(turn.id);this.showTurnPreview(turn,bar);});
+          bar.addEventListener('focus',()=>{
+            if(plan.compactGroups.has(turn.id))this.setRailFocus(turn.id);
+            else this.showTurnPreview(turn,bar);
+          });
           bar.addEventListener('blur',()=>this.hideTurnPreview());
           track.appendChild(bar);
-          for(const note of notes) this.addRailNote(track,note,turn.id);
+          if(plan.compactGroups.has(turn.id))this.addRailOverview(track,notes,turn.id);
+          else for(const note of notes){
+            if(!hiddenInCrossGroups.has(note.id))this.addRailNote(track,note,turn.id);
+          }
         }
         this.applyRailLayout();
+        // Cross-turn overviews share the SAME time axis but do not replace
+        // gray prompt bars. Store only their lens lookup & pixel centers.
+        const actual=this.railLayoutBase!;
+        const noteMap=new Map(this.notes.map(note=>[note.id,note]));
+        for(const group of crossGroups){
+          const notes=group.noteIds.map(id=>noteMap.get(id)).filter((note):note is Note=>!!note);
+          this.railSupplementalGroups.push({turnId:group.id,noteIds:group.noteIds,fractions:[]});
+          actual.compactGroups.add(group.id);
+          actual.positions.set(`overview:${group.id}`,group.center);
+          actual.regions.push({turnId:group.id,start:group.start,end:group.end});
+          const marker=this.addRailOverview(track,notes,group.id);
+          marker.style.top=`${group.center}px`;
+        }
       }else{
-        // Other websites, or a site whose native timeline is already visible:
-        // retain the compact note-only Dock without inventing conversation turns.
-        const total=Math.max(1,this.index?.text.length||1);
-        const placed:number[]=[];
-        this.sortedNotes().forEach((note,index)=>{
-          const match=this.liveMatch(note);
-          let position=match?match.start/total*100:(note.anchor?90+index%4*2:3+index*3);
-          position=clamp(position,2,98);
-          while(placed.some(p=>Math.abs(p-position)<3.3) && position<95)position+=3.3;
-          placed.push(position);
-          const button=this.addRailNote(track,note);
-          button.style.top=`${position}%`;
-        });
+        // When a site reveals fewer than three turns (or none at all), the
+        // note-only rail STILL compresses dozens of nearby notes. Otherwise
+        // users can create 30 notes and never see an overview or hover lens.
+        this.renderPageNoteRail(track);
       }
       const extras=showTurns?loose:[];
       const bottom=this.$<HTMLButtonElement>('#jp-loose-toggle');
       bottom.hidden=!showTurns || extras.length===0;
       if(!bottom.hidden){bottom.textContent=`${extras.length}`;bottom.title=`${extras.length} 张本页悬浮或待定位便签`;}
       this.activeTurnId=null;this.updateActiveTurn();this.renderList();
+    }
+
+    /** A visible multi-color overview, not N overlapping yellow dots.
+     *  Same-color notes still render as multiple separated stripes. */
+    private addRailOverview(track:HTMLElement,notes:Note[],groupId:string):HTMLButtonElement {
+      const button=el('button','rail-overview');
+      button.type='button';button.dataset.railGroup=groupId;
+      button.dataset.railKey=`overview:${groupId}`;
+      button.dataset.noteCount=String(notes.length);
+      button.title=`${notes.length} 张便签 · 悬停展开逐条查看`;
+      button.setAttribute('aria-label',`${notes.length} 张便签，悬停展开并逐条跳转`);
+      const samples=Math.min(6,notes.length);
+      for(let i=0;i<samples;i++){
+        const source=notes[Math.floor(i*notes.length/samples)];
+        const strip=el('span','rail-overview-stripe');
+        strip.style.background=COLOR_HEX[appearance(source).color];
+        strip.setAttribute('aria-hidden','true');
+        button.appendChild(strip);
+      }
+      button.addEventListener('pointerenter',()=>this.setRailFocus(groupId));
+      button.addEventListener('focus',()=>this.setRailFocus(groupId));
+      button.addEventListener('click',()=>this.setRailFocus(groupId));
+      track.appendChild(button);
+      return button;
+    }
+
+    /** Note-only fallback uses stable document-position bins when crowded. */
+    private renderPageNoteRail(track:HTMLElement):void {
+      const sorted=this.sortedNotes();
+      const textLength=Math.max(1,this.index?.text.length||1);
+      const height=track.clientHeight||Math.max(170,innerHeight*.68-65);
+      this.railLayoutHeight=height;
+      const notesById=new Map(sorted.map(note=>[note.id,note]));
+      const points=sorted.map((note,i)=>{
+        const match=this.liveMatch(note);
+        const fraction=match?match.start/textLength :
+          note.anchor? .90 + (i%4)*.02 : .03+i*.025;
+        return {noteId:note.id,fraction:clamp(fraction,.02,.98)};
+      });
+      const groups=groupPageRailPoints(points,height);
+      const fractions=new Map(points.map(point=>[point.noteId,point.fraction]));
+      const positions=new Map<string,number>(),regions:RailRegion[]=[],compactGroups=new Set<string>();
+      for(const group of groups){
+        const shouldCompact=group.noteIds.length>=OVERVIEW_NOTE_THRESHOLD ||
+          (group.noteIds.length>=2 && points.length>=14 && height/points.length<34);
+        if(shouldCompact){
+          compactGroups.add(group.id);
+          this.railGroups.push({turnId:group.id,noteIds:group.noteIds,fractions:[]});
+          regions.push({turnId:group.id,start:group.start,end:group.end});
+          const notes=group.noteIds.map(id=>notesById.get(id)).filter((n):n is Note=>!!n);
+          const button=this.addRailOverview(track,notes,group.id);
+          button.style.top=`${group.center}px`;
+          positions.set(`overview:${group.id}`,group.center);
+        }else{
+          for(const id of group.noteIds){
+            const note=notesById.get(id);
+            if(!note)continue;
+            const button=this.addRailNote(track,note);
+            button.style.top=`${clamp(fractions.get(id)??.5,.02,.98)*100}%`;
+          }
+        }
+      }
+      this.railLayoutBase={positions,regions,compactGroups,dense:compactGroups.size>0,height};
+      track.classList.toggle('dense',compactGroups.size>0);
     }
 
     private addRailNote(track:HTMLElement,note:Note,groupId?:string):HTMLButtonElement {
@@ -577,7 +667,10 @@ namespace JP {
       button.title=(note.anchor&&!this.liveMatch(note)?'原文暂未加载 · ':'')+(note.text.trim().slice(0,90)||note.anchor?.exact.slice(0,70)||'本页便签');
       button.setAttribute('aria-label',`跳转便签：${button.title}`);
       button.addEventListener('click',()=>this.goTo(note.id));
-      button.addEventListener('pointerenter',()=>this.showNotePreview(note,button));
+      button.addEventListener('pointerenter',()=>{
+        if(groupId && this.railLayoutBase?.compactGroups.has(groupId))this.setRailFocus(groupId);
+        else this.showNotePreview(note,button);
+      });
       button.addEventListener('pointerleave',()=>this.hideTurnPreview());
       button.addEventListener('focus',()=>{if(groupId)this.setRailFocus(groupId);this.showNotePreview(note,button);});
       button.addEventListener('blur',()=>this.hideTurnPreview());
@@ -618,7 +711,9 @@ namespace JP {
       this.shadow.querySelector('#jp-rail-track')?.classList.remove('focused');
     }
     private setRailFocus(turnId:string|null):void {
-      if(!turnId || !this.railLayoutBase?.dense){this.clearRailLens();return;}
+      if(!turnId || !this.railLayoutBase?.compactGroups.has(turnId)){
+        this.clearRailLens();return;
+      }
       this.cancelRailDismiss();
       if(this.railFocus===turnId && !this.$<HTMLElement>('#jp-rail-lens').hidden)return;
       this.railFocus=turnId;
@@ -628,16 +723,23 @@ namespace JP {
      *  preliminary click before selecting a note or a question. */
     private showRailLens(turnId:string):void {
       const layout=this.railLayoutBase;
-      const group=this.railGroups.find(g=>g.turnId===turnId);
+      const group=this.railGroups.find(g=>g.turnId===turnId) ||
+        this.railSupplementalGroups.find(g=>g.turnId===turnId);
       const turn=this.conversation.turns.find(t=>t.id===turnId);
       const lens=this.$<HTMLElement>('#jp-rail-lens');
-      if(!layout || !layout.dense || !group || !turn){this.clearRailLens();return;}
+      if(!layout || !layout.compactGroups.has(turnId) || !group){this.clearRailLens();return;}
       this.hideTurnPreview();
       lens.replaceChildren();
-      const title=el('button','rail-lens-turn');title.type='button';
-      title.textContent=`${turn.order+1} · ${turn.preview}`;
-      title.title=`第 ${turn.order+1} 轮：${turn.preview}`;
-      title.addEventListener('click',()=>{this.clearRailLens();void this.jumpToTurn(turn);});
+      const title=el('div','rail-lens-turn');
+      title.textContent=turn?`${turn.order+1} · ${turn.preview}`:`附近 ${group.noteIds.length} 张便签`;
+      title.title=title.textContent;
+      if(turn){
+        title.setAttribute('role','button');title.setAttribute('tabindex','0');
+        title.addEventListener('click',()=>{this.clearRailLens();void this.jumpToTurn(turn);});
+        title.addEventListener('keydown',event=>{
+          if(event.key==='Enter'||event.key===' '){event.preventDefault();this.clearRailLens();void this.jumpToTurn(turn);}
+        });
+      }
       lens.appendChild(title);
       for(const noteId of group.noteIds){
         const note=this.notes.find(n=>n.id===noteId);
@@ -741,7 +843,7 @@ namespace JP {
       requestAnimationFrame(()=>{
         this.scrollScheduled=false; this.positionMarkers();
         const track=this.$<HTMLElement>('#jp-rail-track');
-        if(this.railGroups.length && track.clientHeight!==this.railLayoutHeight)this.applyRailLayout();
+        if(this.railGroups.length && track.clientHeight!==this.railLayoutHeight)this.renderDock();
         for(const id of this.openIds) this.positionCard(id);
         this.updateActiveTurn();
       });
