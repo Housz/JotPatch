@@ -475,32 +475,114 @@ var JP;
 })(JP || (JP = {}));
 var JP;
 (function (JP) {
-    /** In-memory navigation cache for DOM virtualization. Does not persist prompt text. */
+    /** Passive, in-memory navigation history. Never scrolls the host page. */
     class ConversationIndex {
-        discovered = new Map();
-        reset() { this.discovered.clear(); }
+        known = new Map();
+        sequence = [];
+        reset() { this.known.clear(); this.sequence = []; }
         combine(snapshot) {
-            const present = new Set();
-            for (const turn of snapshot.turns) {
-                present.add(turn.id);
-                // Only stable site IDs can safely survive unmounts. Repeated prompts
-                // without stable identifiers are ephemeral to avoid false matches.
-                if (turn.stableId)
-                    this.discovered.set(turn.stableId, { ...turn, element: null });
-            }
-            const historical = [];
-            for (const turn of this.discovered.values()) {
-                if (present.has(turn.id))
+            // Scan whatever ChatGPT/Gemini actually mounted. A detached prompt must
+            // never be retained as a live Element in our cache.
+            const liveById = new Map(snapshot.turns.map(turn => [turn.id, turn]));
+            const stable = snapshot.turns.filter(turn => !!turn.stableId);
+            const stableIds = stable.map(turn => turn.stableId);
+            for (const turn of stable)
+                this.known.set(turn.stableId, { ...turn, element: null });
+            // Insert newly discovered messages relative to adjacent *overlapping*
+            // stable IDs, so adding older DOM nodes does not scramble known order.
+            // Disjoint virtualized windows use their approximate scroll hints only
+            // as a fallback; their precise global ordinal is not claimed.
+            for (let index = 0; index < stableIds.length; index++) {
+                const id = stableIds[index];
+                if (this.sequence.includes(id))
                     continue;
-                historical.push({ ...turn, element: null });
+                const previous = stableIds.slice(0, index).reverse().find(key => this.sequence.includes(key));
+                const next = stableIds.slice(index + 1).find(key => this.sequence.includes(key));
+                if (previous)
+                    this.sequence.splice(this.sequence.indexOf(previous) + 1, 0, id);
+                else if (next)
+                    this.sequence.splice(this.sequence.indexOf(next), 0, id);
+                else {
+                    const hint = this.known.get(id)?.scrollHint;
+                    const at = this.sequence.findIndex(key => (this.known.get(key)?.scrollHint ?? Infinity) > (hint ?? Infinity));
+                    this.sequence.splice(at < 0 ? this.sequence.length : at, 0, id);
+                }
             }
-            const turns = [...snapshot.turns, ...historical].sort((a, b) => (a.scrollHint ?? Infinity) - (b.scrollHint ?? Infinity) || a.id.localeCompare(b.id));
-            turns.forEach((turn, order) => { turn.order = order; });
-            return { ...snapshot, turns };
+            const result = [];
+            for (const key of this.sequence) {
+                const current = stable.find(turn => turn.stableId === key);
+                const record = current || this.known.get(key);
+                if (record)
+                    result.push({ ...record, element: current?.element || null });
+            }
+            // An unlabeled turn cannot safely persist across virtualized unmounts.
+            // Include it only while in the live DOM, in approximately its position.
+            for (const turn of snapshot.turns.filter(turn => !turn.stableId)) {
+                const at = result.findIndex(existing => (existing.scrollHint ?? Infinity) > (turn.scrollHint ?? Infinity));
+                result.splice(at < 0 ? result.length : at, 0, { ...turn });
+            }
+            result.forEach((turn, order) => { turn.order = order; });
+            return { ...snapshot, turns: result };
         }
-        discoveredCount() { return this.discovered.size; }
+        discoveredCount() { return this.known.size; }
     }
     JP.ConversationIndex = ConversationIndex;
+})(JP || (JP = {}));
+var JP;
+(function (JP) {
+    const TURN_WEIGHT = 14;
+    const NOTE_WEIGHT = 15;
+    const LOCAL_GAP = 16;
+    /**
+     * Pure layout function: no DOM, no page scrolling, no collapsed count glyphs.
+     * Available height is shared across rounds; rounds containing more notes get
+     * more space. When dense, hovering one round borrows room from other rounds
+     * without changing the underlying order or creating a second-click popover.
+     */
+    function layoutConversationRail(groups, requestedHeight, focusedTurn = null) {
+        const height = Math.max(50, Number.isFinite(requestedHeight) ? requestedHeight : 400);
+        const pad = 5;
+        const usable = height - pad * 2;
+        const positions = new Map();
+        const regions = [];
+        if (!groups.length)
+            return { positions, regions, dense: false, height };
+        const weights = groups.map(group => TURN_WEIGHT + group.noteIds.length * NOTE_WEIGHT);
+        const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+        const dense = totalWeight > usable;
+        const focused = focusedTurn && dense ? groups.findIndex(group => group.turnId === focusedTurn) : -1;
+        const spans = weights.map(weight => weight / totalWeight * usable);
+        if (focused >= 0 && groups[focused].noteIds.length) {
+            const otherWeight = totalWeight - weights[focused];
+            if (otherWeight > 0) {
+                const requested = 11 + (groups[focused].noteIds.length + 1) * LOCAL_GAP;
+                // Do not collapse every other turn to zero to make room for the lens.
+                const focusSpan = Math.min(requested, usable * 0.56, usable - Math.min(otherWeight / TURN_WEIGHT * 2, usable * 0.44));
+                const remainder = usable - focusSpan;
+                for (let index = 0; index < groups.length; index++)
+                    spans[index] = index === focused ? focusSpan : (weights[index] / otherWeight) * remainder;
+            }
+        }
+        let cursor = pad;
+        for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
+            const group = groups[groupIndex];
+            const span = spans[groupIndex];
+            regions.push({ turnId: group.turnId, start: cursor, end: cursor + span });
+            positions.set(`turn:${group.turnId}`, cursor + Math.min(3, span * 0.17));
+            const length = group.noteIds.length;
+            const usableSpan = Math.max(0, span - Math.min(6, span * .22));
+            for (let i = 0; i < length; i++) {
+                const fraction = Math.max(0, Math.min(1, group.fractions[i] ?? (i + .5) / length));
+                // Blend source-relative position and equal spacing. Equal spacing
+                // preserves independent markers even when all quotes are adjacent.
+                const slot = (i + 1) / (length + 1) * 0.76 + fraction * 0.24;
+                positions.set(`note:${group.noteIds[i]}`, cursor + Math.min(6, span * .23) + usableSpan * slot);
+            }
+            cursor += span;
+        }
+        return { positions, regions, dense, height };
+    }
+    JP.layoutConversationRail = layoutConversationRail;
 })(JP || (JP = {}));
 var JP;
 (function (JP) {
@@ -590,41 +672,54 @@ var JP;
     .bubble button{width:31px;height:31px;border-radius:50%;background:#fff8df;color:#7a612a;box-shadow:0 2px 12px #0003;
       border:1px solid #e7d59e;font-size:16px;line-height:30px;padding:0;text-align:center}
     .bubble button:hover{background:#ffe7a1;transform:scale(1.06)}
-    .rail{position:fixed;right:7px;top:20%;height:60%;width:26px;border-radius:16px;background:#fffdf9dc;
+    .rail{position:fixed;right:7px;top:50%;transform:translateY(-50%);height:68vh;max-height:730px;
+      min-height:220px;width:27px;border-radius:16px;background:#fffdf9d9;
       border:1px solid #e7e2d7;box-shadow:0 2px 10px #0001;pointer-events:auto}
-    .rail-head{position:absolute;top:3px;left:2px;width:20px;height:20px;border-radius:50%;font-size:11px;
-      background:#f0ece2;color:#615a4b;padding:0}
-    .rail-track{position:absolute;top:28px;bottom:12px;left:3px;right:3px}
-    .rail.with-conversation{width:32px}
+    .rail.with-conversation{width:33px}
     .rail.native-nav{right:42px}
-    .rail.with-conversation .rail-track{left:3px;right:3px}
-    .rail.with-conversation .rail-pin{left:0;width:9px;height:9px;z-index:2}
-    .rail-turn{position:absolute;right:0;width:13px;height:5px;min-height:2px;padding:0;
-      background:#c3c7cc;border-radius:8px;transform:translateY(-50%);transition:width .11s ease,background .11s ease}
-    .rail-turn:hover,.rail-turn:focus-visible{width:19px;background:#818894}
+    .rail-head{position:absolute;top:5px;left:50%;transform:translateX(-50%);width:23px;height:23px;
+      border-radius:50%;font-size:14px;background:#f0ece2;color:#615a4b;padding:0;display:grid;place-items:center}
+    .rail-head:hover,.rail-loose:hover{background:#e7e1d5}
+    .rail-track{position:absolute;top:33px;bottom:16px;left:2px;right:2px}
+    .rail.with-conversation .rail-track{bottom:25px;left:2px;right:2px}
+    .rail-loose{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);height:18px;min-width:20px;
+      padding:0 3px;background:#efe9df;border-radius:10px;color:#6d6659;font-size:11px}
+    .rail-turn{position:absolute;right:2px;width:14px;height:3px;min-height:2px;padding:0;
+      background:#c3c7cc;border-radius:8px;transform:translateY(-50%);
+      transition:top .17s ease,width .12s ease,background .12s ease;z-index:1}
+    .rail-turn:hover,.rail-turn:focus-visible{width:20px;background:#818894;z-index:6}
     .rail-turn[aria-current="location"]{width:19px;background:#717883}
-    .turn-preview{position:fixed;max-width:238px;min-width:140px;z-index:40;pointer-events:none;
+    .rail.with-conversation .rail-pin{left:2px;width:13px;height:7px;z-index:3;border-radius:9px}
+    .rail-track.focused .rail-pin,.rail-track.focused .rail-turn{transition:top .17s ease}
+    .rail-pin{position:absolute;left:5px;width:11px;height:10px;border:1px solid #0002;border-radius:50%;
+      box-shadow:0 1px 4px #0002;transform:translateY(-50%);padding:0;
+      transition:top .17s ease,width .1s ease;cursor:pointer}
+    .rail-pin.missing{background:#a9a9a9!important;border-style:dashed;opacity:.68}
+    .rail-pin:hover,.rail-pin:focus-visible,.marker:hover{outline:2px solid #7562a4;outline-offset:2px;z-index:8}
+    .turn-preview{position:fixed;max-width:252px;min-width:140px;z-index:40;pointer-events:none;
       border-radius:8px;padding:9px 11px;background:#fffefcf7;border:1px solid #e6e3dc;
       box-shadow:0 4px 18px #0002;font-size:12px;color:#37342e;overflow-wrap:anywhere}
     .turn-preview small{display:block;font-size:10px;color:#8d877d;margin-bottom:3px}
-    .turn-preview span{display:block;line-height:1.5;max-height:5.9em;overflow:hidden}
-    .rail-pin{position:absolute;left:4px;width:12px;height:12px;border:1px solid #0002;border-radius:50%;
-      box-shadow:0 1px 4px #0002;transform:translateY(-50%);padding:0}
-    .rail-pin.missing{background:#aaa!important;border-style:dashed}
-    .rail-pin:hover,.marker:hover{outline:2px solid #7562a4;outline-offset:2px}
-    .list{position:fixed;right:40px;top:20%;width:255px;max-height:63vh;overflow:auto;pointer-events:auto;
+    .turn-preview span{display:block;line-height:1.5;max-height:6em;overflow:hidden;white-space:pre-line}
+    .list{position:fixed;right:43px;top:19%;width:min(298px,78vw);max-height:69vh;overflow:auto;pointer-events:auto;
       background:#fffefaf7;border:1px solid #eae5da;border-radius:9px;box-shadow:0 8px 26px #0002;padding:6px}
     .list-header{display:flex;justify-content:space-between;align-items:center;padding:7px 7px 10px;font-weight:600}
     .list-header button{background:transparent;color:#777;margin:0 3px;font-size:16px}
-    .entry{width:100%;background:transparent;padding:9px 7px;display:flex;align-items:flex-start;gap:8px;
+    .list-caption{padding:3px 7px 8px;font-size:10px;color:#99938b}
+    .entry{width:100%;background:transparent;padding:7px 7px;display:flex;align-items:center;gap:8px;
       border-top:1px solid #ece9e0;color:#34312e;text-align:left}
-    .entry:hover{background:#f7f2e8}.entry .dot{width:9px;height:9px;flex:0 0 9px;border-radius:50%;margin-top:5px}
+    .entry:hover{background:#f7f2e8}
+    .entry .dot{width:9px;height:9px;flex:0 0 9px;border-radius:50%;margin:0 1px}
     .list-section{font-size:11px;color:#827d74;letter-spacing:.025em;padding:8px 8px 3px}
-    .turn-entry{align-items:center;gap:8px;font-size:12px}
+    .turn-entry{gap:8px;font-size:12px;font-weight:520}
     .turn-entry span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .turn-order{color:#8e928f;flex:0 0 21px;font-variant-numeric:tabular-nums;text-align:right}
-    .entry strong{display:block;font-weight:550;max-width:190px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .entry small{display:block;color:#8b8477;font-size:11px}
+    .note-entry{min-height:29px;border-top:0;font-size:12px}
+    .note-entry.nested{padding:5px 7px 5px 40px}
+    .note-name{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;min-width:0;flex:1}
+    .entry-pin{font-size:12px;color:#9a8551;flex:none}
+    .entry-pin.unresolved{color:#aaa;text-decoration:underline dotted}
+    @media (prefers-reduced-motion:reduce){.rail-turn,.rail-pin{transition:none!important}}
     .marker{position:fixed;z-index:4;width:19px;height:19px;pointer-events:auto;border-radius:50%;padding:0;
       box-shadow:0 2px 7px #0003;color:#755d24;font-size:11px;border:1px solid #fff9}
     .rail-note-cluster{width:16px!important;height:16px!important;left:-2px!important;
@@ -638,9 +733,6 @@ var JP;
     .cluster-item:hover{background:#f4f1e9}
     .cluster-item span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .cluster-item .dot{width:9px;height:9px;flex:0 0 9px;border-radius:50%}
-    .scan-history{display:block;width:calc(100% - 12px);margin:4px 6px 7px;padding:7px;
-      font-size:11px;border-radius:6px;color:#635c4d;background:#f1ece3}
-    .scan-history:hover{background:#eae2d3}
     .paper{--paper:#fff1b8;--jp-font-size:14px;position:fixed;z-index:8;display:flex;flex-direction:column;
       background:var(--paper);border:1px solid #0000000d;border-radius:4px;box-shadow:0 5px 18px #0002;
       pointer-events:auto;min-width:180px;min-height:132px;overflow:hidden}
@@ -652,7 +744,11 @@ var JP;
     .paper-foot{justify-content:flex-start;gap:2px;flex:0 0 27px}
     .paper:hover .paper-head,.paper:focus-within .paper-head{background:#00000006;border-bottom:1px solid #0000000b}
     .paper:hover .paper-foot,.paper:focus-within .paper-foot{background:#00000006;border-top:1px solid #0000000b}
-    .paper-grab{width:20px;font-size:15px;line-height:1;text-align:center;color:#6d625433;pointer-events:none}
+    .paper-grab{flex:1;min-width:8px;pointer-events:none}
+    .paper-pin{flex:0 0 22px;display:grid;place-items:center;color:#947235!important;
+      opacity:.85!important;pointer-events:auto!important;cursor:pointer}
+    .paper-pin[hidden]{display:none!important}
+    .paper-pin:hover{background:#00000012!important;color:#60491c!important}
     .paper-head-actions{display:flex;gap:1px;opacity:0;pointer-events:auto;transition:opacity .14s ease}
     .paper-foot>button,.paper-foot>.save-indicator{opacity:0;pointer-events:auto;transition:opacity .14s ease}
     .paper:hover .paper-head-actions,.paper:focus-within .paper-head-actions,
@@ -678,6 +774,8 @@ var JP;
     .paper:hover .resize-handle,.paper:focus-within .resize-handle{opacity:.75}
     .note-menu{position:absolute;right:5px;top:29px;width:183px;padding:8px;background:#fffcf4;
       border:1px solid #e2d9c4;border-radius:8px;box-shadow:0 7px 21px #0003;z-index:8}
+    .note-mode{color:#847a65;font-size:11px;padding:4px 5px 8px;margin-bottom:4px;
+      border-bottom:1px solid #ece4d6}
     .colors{display:flex;gap:5px;padding:6px 4px 9px}.colors button{width:21px;height:21px;border-radius:50%;border:1px solid #0002;padding:0}
     .colors button[aria-pressed=true]{outline:2px solid #7567a1;outline-offset:2px}
     .font-label{font-size:11px;color:#857b68;margin:4px 4px 7px}
@@ -695,7 +793,7 @@ var JP;
 })(JP || (JP = {}));
 var JP;
 (function (JP) {
-    // Paper is the editor. No title bar, quote box, footer or permanent toolbar.
+    // Lightweight paper notes and a passive, shared conversation/notes timeline.
     const COLOR_HEX = {
         yellow: '#FFF1B8', pink: '#FBE1E9', green: '#DFF1DD',
         blue: '#DAECFF', purple: '#EAE2FA', gray: '#F0EFEC'
@@ -748,8 +846,10 @@ var JP;
         conversationTimer = 0;
         conversationIndex = new JP.ConversationIndex();
         conversationScrollRootRef = null;
-        scanningHistory = false;
-        stopHistoryScan = false;
+        railGroups = [];
+        railLayoutBase = null;
+        railFocus = null;
+        railLayoutHeight = 0;
         activeTurnId = null;
         refreshTimer = 0;
         scrollScheduled = false;
@@ -763,6 +863,7 @@ var JP;
         conflicts = new Set();
         ownWrites = new Set();
         deletedUndo = null;
+        unpinUndo = null;
         async start() {
             this.mount();
             this.setupEvents();
@@ -776,10 +877,11 @@ var JP;
                 if (!external.length)
                     return;
                 this.scheduleRefresh();
-                if (external.some(record => record.type === 'childList'))
+                if (external.some(record => record.type === 'childList' || record.type === 'attributes'))
                     this.scheduleConversationScan();
             });
-            this.observer.observe(document.body, { subtree: true, childList: true, characterData: true });
+            this.observer.observe(document.body, { subtree: true, childList: true, characterData: true,
+                attributes: true, attributeFilter: ['data-turn-key', 'data-turn-id', 'data-message-id', 'data-turn', 'data-message-author-role'] });
             // SPA navigation without injecting into page-owned history functions.
             window.setInterval(() => this.checkPageRoute(), 1400);
         }
@@ -822,11 +924,11 @@ var JP;
         </div>
         <div class="bubble" id="jp-bubble" hidden><button id="jp-bubble-pin" aria-label="将便签钉在选中文字旁" title="贴便签" type="button">📌</button></div>
         <nav id="jp-rail" class="rail" aria-label="网页对话与便签导航" hidden>
-          <button id="jp-list-toggle" class="rail-head" title="打开本页导航列表" type="button">0</button>
+          <button id="jp-list-toggle" class="rail-head" title="打开本页导航列表" aria-label="打开本页导航列表" type="button">≡</button>
           <div class="rail-track" id="jp-rail-track"></div>
+          <button id="jp-loose-toggle" class="rail-loose" title="本页悬浮或待定位便签" aria-label="查看本页悬浮和待定位便签" type="button" hidden>▤</button>
         </nav>
         <div id="jp-turn-preview" class="turn-preview" role="tooltip" hidden></div>
-        <aside id="jp-note-popover" class="note-popover" aria-label="本轮便签" hidden></aside>
         <aside id="jp-list" class="list" aria-label="本页便签列表" hidden></aside>
         <div id="jp-markers"></div>
         <div id="jp-cards"></div>
@@ -849,7 +951,36 @@ var JP;
                 this.listOpen = !this.listOpen;
                 this.renderList();
             });
-            this.$('#jp-undo').addEventListener('click', () => void this.undoDeletion());
+            this.$('#jp-undo').addEventListener('click', () => void this.undoLastAction());
+            this.$('#jp-loose-toggle').addEventListener('click', () => {
+                this.listOpen = true;
+                this.renderList();
+            });
+            const track = this.$('#jp-rail-track');
+            track.addEventListener('pointermove', event => {
+                // Lock the round while hovering so the local lens cannot move the
+                // target out from under the pointer as neighboring markers expand.
+                if (this.railFocus || !this.railLayoutBase?.dense)
+                    return;
+                const y = event.clientY - track.getBoundingClientRect().top;
+                const region = this.railLayoutBase.regions.find(r => y >= r.start && y < r.end);
+                if (region)
+                    this.setRailFocus(region.turnId);
+            });
+            track.addEventListener('pointerleave', () => this.setRailFocus(null));
+            track.addEventListener('keydown', event => {
+                const keys = ['ArrowDown', 'ArrowUp', 'Home', 'End'];
+                if (!keys.includes(event.key))
+                    return;
+                const buttons = Array.from(track.querySelectorAll('button'));
+                const at = buttons.indexOf(this.shadow.activeElement);
+                if (at < 0)
+                    return;
+                event.preventDefault();
+                const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 :
+                    clamp(at + (event.key === 'ArrowDown' ? 1 : -1), 0, buttons.length - 1);
+                buttons[next]?.focus({ preventScroll: true });
+            });
             document.addEventListener('keydown', event => {
                 if (event.key === 'Escape')
                     for (const card of this.cards.values()) {
@@ -861,8 +992,6 @@ var JP;
             });
             document.addEventListener('pointerdown', event => {
                 const path = event.composedPath();
-                if (!path.includes(this.$('#jp-note-popover')))
-                    this.hideNotePopover();
                 for (const card of this.cards.values()) {
                     const menu = card.querySelector('.note-menu');
                     if (menu && !path.includes(menu) && !path.includes(card.querySelector('.menu-trigger'))) {
@@ -877,7 +1006,13 @@ var JP;
                     this.maybeOfferSelection(e.target, e.altKey);
             });
             document.addEventListener('contextmenu', e => this.rememberSelection(e.target));
-            window.addEventListener('scroll', () => this.schedulePosition(), true);
+            window.addEventListener('scroll', () => {
+                this.schedulePosition();
+                // React virtualized lists may reuse DOM nodes without a childList
+                // mutation; natural user scrolling may still reveal a new prompt.
+                if (this.conversationNavigation && JP.conversationSite())
+                    this.scheduleConversationScan();
+            }, true);
             window.addEventListener('resize', () => this.schedulePosition());
             window.addEventListener('hashchange', () => this.checkPageRoute());
             window.addEventListener('popstate', () => this.checkPageRoute());
@@ -950,12 +1085,17 @@ var JP;
             this.page = next;
             this.pendingRange = null;
             this.$('#jp-bubble').hidden = true;
+            if (this.unpinUndo)
+                clearTimeout(this.unpinUndo.timer);
+            this.unpinUndo = null;
             this.openIds.clear();
             this.explicitlyDetachedIds.clear();
             this.cards.clear();
             this.$('#jp-cards').replaceChildren();
             this.listOpen = false;
-            this.stopHistoryScan = true;
+            this.railFocus = null;
+            this.railGroups = [];
+            this.railLayoutBase = null;
             this.conversationIndex.reset();
             this.conversationScrollRootRef = null;
             this.conversation = { site: JP.conversationSite(), turns: [], nativeRailPresent: false };
@@ -1034,11 +1174,12 @@ var JP;
                 this.toast('请选择 1–1600 字的普通网页文字');
                 return false;
             }
-            return this.createNote(anchor);
+            return this.createNote(anchor, range);
         }
         async createPageNote() { return this.createNote(); }
-        async createNote(anchor) {
+        async createNote(anchor, sourceRange) {
             const now = Date.now();
+            const linked = anchor && sourceRange ? JP.turnForRange(sourceRange, this.conversation.turns.filter(t => t.element?.isConnected)) : null;
             const note = {
                 schemaVersion: 1, id: id(), pageKey: this.page, sourceUrl: location.href,
                 sourceTitle: document.title, anchor, text: '',
@@ -1080,6 +1221,7 @@ var JP;
                         this.matches.set(note.id, match);
                 }
             this.paintHighlights();
+            this.associateNotesToTurns();
             this.renderDock();
             this.renderMarkers();
             this.schedulePosition();
@@ -1126,12 +1268,12 @@ var JP;
             if (activeSource)
                 this.conversationScrollRootRef = JP.conversationScrollRoot(activeSource);
             this.hideTurnPreview();
+            this.associateNotesToTurns();
             this.renderDock();
             this.schedulePosition();
         }
         hideTurnPreview() { this.$('#jp-turn-preview').hidden = true; }
         showTurnPreview(turn, button) {
-            this.hideNotePopover();
             const preview = this.$('#jp-turn-preview');
             preview.replaceChildren();
             const label = el('small');
@@ -1147,7 +1289,6 @@ var JP;
         }
         async jumpToTurn(turn) {
             this.hideTurnPreview();
-            this.hideNotePopover();
             // Always re-resolve the current prompt before navigating: a stale React
             // wrapper or cached element may have been recycled by the host app.
             const live = JP.collectConversation().turns.find(t => t.id === turn.id);
@@ -1211,79 +1352,37 @@ var JP;
                     button.removeAttribute('aria-current');
             }
         }
-        /** Explicit, reversible history discovery. No undocumented ChatGPT API calls. */
-        async scanOlderTurns() {
-            if (this.scanningHistory) {
-                this.stopHistoryScan = true;
-                return;
-            }
-            const source = this.conversation.turns.find(t => t.element?.isConnected)?.element;
-            if (!source || !JP.conversationSite()) {
-                this.toast('尚未找到可滚动的对话');
-                return;
-            }
-            const root = JP.conversationScrollRoot(source);
-            this.conversationScrollRootRef = root;
-            const originPage = this.page, start = root.scrollTop;
-            this.scanningHistory = true;
-            this.stopHistoryScan = false;
-            this.renderList();
-            let previous = root.scrollTop, stalled = 0, count = 0;
-            try {
-                while (!this.stopHistoryScan && this.page === originPage && root.scrollTop > 2 && count++ < 160) {
-                    root.scrollTo({ top: Math.max(0, root.scrollTop - Math.max(240, root.clientHeight * .78)), behavior: 'auto' });
-                    await new Promise(resolve => window.setTimeout(resolve, 160));
-                    const now = root.scrollTop;
-                    if (Math.abs(now - previous) < 2)
-                        stalled++;
-                    else
-                        stalled = 0;
-                    previous = now;
-                    // Do not rescan the entire notes index/DOM on every scroll step.
-                    this.conversation = this.conversationIndex.combine(JP.collectConversation());
-                    if (count % 5 === 0) {
-                        this.renderDock();
-                        this.renderList();
-                    }
-                    if (stalled > 4)
-                        break;
-                }
-            }
-            finally {
-                // Returning to the original reading position is essential; full scan
-                // is user-initiated and may still cause momentary layout shifts.
-                if (this.page === originPage && root.isConnected) {
-                    root.scrollTo({ top: start, behavior: 'auto' });
-                    await new Promise(resolve => window.setTimeout(resolve, 220));
-                }
-                this.scanningHistory = false;
-                this.stopHistoryScan = false;
-                this.refreshConversation();
-                this.toast(`已发现 ${this.conversation.turns.length} 轮；无法保证包含未加载的全部历史`);
-            }
-        }
-        hideNotePopover() { this.$('#jp-note-popover').hidden = true; }
-        showNotePopover(notes, button) {
-            this.hideTurnPreview();
-            const panel = this.$('#jp-note-popover');
-            panel.replaceChildren();
-            const head = el('div', 'cluster-title');
-            head.textContent = `此轮 ${notes.length} 张便签`;
-            panel.appendChild(head);
-            for (const note of notes) {
-                const item = el('button', 'cluster-item');
-                item.type = 'button';
-                const dot = el('span', 'dot');
-                dot.style.background = COLOR_HEX[JP.appearance(note).color];
-                const label = el('span');
-                label.textContent = note.text.trim().slice(0, 55) || note.anchor?.exact.slice(0, 50) || '空白便签';
-                item.append(dot, label);
-                item.addEventListener('click', () => { this.hideNotePopover(); this.goTo(note.id); });
-                panel.appendChild(item);
-            }
+        /** A tiny preview is shared by turn bars and individual colored notes. */
+        showNotePreview(note, button) {
+            const preview = this.$('#jp-turn-preview');
+            preview.replaceChildren();
+            const label = el('small');
+            label.textContent = note.anchor ? (this.liveMatch(note) ? '📌 原文便签' : '📌 原文暂未加载') : '本页悬浮便签';
+            const content = el('span');
+            content.textContent = note.text.trim().slice(0, 210) || '空白便签';
+            preview.append(label, content);
             const rect = button.getBoundingClientRect();
-            panel.style.top = `${clamp(rect.top - 10, 8, innerHeight - Math.min(230, 40 + notes.length * 40))}px`;
-            panel.hidden = false;
+            const railRect = this.$('#jp-rail').getBoundingClientRect();
+            preview.style.right = `${Math.max(44, innerWidth - railRect.left + 9)}px`;
+            preview.style.top = `${clamp(rect.top - 13, 8, innerHeight - 96)}px`;
+            preview.hidden = false;
+        }
+        associateNotesToTurns() {
+            const live = this.conversation.turns.filter(turn => turn.element?.isConnected);
+            if (!live.length)
+                return;
+            for (const note of this.notes) {
+                if (!note.anchor)
+                    continue;
+                const match = this.liveMatch(note);
+                if (!match)
+                    continue;
+                const turn = JP.turnForRange(match.range, live);
+                if (turn?.stableId && turn.stableId !== note.conversationTurnId && !this.conflicts.has(note.id)) {
+                    note.conversationTurnId = turn.stableId;
+                    this.touchNote(note);
+                }
+            }
         }
         renderDock() {
             const rail = this.$('#jp-rail');
@@ -1297,90 +1396,122 @@ var JP;
             toggle.title = showTurns ? `已发现 ${turns.length} 轮 · ${this.notes.length} 张便签` : `本页 ${this.notes.length} 张便签`;
             const track = this.$('#jp-rail-track');
             track.replaceChildren();
-            if (showTurns) {
-                // Prevent densely spaced targets from covering their neighbors.
-                const availableHeight = Math.max(160, innerHeight * 0.60 - 40) * 0.92;
-                const lineHeight = clamp(availableHeight / Math.max(1, turns.length) * 0.78, 2, 6);
-                for (const turn of turns) {
-                    const button = el('button', 'rail-turn');
-                    button.type = 'button';
-                    button.dataset.turnId = turn.id;
-                    button.style.top = `${this.turnPosition(turn.order, turns.length)}%`;
-                    button.style.height = `${lineHeight}px`;
-                    button.title = `第 ${turn.order + 1} 轮：${turn.preview}`;
-                    button.setAttribute('aria-label', button.title);
-                    button.addEventListener('click', () => void this.jumpToTurn(turn));
-                    button.addEventListener('pointerenter', () => this.showTurnPreview(turn, button));
-                    button.addEventListener('pointerleave', () => this.hideTurnPreview());
-                    button.addEventListener('focus', () => this.showTurnPreview(turn, button));
-                    button.addEventListener('blur', () => this.hideTurnPreview());
-                    track.appendChild(button);
-                }
-            }
-            const sorted = this.sortedNotes();
-            const textLength = this.index?.text.length || 1;
-            const liveTurns = turns.filter(t => !!t.element?.isConnected);
+            this.railGroups = [];
+            this.railLayoutBase = null;
+            const live = turns.filter(turn => turn.element?.isConnected);
             const perTurn = new Map();
             const loose = [];
-            for (const note of sorted) {
-                const match = this.matches.get(note.id);
-                const associated = showTurns && match ? JP.turnForRange(match.range, liveTurns) : null;
-                if (!associated) {
+            for (const note of this.sortedNotes()) {
+                const match = note.anchor ? this.liveMatch(note) : null;
+                const turn = showTurns && note.anchor && match ? JP.turnForRange(match.range, live) : null;
+                const turnId = turn?.id || (note.anchor ? note.conversationTurnId : null);
+                if (!showTurns || !turnId || !turns.some(t => t.id === turnId)) {
                     loose.push(note);
                     continue;
                 }
-                const group = perTurn.get(associated.id) || [];
+                const group = perTurn.get(turnId) || [];
                 group.push(note);
-                perTurn.set(associated.id, group);
+                perTurn.set(turnId, group);
             }
-            const placed = [];
-            const addNotePin = (notes, position) => {
-                const group = notes.length > 1;
-                const button = el('button', `rail-pin${group ? ' rail-note-cluster' : ''}${notes.some(n => n.anchor && !this.matches.has(n.id)) ? ' missing' : ''}`);
-                button.type = 'button';
-                button.style.top = `${clamp(position, 2, 98)}%`;
-                const note = notes[0];
-                button.style.background = COLOR_HEX[JP.appearance(note).color];
-                if (group) {
-                    button.textContent = String(notes.length);
-                    button.dataset.count = String(notes.length);
-                }
-                button.title = group ? `此轮 ${notes.length} 张便签` : note.text.trim().slice(0, 70) || note.anchor?.exact.slice(0, 50) || '本页便签';
-                button.setAttribute('aria-label', button.title);
-                button.addEventListener('click', () => {
-                    if (group)
-                        this.showNotePopover(notes, button);
-                    else {
-                        this.hideTurnPreview();
-                        this.goTo(note.id);
-                    }
-                });
-                track.appendChild(button);
-                placed.push(position);
-            };
             if (showTurns) {
-                for (const [turnId, group] of perTurn) {
-                    const turn = turns.find(t => t.id === turnId);
-                    if (turn)
-                        addNotePin(group, this.turnPosition(turn.order, turns.length));
-                    else
-                        loose.push(...group);
+                if (this.railFocus && !turns.some(t => t.id === this.railFocus))
+                    this.railFocus = null;
+                for (const turn of turns) {
+                    const notes = (perTurn.get(turn.id) || []).sort((a, b) => (this.matches.get(a.id)?.start ?? a.anchor?.start ?? Infinity) -
+                        (this.matches.get(b.id)?.start ?? b.anchor?.start ?? Infinity) || a.createdAt - b.createdAt);
+                    const offsets = notes.map(n => this.matches.get(n.id)?.start ?? n.anchor?.start).filter((x) => typeof x === 'number');
+                    const lowest = offsets.length ? Math.min(...offsets) : 0;
+                    const highest = offsets.length ? Math.max(...offsets) : 0;
+                    const fractions = notes.map((note, index) => {
+                        const start = this.matches.get(note.id)?.start ?? note.anchor?.start;
+                        return start == null ? .5 : highest > lowest ? (start - lowest) / (highest - lowest) : (.5 + (index - (notes.length - 1) / 2) * .08);
+                    });
+                    this.railGroups.push({ turnId: turn.id, noteIds: notes.map(n => n.id), fractions });
+                    const bar = el('button', 'rail-turn');
+                    bar.type = 'button';
+                    bar.dataset.turnId = turn.id;
+                    bar.dataset.railKey = `turn:${turn.id}`;
+                    bar.dataset.railGroup = turn.id;
+                    bar.title = `已发现第 ${turn.order + 1} 轮：${turn.preview}`;
+                    bar.setAttribute('aria-label', bar.title);
+                    bar.addEventListener('click', () => void this.jumpToTurn(turn));
+                    bar.addEventListener('pointerenter', () => this.showTurnPreview(turn, bar));
+                    bar.addEventListener('pointerleave', () => this.hideTurnPreview());
+                    bar.addEventListener('focus', () => { this.setRailFocus(turn.id); this.showTurnPreview(turn, bar); });
+                    bar.addEventListener('blur', () => this.hideTurnPreview());
+                    track.appendChild(bar);
+                    for (const note of notes)
+                        this.addRailNote(track, note, turn.id);
                 }
+                this.applyRailLayout();
             }
-            loose.forEach((note, i) => {
-                const match = this.matches.get(note.id);
-                let pos = match ? match.start / textLength * 100 : (note.anchor ? 90 + i % 4 * 2 : 3 + i * 3);
-                pos = clamp(pos, 2, 98);
-                while (placed.some(p => Math.abs(p - pos) < 3.3) && pos < 95)
-                    pos += 3.3;
-                addNotePin([note], pos);
-            });
+            else {
+                // Other websites, or a site whose native timeline is already visible:
+                // retain the compact note-only Dock without inventing conversation turns.
+                const total = Math.max(1, this.index?.text.length || 1);
+                const placed = [];
+                this.sortedNotes().forEach((note, index) => {
+                    const match = this.liveMatch(note);
+                    let position = match ? match.start / total * 100 : (note.anchor ? 90 + index % 4 * 2 : 3 + index * 3);
+                    position = clamp(position, 2, 98);
+                    while (placed.some(p => Math.abs(p - position) < 3.3) && position < 95)
+                        position += 3.3;
+                    placed.push(position);
+                    const button = this.addRailNote(track, note);
+                    button.style.top = `${position}%`;
+                });
+            }
+            const extras = showTurns ? loose : [];
+            const bottom = this.$('#jp-loose-toggle');
+            bottom.hidden = !showTurns || extras.length === 0;
+            if (!bottom.hidden) {
+                bottom.textContent = `${extras.length}`;
+                bottom.title = `${extras.length} 张本页悬浮或待定位便签`;
+            }
             this.activeTurnId = null;
             this.updateActiveTurn();
             this.renderList();
         }
-        turnPosition(order, count) {
-            return 4 + 92 * (count <= 1 ? 0.5 : order / (count - 1));
+        addRailNote(track, note, groupId) {
+            const button = el('button', `rail-pin${note.anchor && !this.liveMatch(note) ? ' missing' : ''}`);
+            button.type = 'button';
+            button.dataset.noteId = note.id;
+            button.dataset.railKey = `note:${note.id}`;
+            if (groupId)
+                button.dataset.railGroup = groupId;
+            button.style.background = note.anchor && !this.liveMatch(note) ? '#a7a7a7' : COLOR_HEX[JP.appearance(note).color];
+            button.title = note.text.trim().slice(0, 90) || note.anchor?.exact.slice(0, 70) || '本页便签';
+            button.setAttribute('aria-label', `跳转便签：${button.title}`);
+            button.addEventListener('click', () => this.goTo(note.id));
+            button.addEventListener('pointerenter', () => this.showNotePreview(note, button));
+            button.addEventListener('pointerleave', () => this.hideTurnPreview());
+            button.addEventListener('focus', () => { if (groupId)
+                this.setRailFocus(groupId); this.showNotePreview(note, button); });
+            button.addEventListener('blur', () => this.hideTurnPreview());
+            track.appendChild(button);
+            return button;
+        }
+        applyRailLayout() {
+            if (!this.railGroups.length)
+                return;
+            const track = this.$('#jp-rail-track');
+            const height = track.clientHeight || Math.max(170, innerHeight * .68 - 65);
+            this.railLayoutHeight = height;
+            this.railLayoutBase = JP.layoutConversationRail(this.railGroups, height);
+            const layout = this.railFocus ? JP.layoutConversationRail(this.railGroups, height, this.railFocus) : this.railLayoutBase;
+            for (const button of track.querySelectorAll('[data-rail-key]')) {
+                const point = layout.positions.get(button.dataset.railKey || '');
+                if (point != null)
+                    button.style.top = `${point}px`;
+            }
+            track.classList.toggle('dense', layout.dense);
+            track.classList.toggle('focused', !!this.railFocus && layout.dense);
+        }
+        setRailFocus(turnId) {
+            if (this.railFocus === turnId)
+                return;
+            this.railFocus = turnId;
+            this.applyRailLayout();
         }
         renderList() {
             const list = this.$('#jp-list');
@@ -1400,52 +1531,62 @@ var JP;
             close.addEventListener('click', () => { this.listOpen = false; this.renderList(); });
             head.append(title, close);
             list.appendChild(head);
-            if (turns.length >= 3 && JP.conversationSite()) {
-                const scan = el('button', 'scan-history');
-                scan.type = 'button';
-                scan.textContent = this.scanningHistory ? '停止扫描' : '扫描较早轮次';
-                scan.title = '按需滚动收集历史轮次，之后恢复阅读位置；虚拟化页面可能仍无法列全';
-                scan.addEventListener('click', () => void this.scanOlderTurns());
-                list.appendChild(scan);
-            }
-            if (turns.length >= 3) {
-                const heading = el('div', 'list-section');
-                heading.textContent = '对话轮次';
+            const hasTurns = turns.length >= 3;
+            const live = turns.filter(t => t.element?.isConnected);
+            const mapped = new Set();
+            if (hasTurns) {
+                const heading = el('div', 'list-caption');
+                heading.textContent = '按对话顺序排列 · 不自动滚动扫描历史';
                 list.appendChild(heading);
                 for (const turn of turns) {
                     const button = el('button', 'entry turn-entry');
                     button.type = 'button';
-                    const count = el('span', 'turn-order');
-                    count.textContent = String(turn.order + 1);
+                    const number = el('span', 'turn-order');
+                    number.textContent = String(turn.order + 1);
                     const label = el('span');
                     label.textContent = turn.preview;
-                    button.append(count, label);
+                    button.append(number, label);
                     button.addEventListener('click', () => { this.listOpen = false; this.renderList(); void this.jumpToTurn(turn); });
                     list.appendChild(button);
+                    for (const note of this.sortedNotes()) {
+                        if (!note.anchor)
+                            continue;
+                        const matched = this.liveMatch(note);
+                        const linked = (matched ? JP.turnForRange(matched.range, live)?.id : undefined) || note.conversationTurnId;
+                        if (linked !== turn.id)
+                            continue;
+                        mapped.add(note.id);
+                        this.addListNote(list, note, true);
+                    }
                 }
             }
-            if (this.notes.length) {
-                if (turns.length >= 3) {
-                    const heading = el('div', 'list-section');
-                    heading.textContent = '本页便签';
-                    list.appendChild(heading);
-                }
-                for (const note of this.sortedNotes()) {
-                    const button = el('button', 'entry');
-                    button.type = 'button';
-                    const dot = el('span', 'dot');
-                    dot.style.background = COLOR_HEX[JP.appearance(note).color];
-                    const content = el('span');
-                    const label = el('strong');
-                    label.textContent = note.text.trim().split('\n')[0] || (note.anchor?.exact.slice(0, 45) || '空白便签');
-                    const sub = el('small');
-                    sub.textContent = !note.anchor ? '本页' : this.matches.has(note.id) ? '已关联原文' : '原文暂时未找到';
-                    content.append(label, sub);
-                    button.append(dot, content);
-                    button.addEventListener('click', () => { this.listOpen = false; this.renderList(); this.goTo(note.id); });
-                    list.appendChild(button);
-                }
+            const others = this.sortedNotes().filter(note => !mapped.has(note.id));
+            if (others.length) {
+                const heading = el('div', 'list-section');
+                heading.textContent = hasTurns ? '本页悬浮 / 待定位便签' : '本页便签';
+                list.appendChild(heading);
+                for (const note of others)
+                    this.addListNote(list, note, false);
             }
+        }
+        addListNote(list, note, nested) {
+            const button = el('button', `entry note-entry${nested ? ' nested' : ''}`);
+            button.type = 'button';
+            const dot = el('span', 'dot');
+            dot.style.background = COLOR_HEX[JP.appearance(note).color];
+            const label = el('span', 'note-name');
+            label.textContent = note.text.trim().split('\n')[0] || note.anchor?.exact.slice(0, 65) || '空白便签';
+            button.append(dot, label);
+            if (note.anchor) {
+                const symbol = el('span', 'entry-pin');
+                symbol.textContent = '📌';
+                symbol.title = this.liveMatch(note) ? '已钉在原文' : '原文暂未加载';
+                symbol.classList.toggle('unresolved', !this.liveMatch(note));
+                symbol.setAttribute('aria-label', symbol.title);
+                button.appendChild(symbol);
+            }
+            button.addEventListener('click', () => { this.listOpen = false; this.renderList(); this.goTo(note.id); });
+            list.appendChild(button);
         }
         renderMarkers() {
             const target = this.$('#jp-markers');
@@ -1472,6 +1613,9 @@ var JP;
             requestAnimationFrame(() => {
                 this.scrollScheduled = false;
                 this.positionMarkers();
+                const track = this.$('#jp-rail-track');
+                if (this.railGroups.length && track.clientHeight !== this.railLayoutHeight)
+                    this.applyRailLayout();
                 for (const id of this.openIds)
                     this.positionCard(id);
                 this.updateActiveTurn();
@@ -1567,7 +1711,10 @@ var JP;
             // Fixed header and footer take actual layout space; no controls overlap text.
             paper.innerHTML = `
         <header class="paper-head drag-region" title="拖动整条顶栏移动便签" aria-label="拖动便签位置">
-          <span class="paper-grab" aria-hidden="true">··</span>
+          <button class="paper-pin" type="button" aria-label="解除原文锚定" title="已钉在原文 · 点击解除锚定" ${note.anchor ? '' : 'hidden'}>
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-4 1-3 4v3l-3 2-2-6-6-2 2-3h3l4-3z"/><path d="m9 15-6 6"/></svg>
+          </button>
+          <span class="paper-grab" aria-hidden="true"></span>
           <div class="paper-head-actions">
             <button class="copy" title="复制 Markdown 源码" aria-label="复制 Markdown 源码" type="button">⧉</button>
             <button class="jump" title="返回原文" aria-label="返回原文" type="button">↗</button>
@@ -1586,6 +1733,7 @@ var JP;
           <span class="save-indicator" aria-live="polite"></span>
         </footer>
         <div class="note-menu" hidden>
+          <div class="note-mode">${note.anchor ? '📌 贴在原文' : '◌ 本页悬浮'}</div>
           <div class="colors" role="group" aria-label="便签颜色"></div>
           <div class="font-label">字号</div>
           <div class="font-choices" role="group" aria-label="字号">
@@ -1649,6 +1797,7 @@ var JP;
                 button.addEventListener('pointerdown', event => event.preventDefault());
                 button.addEventListener('click', () => this.format(editor, name));
             }
+            paper.querySelector('.paper-pin').addEventListener('click', () => this.unpinNote(note.id));
             paper.querySelector('.copy').addEventListener('click', () => void this.copyNote(note.id));
             paper.querySelector('.jump').addEventListener('click', () => this.goTo(note.id, false));
             paper.querySelector('.close').addEventListener('click', () => this.closeCard(note.id));
@@ -1923,6 +2072,7 @@ var JP;
             this.knownRevisions.set(fresh.id, fresh.revision || 0);
             const paper = this.cards.get(fresh.id);
             if (paper) {
+                this.updatePinIcon(paper, fresh);
                 const editor = paper.querySelector('.note-editor');
                 if (editor) {
                     JP.renderMarkdown(editor, fresh.text);
@@ -1969,6 +2119,7 @@ var JP;
                 this.cards.delete(noteId);
                 this.dirty.delete(noteId);
                 this.refreshAnchors();
+                this.unpinUndo = null;
                 if (this.deletedUndo)
                     clearTimeout(this.deletedUndo.timer);
                 const timer = window.setTimeout(() => { this.deletedUndo = null; this.hideToast(); }, 8000);
@@ -1978,6 +2129,68 @@ var JP;
             catch {
                 this.toast('删除失败，请重试');
             }
+        }
+        updatePinIcon(paper, note) {
+            const pin = paper.querySelector('.paper-pin');
+            if (pin)
+                pin.hidden = !note.anchor;
+            const mode = paper.querySelector('.note-mode');
+            if (mode)
+                mode.textContent = note.anchor ? '📌 贴在原文' : '◌ 本页悬浮';
+        }
+        /** One-way transition: text-pinned -> page-floating, never the reverse. */
+        unpinNote(noteId) {
+            const note = this.notes.find(n => n.id === noteId);
+            if (!note?.anchor)
+                return;
+            const paper = this.cards.get(noteId);
+            const rect = paper?.getBoundingClientRect();
+            const style = JP.appearance(note);
+            if (this.unpinUndo)
+                clearTimeout(this.unpinUndo.timer);
+            const timer = window.setTimeout(() => { this.unpinUndo = null; }, 8100);
+            this.unpinUndo = { noteId, anchor: { ...note.anchor }, turnId: note.conversationTurnId, oldAppearance: { ...style }, pageKey: this.page, timer };
+            if (this.deletedUndo) {
+                clearTimeout(this.deletedUndo.timer);
+                this.deletedUndo = null;
+            }
+            note.anchor = undefined;
+            note.conversationTurnId = undefined;
+            this.explicitlyDetachedIds.delete(noteId);
+            // Preserve the top-left screen position instead of teleporting the paper
+            // to the generic free-note default on the first unpin.
+            if (rect) {
+                const baseY = 74 + this.notes.indexOf(note) * 14;
+                note.appearance = { ...style, offsetX: rect.left - (innerWidth - style.width - 56), offsetY: rect.top - baseY };
+            }
+            if (paper)
+                this.updatePinIcon(paper, note);
+            this.touchNote(note);
+            this.refreshAnchors();
+            this.toast('已改为本页悬浮便签', true, 8000);
+        }
+        async undoLastAction() {
+            if (this.unpinUndo) {
+                const undo = this.unpinUndo;
+                clearTimeout(undo.timer);
+                this.unpinUndo = null;
+                if (undo.pageKey !== this.page)
+                    return;
+                const note = this.notes.find(n => n.id === undo.noteId);
+                if (!note)
+                    return;
+                note.anchor = undo.anchor;
+                note.conversationTurnId = undo.turnId;
+                note.appearance = { ...undo.oldAppearance };
+                const paper = this.cards.get(note.id);
+                if (paper)
+                    this.updatePinIcon(paper, note);
+                this.touchNote(note);
+                this.refreshAnchors();
+                this.toast('已恢复原文锚定');
+                return;
+            }
+            await this.undoDeletion();
         }
         async undoDeletion() {
             const deleted = this.deletedUndo;

@@ -68,21 +68,25 @@ def run():
         assert article['y']<=prompt['y'],(article,prompt)
         print('PASS: clicking turn bar aligns exact prompt bubble near top, not a combined answer wrapper')
 
-        # Three different text anchors in the same AI answer have ONE rail marker,
-        # with an accessible popover listing each exact note.
+        # Same-round notes must be independently visible and directly clickable,
+        # with a preview on hover; no extra count-marker popover interaction.
         for token in ['alpha','beta','gamma']:
             select_text(page,'#reply-3',token)
             page.locator('#jotpatch-root #jp-bubble-pin').click()
             paper=page.locator('#jotpatch-root .paper').last
             paper.locator('.note-editor').fill('便签-'+token)
-        expect(page.locator('#jotpatch-root .rail-note-cluster')).to_have_count(1)
-        expect(page.locator('#jotpatch-root .rail-pin')).to_have_count(1)
-        assert page.locator('#jotpatch-root .rail-note-cluster').inner_text()=='3'
-        page.locator('#jotpatch-root .rail-note-cluster').click()
-        expect(page.locator('#jotpatch-root .cluster-item')).to_have_count(3)
-        page.locator('#jotpatch-root .cluster-item').nth(1).click()
-        expect(page.locator('#jotpatch-root #jp-note-popover')).to_be_hidden()
-        print('PASS: multiple notes in one AI round merge into an accessible count marker, each still has precise anchor')
+        expect(page.locator('#jotpatch-root .rail-pin')).to_have_count(3)
+        assert page.locator('#jotpatch-root .rail-note-cluster').count()==0
+        tops=page.locator('#jotpatch-root .rail-pin').evaluate_all('els=>els.map(el=>parseFloat(el.style.top))')
+        assert tops==sorted(tops) and len(set(tops))==3,tops
+        turn_top=page.locator('#jotpatch-root .rail-turn').nth(3).evaluate('el=>parseFloat(el.style.top)')
+        next_top=page.locator('#jotpatch-root .rail-turn').nth(4).evaluate('el=>parseFloat(el.style.top)')
+        assert all(turn_top<t<next_top for t in tops),(turn_top,tops,next_top)
+        page.locator('#jotpatch-root .rail-pin').nth(1).hover()
+        expect(page.locator('#jotpatch-root #jp-turn-preview')).to_contain_text('便签-beta')
+        page.locator('#jotpatch-root .rail-pin').nth(1).click()
+        expect(page.locator('#jotpatch-root #jp-note-popover')).to_have_count(0)
+        print('PASS: three independently clickable note markers in one round, hover previews content')
 
         # Inline rich editing and canonical Markdown clipboard content. Lists are
         # formatted in the editor and written as markdown, not raw HTML.
@@ -126,19 +130,18 @@ def run():
         assert 3<=count<15,count
         initial_scroll=virtual.evaluate("document.querySelector('#viewport').scrollTop")
         virtual.locator('#jotpatch-root #jp-list-toggle').click()
-        virtual.locator('#jotpatch-root .scan-history').click()
-        virtual.wait_for_function("!window.__jotpatchStage0.scanningHistory",timeout=16000)
-        expect(virtual.locator('#jotpatch-root .rail-turn')).to_have_count(15,timeout=6000)
-        assert abs(virtual.evaluate("document.querySelector('#viewport').scrollTop")-initial_scroll)<15
-        virtual.locator('#jotpatch-root #jp-list-toggle').click() # close list
+        assert virtual.locator('#jotpatch-root .scan-history').count()==0
+        assert virtual.evaluate("document.querySelector('#viewport').scrollTop")==initial_scroll
+        virtual.locator('#jotpatch-root #jp-list-toggle').click()
+        assert virtual.evaluate("document.querySelector('#viewport').scrollTop")==initial_scroll
+        # Only simulated USER scrolls discover earlier turns. No page auto scroll.
+        for y in [3200,2400,1600,800,0]:
+            virtual.evaluate("y=>document.querySelector('#viewport').scrollTo({top:y})",y)
+            virtual.wait_for_timeout(1020)
+        expect(virtual.locator('#jotpatch-root .rail-turn')).to_have_count(15,timeout=5000)
         virtual.locator('#jotpatch-root .rail-turn').first.click()
-        virtual.wait_for_function('''() => {
-          const node=document.querySelector('[data-turn-key="virtual-0"] [data-user-message-bubble]');
-          if(!node)return false;
-          const rect=node.getBoundingClientRect(), viewport=document.querySelector('#viewport').getBoundingClientRect();
-          return rect.top>viewport.top && rect.top<viewport.top+200;
-        }''',timeout=8500)
-        print('PASS: optional scan discovers virtualized history, restores scroll and rehydrates old prompt when clicked')
+        virtual.wait_for_function("document.querySelector('[data-turn-key=\"virtual-0\"] [data-user-message-bubble]')!==null")
+        print('PASS: natural scrolling passively discovers virtualized history; the menu never scrolls the page')
         virtual.close()
 
         assert not errors,errors

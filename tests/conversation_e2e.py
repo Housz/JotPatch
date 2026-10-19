@@ -101,16 +101,18 @@ def run():
         select_text(page,'#answer-3','可以记录新的观察结论')
         page.locator('#jotpatch-root #jp-bubble-pin').click()
         expect(page.locator('#jotpatch-root .rail-pin')).to_have_count(1)
-        pin_top=float(page.locator('#jotpatch-root .rail-pin').get_attribute('style').split('top: ')[1].split('%')[0])
-        turn_top=float(page.locator('#jotpatch-root .rail-turn').nth(3).get_attribute('style').split('top: ')[1].split('%')[0])
-        assert abs(pin_top-turn_top)<2,(pin_top,turn_top)
+        pin_top=float(page.locator('#jotpatch-root .rail-pin').evaluate('el => parseFloat(el.style.top)'))
+        turn_top=float(page.locator('#jotpatch-root .rail-turn').nth(3).evaluate('el => parseFloat(el.style.top)'))
+        next_top=float(page.locator('#jotpatch-root .rail-turn').nth(4).evaluate('el => parseFloat(el.style.top)'))
+        assert turn_top<pin_top<next_top,(turn_top,pin_top,next_top)
         page.locator('#jotpatch-root .note-editor').fill('我自己的便签，不应该改为轮次 ID 锚定')
         page.wait_for_timeout(520)
-        print('PASS: colored note pin merged beside its round, note uses original text anchor')
+        print('PASS: note pin occupies its own slot between adjacent prompt bars')
 
         page.locator('#jotpatch-root #jp-list-toggle').click()
         expect(page.locator('#jotpatch-root .turn-entry')).to_have_count(7)
-        expect(page.locator('#jotpatch-root .entry').last).to_contain_text('我自己的便签')
+        expect(page.locator('#jotpatch-root .note-entry')).to_contain_text('我自己的便签')
+        expect(page.locator('#jotpatch-root .note-entry .entry-pin')).to_have_count(1)
         print('PASS: unified expanded list contains turns and anchored notes')
 
         # Preference update should immediately remove only gray bars, not notes.
