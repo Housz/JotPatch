@@ -117,3 +117,8 @@ See [Stage 1.5.1 reliability / UX investigation](STAGE1_6_FIXES.md) for virtuali
 当便签 `anchor` 仍存在、但 DOM 虚拟卸载造成 `liveMatch` 暂时为 null 时，导航按钮仍采用 `NoteAppearance.color`，只添加 `.missing` 虚线边框与状态提示；文本纸张继续遵守 Stage 0.1.7 的被动隐藏规则。原 Note schema、储存 API 与扩展权限没有改动。
 
 新增实际 Playwright 鼠标轨迹回归、不同视口高度多轮悬停、虚拟卸载/重新挂载颜色测试；合成页面测试不能替代登录后的 Chrome/Edge 真机验收。
+
+
+## v0.1.11 — Spatial Rail
+
+原聚合导航与“轨道旁边弹出 dense lens”是历史实现，当前版本被单轴连续放大替换。新 `rail-layout.ts` 使用轮次内真实比例、PAVA 有序避让、加权高度与 `fisheyePositions` 严格单调映射，保持一张便签一个可点目标。详见 [SPATIAL_RAIL_0_1_11.md](SPATIAL_RAIL_0_1_11.md)。

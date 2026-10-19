@@ -149,7 +149,7 @@ def run():
         page.wait_for_timeout(160)
         expect(page.locator('#jotpatch-root .marker:visible')).to_have_count(0)
         expect(page.locator('#jotpatch-root #jp-rail')).to_be_visible()
-        page.locator('#jotpatch-root .rail-pin').first.click()
+        page.locator('#jotpatch-root .rail-pin').last.click()
         page.wait_for_function('''() => {
           const r=document.querySelector('#duplicate-first').getBoundingClientRect();
           return r.top>0&&r.top<innerHeight;
@@ -225,7 +225,8 @@ def run():
         snapshot=page.evaluate('() => structuredClone(window.__jotpatchFakeStore)')
         page.close()
         page=new_page(context,fixture,seed=snapshot)
-        expect(page.locator('#jotpatch-root .rail-pin')).to_have_count(4)
+        expect(page.locator('#jotpatch-root .rail-pin')).to_have_count(3)
+        expect(page.locator('#jotpatch-root #jp-loose-toggle')).to_be_visible()
         page.locator('#jotpatch-root #jp-list-toggle').click()
         page.locator('#jotpatch-root .entry').first.click()
         expect(page.locator('#jotpatch-root .paper')).to_have_count(1)

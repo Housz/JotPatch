@@ -29,40 +29,18 @@ namespace JP {
     .rail-turn:hover,.rail-turn:focus-visible{width:20px;background:#818894;z-index:6}
     .rail-turn[aria-current="location"]{width:19px;background:#717883}
     .rail.with-conversation .rail-pin{left:2px;width:13px;height:7px;z-index:3;border-radius:9px}
-    /* Dense lens lives beside the rail. The overview never jumps on hover. */
-    .rail-track.focused .rail-pin,.rail-track.focused .rail-turn{transition:none}
-    /* An actual compact overview: several colored micro-stripes in one slot.
-       The larger transparent hit area belongs to the whole summary, not one
-       tiny stripe; the hover lens reveals each note as an individual target. */
-    .rail-overview{position:absolute;left:1px;width:17px;height:11px;z-index:5;
-      transform:translateY(-50%);display:flex;align-items:center;gap:1px;padding:2px;
-      border:1px solid #0002;border-radius:5px;background:#fffdf8e8;
-      box-shadow:0 1px 5px #0002;cursor:zoom-in;pointer-events:auto}
-    .rail-overview-stripe{display:block;flex:1;min-width:1px;height:6px;
-      border-radius:1px;box-shadow:inset 0 0 0 .2px #0002}
-    .rail-overview:hover,.rail-overview:focus-visible{outline:2px solid #7562a4;
-      outline-offset:2px;border-color:#9583be;z-index:9}
-    .rail-track.dense .rail-overview[data-tight="true"]{height:7px;padding:1px}
-    .rail-track.dense .rail-overview[data-tight="true"] .rail-overview-stripe{height:4px}
-    .rail-lens{position:fixed;width:min(204px,64vw);max-height:min(320px,68vh);overflow:auto;
-      pointer-events:auto;z-index:35;padding:5px;background:#fffdf9f7;
-      border:1px solid #e5ddd1;border-radius:10px;box-shadow:0 8px 25px #0003}
-    .rail-lens button{width:100%;height:28px;display:flex;align-items:center;gap:8px;
-      background:transparent;color:#555049;padding:3px 7px;border-radius:6px;text-align:left;
-      white-space:nowrap;overflow:hidden;font-size:12px}
-    .rail-lens button:hover,.rail-lens button:focus-visible{background:#f1ede5}
-    .rail-lens-turn{font-size:12px;line-height:1.35;color:#565047;font-weight:600;
-      border-bottom:1px solid #ede9e1;padding:8px 7px;white-space:nowrap;
-      overflow:hidden;text-overflow:ellipsis}
-    .rail-lens-turn[role="button"]{cursor:pointer}
-    .rail-lens-turn[role="button"]:hover{background:#f1ede5}
-    .rail-lens-dot{flex:0 0 12px;height:8px;border-radius:5px;border:1px solid #0002}
-    .rail-lens-dot.missing{border:1px dashed #716b66;opacity:.85}
-    .rail-lens-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+    /* Spatial Rail: two lanes in the same 28–33px overview. No count badge,
+       striped cluster or second-layer selection menu. Dense content expands
+       continuously *in this same track* while the pointer approaches it. */
+    .rail-track.fisheye .rail-turn,.rail-track.fisheye .rail-pin{transition:none!important}
+    .rail-track.fisheye .rail-near{z-index:8}
+    .rail-track.fisheye .rail-pin.rail-near{height:8px;width:15px;left:1px}
+    .rail-track.fisheye .rail-turn.rail-near{height:4px;width:18px}
     .rail-pin{position:absolute;left:5px;width:11px;height:10px;border:1px solid #0002;border-radius:50%;
       box-shadow:0 1px 4px #0002;transform:translateY(-50%);padding:0;
       transition:top .17s ease,width .1s ease;cursor:pointer}
     .rail-pin.missing{border:1px dashed #716b66;opacity:.85}
+    .rail-pin:focus-visible,.rail-turn:focus-visible{outline:2px solid #7461ae;outline-offset:2px}
     .rail-pin:hover,.rail-pin:focus-visible,.marker:hover{outline:2px solid #7562a4;outline-offset:2px;z-index:8}
     .turn-preview{position:fixed;max-width:252px;min-width:140px;z-index:40;pointer-events:none;
       border-radius:8px;padding:9px 11px;background:#fffefcf7;border:1px solid #e6e3dc;
@@ -90,17 +68,6 @@ namespace JP {
     @media (prefers-reduced-motion:reduce){.rail-turn,.rail-pin{transition:none!important}}
     .marker{position:fixed;z-index:4;width:19px;height:19px;pointer-events:auto;border-radius:50%;padding:0;
       box-shadow:0 2px 7px #0003;color:#755d24;font-size:11px;border:1px solid #fff9}
-    .rail-note-cluster{width:16px!important;height:16px!important;left:-2px!important;
-      font-size:10px;font-weight:650;color:#413626;text-align:center;line-height:14px}
-    .note-popover{position:fixed;right:47px;width:min(235px,75vw);max-height:48vh;overflow-y:auto;
-      padding:6px;pointer-events:auto;background:#fffefa;border-radius:9px;border:1px solid #e7dfcf;
-      box-shadow:0 7px 22px #0002;z-index:40}
-    .cluster-title{font-size:11px;padding:7px 9px;color:#89816f}
-    .cluster-item{display:flex;gap:8px;align-items:center;width:100%;padding:9px 7px;border-radius:5px;
-      background:transparent;text-align:left;font-size:12px;color:#37332c}
-    .cluster-item:hover{background:#f4f1e9}
-    .cluster-item span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .cluster-item .dot{width:9px;height:9px;flex:0 0 9px;border-radius:50%}
     .paper{--paper:#fff1b8;--jp-font-size:14px;position:fixed;z-index:8;display:flex;flex-direction:column;
       background:var(--paper);border:1px solid #0000000d;border-radius:4px;box-shadow:0 5px 18px #0002;
       pointer-events:auto;min-width:180px;min-height:132px;overflow:hidden}
