@@ -23,19 +23,19 @@ test('notes occupy distinct slots strictly between successive turn bars',()=>{
   assert.ok(end-start>result.positions.get('turn:d')-result.positions.get('turn:c'));
 });
 
-test('dense focus expands a crowded round while keeping direct note markers and order',()=>{
+test('dense overview is stable and does not reflow when pointer hovers',()=>{
   const groups=Array.from({length:100},(_,i)=>group(`t${i}`,i===36?8:0));
   const normal=layout(groups,480);
-  const focused=layout(groups,480,'t36');
+  // A third focus argument used to reallocate the entire rail and move the
+  // target while the pointer was already above it. The layout is now stable.
+  const repeat=layout(groups,480);
   assert.equal(normal.dense,true);
-  const noteIds=groups[36].noteIds;
-  const normalNotes=noteIds.map(id=>normal.positions.get(`note:${id}`));
-  const bigger=noteIds.map(id=>focused.positions.get(`note:${id}`));
-  assert.ok(bigger.at(-1)-bigger[0]>normalNotes.at(-1)-normalNotes[0]+35);
-  assert.ok(bigger.slice(1).every((v,i)=>v-bigger[i]>9));
-  const turns=groups.map(g=>focused.positions.get(`turn:${g.turnId}`));
+  assert.equal(normal.positions.size,108);
+  const all=[...normal.positions.entries()];
+  assert.deepEqual(all,[...repeat.positions.entries()]);
+  const turns=groups.map(g=>normal.positions.get(`turn:${g.turnId}`));
   assert.ok(turns.slice(1).every((v,i)=>v>turns[i]));
-  assert.ok([...focused.positions.values()].every(v=>v>=0&&v<=480));
+  assert.ok([...normal.positions.values()].every(v=>v>=0&&v<=480));
 });
 
 test('empty groups and a narrow viewport still return finite in-bounds markers',()=>{

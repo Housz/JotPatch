@@ -29,11 +29,24 @@ namespace JP {
     .rail-turn:hover,.rail-turn:focus-visible{width:20px;background:#818894;z-index:6}
     .rail-turn[aria-current="location"]{width:19px;background:#717883}
     .rail.with-conversation .rail-pin{left:2px;width:13px;height:7px;z-index:3;border-radius:9px}
-    .rail-track.focused .rail-pin,.rail-track.focused .rail-turn{transition:top .17s ease}
+    /* Dense lens lives beside the rail. The overview never jumps on hover. */
+    .rail-track.focused .rail-pin,.rail-track.focused .rail-turn{transition:none}
+    .rail-lens{position:fixed;width:min(204px,64vw);max-height:min(320px,68vh);overflow:auto;
+      pointer-events:auto;z-index:35;padding:5px;background:#fffdf9f7;
+      border:1px solid #e5ddd1;border-radius:10px;box-shadow:0 8px 25px #0003}
+    .rail-lens button{width:100%;height:28px;display:flex;align-items:center;gap:8px;
+      background:transparent;color:#555049;padding:3px 7px;border-radius:6px;text-align:left;
+      white-space:nowrap;overflow:hidden;font-size:12px}
+    .rail-lens button:hover,.rail-lens button:focus-visible{background:#f1ede5}
+    .rail-lens-turn{font-weight:600;border-bottom:1px solid #ede9e1!important;
+      border-radius:5px 5px 0 0!important;}
+    .rail-lens-dot{flex:0 0 12px;height:8px;border-radius:5px;border:1px solid #0002}
+    .rail-lens-dot.missing{border:1px dashed #716b66;opacity:.85}
+    .rail-lens-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
     .rail-pin{position:absolute;left:5px;width:11px;height:10px;border:1px solid #0002;border-radius:50%;
       box-shadow:0 1px 4px #0002;transform:translateY(-50%);padding:0;
       transition:top .17s ease,width .1s ease;cursor:pointer}
-    .rail-pin.missing{background:#a9a9a9!important;border-style:dashed;opacity:.68}
+    .rail-pin.missing{border:1px dashed #716b66;opacity:.85}
     .rail-pin:hover,.rail-pin:focus-visible,.marker:hover{outline:2px solid #7562a4;outline-offset:2px;z-index:8}
     .turn-preview{position:fixed;max-width:252px;min-width:140px;z-index:40;pointer-events:none;
       border-radius:8px;padding:9px 11px;background:#fffefcf7;border:1px solid #e6e3dc;

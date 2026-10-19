@@ -532,14 +532,13 @@ var JP;
 (function (JP) {
     const TURN_WEIGHT = 14;
     const NOTE_WEIGHT = 15;
-    const LOCAL_GAP = 16;
     /**
      * Pure layout function: no DOM, no page scrolling, no collapsed count glyphs.
      * Available height is shared across rounds; rounds containing more notes get
-     * more space. When dense, hovering one round borrows room from other rounds
-     * without changing the underlying order or creating a second-click popover.
+     * more space. When dense, a separate hover lens opens beside the stable
+     * overview without moving any existing markers or the host page.
      */
-    function layoutConversationRail(groups, requestedHeight, focusedTurn = null) {
+    function layoutConversationRail(groups, requestedHeight) {
         const height = Math.max(50, Number.isFinite(requestedHeight) ? requestedHeight : 400);
         const pad = 5;
         const usable = height - pad * 2;
@@ -550,19 +549,7 @@ var JP;
         const weights = groups.map(group => TURN_WEIGHT + group.noteIds.length * NOTE_WEIGHT);
         const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
         const dense = totalWeight > usable;
-        const focused = focusedTurn && dense ? groups.findIndex(group => group.turnId === focusedTurn) : -1;
         const spans = weights.map(weight => weight / totalWeight * usable);
-        if (focused >= 0 && groups[focused].noteIds.length) {
-            const otherWeight = totalWeight - weights[focused];
-            if (otherWeight > 0) {
-                const requested = 11 + (groups[focused].noteIds.length + 1) * LOCAL_GAP;
-                // Do not collapse every other turn to zero to make room for the lens.
-                const focusSpan = Math.min(requested, usable * 0.56, usable - Math.min(otherWeight / TURN_WEIGHT * 2, usable * 0.44));
-                const remainder = usable - focusSpan;
-                for (let index = 0; index < groups.length; index++)
-                    spans[index] = index === focused ? focusSpan : (weights[index] / otherWeight) * remainder;
-            }
-        }
         let cursor = pad;
         for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
             const group = groups[groupIndex];
@@ -690,11 +677,24 @@ var JP;
     .rail-turn:hover,.rail-turn:focus-visible{width:20px;background:#818894;z-index:6}
     .rail-turn[aria-current="location"]{width:19px;background:#717883}
     .rail.with-conversation .rail-pin{left:2px;width:13px;height:7px;z-index:3;border-radius:9px}
-    .rail-track.focused .rail-pin,.rail-track.focused .rail-turn{transition:top .17s ease}
+    /* Dense lens lives beside the rail. The overview never jumps on hover. */
+    .rail-track.focused .rail-pin,.rail-track.focused .rail-turn{transition:none}
+    .rail-lens{position:fixed;width:min(204px,64vw);max-height:min(320px,68vh);overflow:auto;
+      pointer-events:auto;z-index:35;padding:5px;background:#fffdf9f7;
+      border:1px solid #e5ddd1;border-radius:10px;box-shadow:0 8px 25px #0003}
+    .rail-lens button{width:100%;height:28px;display:flex;align-items:center;gap:8px;
+      background:transparent;color:#555049;padding:3px 7px;border-radius:6px;text-align:left;
+      white-space:nowrap;overflow:hidden;font-size:12px}
+    .rail-lens button:hover,.rail-lens button:focus-visible{background:#f1ede5}
+    .rail-lens-turn{font-weight:600;border-bottom:1px solid #ede9e1!important;
+      border-radius:5px 5px 0 0!important;}
+    .rail-lens-dot{flex:0 0 12px;height:8px;border-radius:5px;border:1px solid #0002}
+    .rail-lens-dot.missing{border:1px dashed #716b66;opacity:.85}
+    .rail-lens-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
     .rail-pin{position:absolute;left:5px;width:11px;height:10px;border:1px solid #0002;border-radius:50%;
       box-shadow:0 1px 4px #0002;transform:translateY(-50%);padding:0;
       transition:top .17s ease,width .1s ease;cursor:pointer}
-    .rail-pin.missing{background:#a9a9a9!important;border-style:dashed;opacity:.68}
+    .rail-pin.missing{border:1px dashed #716b66;opacity:.85}
     .rail-pin:hover,.rail-pin:focus-visible,.marker:hover{outline:2px solid #7562a4;outline-offset:2px;z-index:8}
     .turn-preview{position:fixed;max-width:252px;min-width:140px;z-index:40;pointer-events:none;
       border-radius:8px;padding:9px 11px;background:#fffefcf7;border:1px solid #e6e3dc;
@@ -849,6 +849,7 @@ var JP;
         railGroups = [];
         railLayoutBase = null;
         railFocus = null;
+        railDismissTimer = 0;
         railLayoutHeight = 0;
         activeTurnId = null;
         refreshTimer = 0;
@@ -928,6 +929,7 @@ var JP;
           <div class="rail-track" id="jp-rail-track"></div>
           <button id="jp-loose-toggle" class="rail-loose" title="本页悬浮或待定位便签" aria-label="查看本页悬浮和待定位便签" type="button" hidden>▤</button>
         </nav>
+        <aside id="jp-rail-lens" class="rail-lens" aria-label="密集轮次的便签展开" hidden></aside>
         <div id="jp-turn-preview" class="turn-preview" role="tooltip" hidden></div>
         <aside id="jp-list" class="list" aria-label="本页便签列表" hidden></aside>
         <div id="jp-markers"></div>
@@ -958,16 +960,25 @@ var JP;
             });
             const track = this.$('#jp-rail-track');
             track.addEventListener('pointermove', event => {
-                // Lock the round while hovering so the local lens cannot move the
-                // target out from under the pointer as neighboring markers expand.
-                if (this.railFocus || !this.railLayoutBase?.dense)
+                if (!this.railLayoutBase?.dense)
                     return;
+                // Use the *unchanged overview layout* to hit-test turns. Expanding
+                // markers inside that same track made the pointer lose its target.
                 const y = event.clientY - track.getBoundingClientRect().top;
                 const region = this.railLayoutBase.regions.find(r => y >= r.start && y < r.end);
                 if (region)
                     this.setRailFocus(region.turnId);
             });
-            track.addEventListener('pointerleave', () => this.setRailFocus(null));
+            track.addEventListener('pointerleave', () => this.scheduleRailDismiss());
+            const lens = this.$('#jp-rail-lens');
+            lens.addEventListener('pointerenter', () => this.cancelRailDismiss());
+            lens.addEventListener('pointerleave', () => this.scheduleRailDismiss());
+            lens.addEventListener('focusin', () => this.cancelRailDismiss());
+            lens.addEventListener('focusout', event => {
+                const next = event.relatedTarget;
+                if (!next || !lens.contains(next))
+                    this.scheduleRailDismiss();
+            });
             track.addEventListener('keydown', event => {
                 const keys = ['ArrowDown', 'ArrowUp', 'Home', 'End'];
                 if (!keys.includes(event.key))
@@ -1013,7 +1024,7 @@ var JP;
                 if (this.conversationNavigation && JP.conversationSite())
                     this.scheduleConversationScan();
             }, true);
-            window.addEventListener('resize', () => this.schedulePosition());
+            window.addEventListener('resize', () => { this.clearRailLens(); this.schedulePosition(); });
             window.addEventListener('hashchange', () => this.checkPageRoute());
             window.addEventListener('popstate', () => this.checkPageRoute());
             chrome.runtime.onMessage.addListener((message, _sender, respond) => {
@@ -1274,6 +1285,8 @@ var JP;
         }
         hideTurnPreview() { this.$('#jp-turn-preview').hidden = true; }
         showTurnPreview(turn, button) {
+            if (this.railLayoutBase?.dense && button.closest('.rail-track'))
+                return;
             const preview = this.$('#jp-turn-preview');
             preview.replaceChildren();
             const label = el('small');
@@ -1354,6 +1367,8 @@ var JP;
         }
         /** A tiny preview is shared by turn bars and individual colored notes. */
         showNotePreview(note, button) {
+            if (this.railLayoutBase?.dense && button.closest('.rail-track'))
+                return;
             const preview = this.$('#jp-turn-preview');
             preview.replaceChildren();
             const label = el('small');
@@ -1395,6 +1410,7 @@ var JP;
             toggle.textContent = showTurns ? '≡' : String(this.notes.length);
             toggle.title = showTurns ? `已发现 ${turns.length} 轮 · ${this.notes.length} 张便签` : `本页 ${this.notes.length} 张便签`;
             const track = this.$('#jp-rail-track');
+            this.clearRailLens();
             track.replaceChildren();
             this.railGroups = [];
             this.railLayoutBase = null;
@@ -1479,8 +1495,10 @@ var JP;
             button.dataset.railKey = `note:${note.id}`;
             if (groupId)
                 button.dataset.railGroup = groupId;
-            button.style.background = note.anchor && !this.liveMatch(note) ? '#a7a7a7' : COLOR_HEX[JP.appearance(note).color];
-            button.title = note.text.trim().slice(0, 90) || note.anchor?.exact.slice(0, 70) || '本页便签';
+            // An unmounted/virtualized quote does NOT change the user's note color.
+            // Dashed border conveys that its source cannot currently be located.
+            button.style.background = COLOR_HEX[JP.appearance(note).color];
+            button.title = (note.anchor && !this.liveMatch(note) ? '原文暂未加载 · ' : '') + (note.text.trim().slice(0, 90) || note.anchor?.exact.slice(0, 70) || '本页便签');
             button.setAttribute('aria-label', `跳转便签：${button.title}`);
             button.addEventListener('click', () => this.goTo(note.id));
             button.addEventListener('pointerenter', () => this.showNotePreview(note, button));
@@ -1497,21 +1515,93 @@ var JP;
             const track = this.$('#jp-rail-track');
             const height = track.clientHeight || Math.max(170, innerHeight * .68 - 65);
             this.railLayoutHeight = height;
-            this.railLayoutBase = JP.layoutConversationRail(this.railGroups, height);
-            const layout = this.railFocus ? JP.layoutConversationRail(this.railGroups, height, this.railFocus) : this.railLayoutBase;
+            // The overview NEVER reflows on hover. In the old implementation the
+            // entire timeline shifted, creating target jitter and invisible lenses.
+            const layout = JP.layoutConversationRail(this.railGroups, height);
+            this.railLayoutBase = layout;
             for (const button of track.querySelectorAll('[data-rail-key]')) {
                 const point = layout.positions.get(button.dataset.railKey || '');
                 if (point != null)
                     button.style.top = `${point}px`;
             }
             track.classList.toggle('dense', layout.dense);
-            track.classList.toggle('focused', !!this.railFocus && layout.dense);
+            track.classList.remove('focused');
+        }
+        cancelRailDismiss() {
+            clearTimeout(this.railDismissTimer);
+            this.railDismissTimer = 0;
+        }
+        scheduleRailDismiss() {
+            this.cancelRailDismiss();
+            // Small gap between the track and lens should not make it disappear.
+            this.railDismissTimer = window.setTimeout(() => this.clearRailLens(), 320);
+        }
+        clearRailLens() {
+            this.cancelRailDismiss();
+            this.railFocus = null;
+            const lens = this.shadow.querySelector('#jp-rail-lens');
+            if (lens) {
+                lens.hidden = true;
+                lens.replaceChildren();
+            }
+            this.shadow.querySelector('#jp-rail-track')?.classList.remove('focused');
         }
         setRailFocus(turnId) {
-            if (this.railFocus === turnId)
+            if (!turnId || !this.railLayoutBase?.dense) {
+                this.clearRailLens();
+                return;
+            }
+            this.cancelRailDismiss();
+            if (this.railFocus === turnId && !this.$('#jp-rail-lens').hidden)
                 return;
             this.railFocus = turnId;
-            this.applyRailLayout();
+            this.showRailLens(turnId);
+        }
+        /** Stable hover lens. It leaves the overview unchanged and requires no
+         *  preliminary click before selecting a note or a question. */
+        showRailLens(turnId) {
+            const layout = this.railLayoutBase;
+            const group = this.railGroups.find(g => g.turnId === turnId);
+            const turn = this.conversation.turns.find(t => t.id === turnId);
+            const lens = this.$('#jp-rail-lens');
+            if (!layout || !layout.dense || !group || !turn) {
+                this.clearRailLens();
+                return;
+            }
+            this.hideTurnPreview();
+            lens.replaceChildren();
+            const title = el('button', 'rail-lens-turn');
+            title.type = 'button';
+            title.textContent = `${turn.order + 1} · ${turn.preview}`;
+            title.title = `第 ${turn.order + 1} 轮：${turn.preview}`;
+            title.addEventListener('click', () => { this.clearRailLens(); void this.jumpToTurn(turn); });
+            lens.appendChild(title);
+            for (const noteId of group.noteIds) {
+                const note = this.notes.find(n => n.id === noteId);
+                if (!note)
+                    continue;
+                const item = el('button', 'rail-lens-note');
+                item.type = 'button';
+                item.dataset.noteId = note.id;
+                item.title = note.text.trim() || note.anchor?.exact || '空白便签';
+                item.setAttribute('aria-label', `跳转便签：${item.title}`);
+                const dot = el('span', `rail-lens-dot${note.anchor && !this.liveMatch(note) ? ' missing' : ''}`);
+                dot.style.background = COLOR_HEX[JP.appearance(note).color];
+                const label = el('span', 'rail-lens-label');
+                label.textContent = note.text.trim().split('\n')[0] || note.anchor?.exact.slice(0, 65) || '空白便签';
+                item.append(dot, label);
+                item.addEventListener('click', () => { this.clearRailLens(); this.goTo(noteId); });
+                lens.appendChild(item);
+            }
+            const railRect = this.$('#jp-rail').getBoundingClientRect();
+            const trackRect = this.$('#jp-rail-track').getBoundingClientRect();
+            const region = layout.regions.find(r => r.turnId === turnId);
+            const center = trackRect.top + (region ? (region.start + region.end) / 2 : 0);
+            const desiredHeight = Math.min(320, 32 + group.noteIds.length * 29);
+            lens.style.right = `${Math.max(40, innerWidth - railRect.left + 7)}px`;
+            lens.style.top = `${clamp(center - desiredHeight / 2, 8, innerHeight - desiredHeight - 8)}px`;
+            lens.hidden = false;
+            this.$('#jp-rail-track').classList.add('focused');
         }
         renderList() {
             const list = this.$('#jp-list');

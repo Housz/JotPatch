@@ -1,4 +1,4 @@
-# JotPatch architecture — Stage 1.5.1 / v0.1.6
+# JotPatch architecture — v0.1.9
 
 ## Product invariants
 
@@ -108,3 +108,12 @@ See [Stage 1.5.1 reliability / UX investigation](STAGE1_6_FIXES.md) for virtuali
 ## Stage 1.8 导航架构更新
 
 `src/content/rail-layout.ts` 新增不依赖 DOM 的 `layoutConversationRail` 纯布局引擎；轮次与便签标记以真实顺序插入轨道间隙，按便签数量自适应分配空间。密集时局部聚焦而非默认用数字合并。`ConversationIndex` 改为随着用户自然滚动积累稳定轮次 ID，不再自动滚屏或调用内部接口。`Note.conversationTurnId?` 是可选的稳定轮次关联，用于虚拟化后的归属维护，旧数据兼容。详细参见 [STAGE1_8_PASSIVE_RAIL.md](STAGE1_8_PASSIVE_RAIL.md)。
+
+
+## 0.1.9 密集导航修复
+
+轨道布局始终由 `layoutConversationRail(groups, height)` 生成**固定的概览坐标**。密集时（理想高度超过可用高度），页面用户真实指针移动到某轮后，由 `showRailLens` 在轨道左侧生成独立的本轮目标列表，直接一次点击便签或 Prompt；原 `.rail-turn/.rail-pin` 像素位置不因聚焦而移动。短延迟允许指针越过小间隔，离开轨道与展开层后自动关闭。窗口尺寸改变时关闭旧展开层并重算轨道。
+
+当便签 `anchor` 仍存在、但 DOM 虚拟卸载造成 `liveMatch` 暂时为 null 时，导航按钮仍采用 `NoteAppearance.color`，只添加 `.missing` 虚线边框与状态提示；文本纸张继续遵守 Stage 0.1.7 的被动隐藏规则。原 Note schema、储存 API 与扩展权限没有改动。
+
+新增实际 Playwright 鼠标轨迹回归、不同视口高度多轮悬停、虚拟卸载/重新挂载颜色测试；合成页面测试不能替代登录后的 Chrome/Edge 真机验收。
