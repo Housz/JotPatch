@@ -8,7 +8,7 @@ const code=ts.transpileModule(readFileSync('src/content/rail-layout.ts','utf8'),
   compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.None}
 }).outputText;
 const context=vm.createContext({Math,Map});vm.runInContext(code,context);
-const {layoutConversationRail:layout,layoutPageRail,fisheyePositions}=context.JP;
+const {layoutConversationRail:layout,layoutPageRail,findCrowdedRailGroups,nearbyCrowdedGroup}=context.JP;
 const group=(id,notes)=>({turnId:id,noteIds:Array.from({length:notes},(_,i)=>`${id}-n${i}`),
   fractions:Array.from({length:notes},(_,i)=>(i+.5)/notes)});
 
@@ -23,12 +23,12 @@ test('all notes remain individually addressable between consecutive questions',(
 
 test('dense overview is the same set of notes, not a collapsed count glyph',()=>{
   const input=Array.from({length:100},(_,i)=>group(`t${i}`,i===36?8:0));
-  const normal=layout(input,480),focused=fisheyePositions(normal,normal.positions.get('note:t36-n4'));
+  const normal=layout(input,480),crowded=findCrowdedRailGroups(normal);
   assert.equal(normal.positions.size,108);
-  assert.equal(focused.size,108);
   assert.equal(normal.dense,true);
-  assert.ok(![...focused.keys()].some(k=>k.startsWith('overview:')));
-  const y=[...Array(8)].map((_,i)=>focused.get(`note:t36-n${i}`));
+  assert.ok(crowded.length>=1);
+  assert.ok(![...normal.positions.keys()].some(k=>k.startsWith('overview:')));
+  const y=[...Array(8)].map((_,i)=>normal.positions.get(`note:t36-n${i}`));
   assert.ok(y.every((v,i)=>i===0||v>y[i-1]));
 });
 
@@ -53,6 +53,34 @@ test('30 note-only positions retain order and can be focused without clustering'
   const out=layoutPageRail(points,480);
   assert.equal(out.positions.size,30);
   assert.equal(out.positions.has('overview:p0'),false);
-  const shifted=fisheyePositions(out,260);
-  assert.ok(shifted.get('note:p0')<shifted.get('note:p29'));
+  const crowded=findCrowdedRailGroups(out);
+  assert.ok(Array.isArray(crowded));
+  assert.ok(out.positions.get('note:p0')<out.positions.get('note:p29'));
+});
+
+
+test('local congestion only: note-free dense turns do NOT open a detail selector',()=>{
+  const input=Array.from({length:100},(_,i)=>group(`r${i}`,i===50?5:0));
+  const out=layout(input,480),crowded=findCrowdedRailGroups(out);
+  assert.ok(crowded.length>=1);
+  const focus=out.positions.get('note:r50-n2');
+  assert.ok(nearbyCrowdedGroup(crowded,focus));
+  const empty=out.positions.get('turn:r10');
+  assert.equal(nearbyCrowdedGroup(crowded,empty),null);
+});
+
+test('sparse 12-round list with spaced notes has no detail selector',()=>{
+  const input=Array.from({length:12},(_,i)=>group(`r${i}`,i===4?3:0));
+  const out=layout(input,640);
+  assert.equal(findCrowdedRailGroups(out).length,0);
+});
+
+test('crowded groups hold at most seven notes and never erase timeline markers',()=>{
+  const input=Array.from({length:100},(_,i)=>group(`r${i}`,i%5===0?3:0));
+  const out=layout(input,460);
+  const crowds=findCrowdedRailGroups(out);
+  assert.ok(crowds.length>0);
+  assert.ok(crowds.every(g=>g.keys.filter(k=>k.startsWith('note:')).length<=7));
+  assert.equal(out.positions.size,160);
+  assert.ok([...out.positions.values()].every(y=>y>=0&&y<=460));
 });

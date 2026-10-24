@@ -25,20 +25,33 @@ namespace JP {
       padding:0 3px;background:#efe9df;border-radius:10px;color:#6d6659;font-size:11px}
     .rail-turn{position:absolute;right:2px;width:14px;height:3px;min-height:2px;padding:0;
       background:#c3c7cc;border-radius:8px;transform:translateY(-50%);
-      transition:top .17s ease,width .12s ease,background .12s ease;z-index:1}
+      transition:width .12s ease,background .12s ease;z-index:1}
     .rail-turn:hover,.rail-turn:focus-visible{width:20px;background:#818894;z-index:6}
     .rail-turn[aria-current="location"]{width:19px;background:#717883}
     .rail.with-conversation .rail-pin{left:2px;width:13px;height:7px;z-index:3;border-radius:9px}
-    /* Spatial Rail: two lanes in the same 28–33px overview. No count badge,
-       striped cluster or second-layer selection menu. Dense content expands
-       continuously *in this same track* while the pointer approaches it. */
-    .rail-track.fisheye .rail-turn,.rail-track.fisheye .rail-pin{transition:none!important}
-    .rail-track.fisheye .rail-near{z-index:8}
-    .rail-track.fisheye .rail-pin.rail-near{height:8px;width:15px;left:1px}
-    .rail-track.fisheye .rail-turn.rail-near{height:4px;width:18px}
+    /* Stable Rail: no mouse-dependent relocation of the tiny targets. The
+       adjacent selector only appears when nearby *notes* truly collide. */
+    .rail-track .rail-pin,.rail-track .rail-turn{transition:width .12s ease,background .12s ease}
+    .rail-track [data-crowded-group]{cursor:default}
+    .rail-detail{position:fixed;z-index:45;width:min(232px,74vw);max-height:min(270px,68vh);
+      background:#fffefaf9;border:1px solid #e3dbcd;box-shadow:0 7px 22px #0003;
+      border-radius:9px;padding:5px;overflow-y:auto;pointer-events:auto}
+    .rail-detail-header{font-size:10px;color:#847d71;padding:6px 7px 8px;
+      border-bottom:1px solid #ece7df}
+    .rail-detail-option{width:100%;min-height:29px;display:flex;align-items:center;gap:8px;
+      padding:6px 7px;text-align:left;background:transparent;color:#464039;font-size:12px;
+      border-radius:5px}
+    .rail-detail-option:hover,.rail-detail-option:focus-visible{background:#f3ede3;
+      outline:1px solid #b6a898;outline-offset:-1px}
+    .rail-detail-label{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .rail-detail-note{width:13px;height:7px;border-radius:6px;flex:0 0 13px;
+      border:1px solid #0002}
+    .rail-detail-note.missing{border-style:dashed}
+    .rail-detail-turn{width:14px;height:3px;border-radius:5px;flex:0 0 14px;
+      background:#aaaeb6}
     .rail-pin{position:absolute;left:5px;width:11px;height:10px;border:1px solid #0002;border-radius:50%;
       box-shadow:0 1px 4px #0002;transform:translateY(-50%);padding:0;
-      transition:top .17s ease,width .1s ease;cursor:pointer}
+      transition:width .1s ease;cursor:pointer}
     .rail-pin.missing{border:1px dashed #716b66;opacity:.85}
     .rail-pin:focus-visible,.rail-turn:focus-visible{outline:2px solid #7461ae;outline-offset:2px}
     .rail-pin:hover,.rail-pin:focus-visible,.marker:hover{outline:2px solid #7562a4;outline-offset:2px;z-index:8}

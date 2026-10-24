@@ -122,3 +122,8 @@ See [Stage 1.5.1 reliability / UX investigation](STAGE1_6_FIXES.md) for virtuali
 ## v0.1.11 — Spatial Rail
 
 原聚合导航与“轨道旁边弹出 dense lens”是历史实现，当前版本被单轴连续放大替换。新 `rail-layout.ts` 使用轮次内真实比例、PAVA 有序避让、加权高度与 `fisheyePositions` 严格单调映射，保持一张便签一个可点目标。详见 [SPATIAL_RAIL_0_1_11.md](SPATIAL_RAIL_0_1_11.md)。
+
+
+## v0.1.12 Stable Rail（当前）
+
+取消 v0.1.11 的鼠标驱动鱼眼变形及空白轨道最近目标猜测。轨道仍按绝对轮次比例、PAVA 有序避让稳定分配像素坐标；`findCrowdedRailGroups` 只识别局部真正拥挤的**便签**，不使用全局 `dense` 开关作为交互触发。鼠标短暂停留时于左侧生成一个固定位置的局部选择区，原条目 `top` 不改变；只在选择区打开时暂缓 DOM 结构更新，关闭时刷新。见 [STABLE_RAIL_0_1_12.md](STABLE_RAIL_0_1_12.md)。

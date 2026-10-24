@@ -52,13 +52,14 @@ namespace JP {
     private conversationScrollRootRef: Element | null = null;
     private railGroups: RailTurnGroup[] = [];
     private railLayoutBase: RailLayout | null = null;
-    private railShownPositions = new Map<string,number>();
     private railLayoutHeight = 0;
     private railPointerActive = false;
-    private railPointerY = 0;
-    private railPressed = false;
-    private railFrame = 0;
     private railPendingRefresh = false;
+    private railCrowded: RailCrowdedGroup[] = [];
+    private railDetailId: string | null = null;
+    private railDetailDelay = 0;
+    private railDetailCloseDelay = 0;
+    private railDetailCandidate: string | null = null;
     private activeTurnId: string | null = null;
     private refreshTimer = 0;
     private scrollScheduled = false;
@@ -127,6 +128,7 @@ namespace JP {
           <div class="rail-track" id="jp-rail-track"></div>
           <button id="jp-loose-toggle" class="rail-loose" title="本页悬浮或待定位便签" aria-label="查看本页悬浮和待定位便签" type="button" hidden>▤</button>
         </nav>
+        <aside id="jp-rail-detail" class="rail-detail" aria-label="密集便签精细选择" hidden></aside>
         <div id="jp-turn-preview" class="turn-preview" role="tooltip" hidden></div>
         <aside id="jp-list" class="list" aria-label="本页便签列表" hidden></aside>
         <div id="jp-markers"></div>
@@ -155,31 +157,38 @@ namespace JP {
         this.listOpen = true; this.renderList();
       });
       const track=this.$<HTMLElement>('#jp-rail-track');
-      track.addEventListener('pointerenter',event=>this.handleRailPointer(event));
-      track.addEventListener('pointermove',event=>this.handleRailPointer(event));
-      track.addEventListener('pointerleave',()=>this.resetRailFisheye());
-      track.addEventListener('pointerdown',()=>{this.railPressed=true;});
-      window.addEventListener('pointerup',()=>{this.railPressed=false;});
-      // Buttons remain individually actionable, but a very dense rail can
-      // have subpixel visual marks. Provide nearest-target click hit testing
-      // in the transparent space of each lane, without an extra menu step.
+      track.addEventListener('pointerenter',()=>this.cancelRailDetailClose());
+      track.addEventListener('pointermove',event=>this.trackRailPointer(event));
+      track.addEventListener('pointerleave',()=>this.scheduleRailDetailClose());
+      // A blank-track click must NEVER guess and jump to a neighboring note.
+      // Only a genuinely crowded local cluster can open disambiguation.
       track.addEventListener('click',event=>{
-        const node=event.target as Element;
-        if(node.closest('button'))return;
-        const target=this.railHitTest(event.clientX,event.clientY);
-        target?.click();
+        if((event.target as Element).closest('button'))return;
+        const group=this.crowdedAtPointer(event.clientY);
+        if(group)this.openRailDetail(group);
       });
-      track.addEventListener('focusin',event=>{
-        const target=event.target as HTMLButtonElement;
-        if(!target.dataset.railKey || !this.railLayoutBase?.dense)return;
-        this.railPointerActive=true;
-        this.railPointerY=this.railShownPositions.get(target.dataset.railKey)||0;
-        this.applyRailFisheye();
+      track.addEventListener('keydown',event=>{
+        if(event.key==='Escape'){this.closeRailDetail();return;}
+        if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key))return;
+        const targets=Array.from(track.querySelectorAll<HTMLButtonElement>('[data-rail-key]'))
+          .sort((a,b)=>Number.parseFloat(a.style.top)-Number.parseFloat(b.style.top));
+        const at=targets.indexOf(this.shadow.activeElement as HTMLButtonElement);
+        if(at<0)return;
+        event.preventDefault();
+        const next=event.key==='Home'?0:event.key==='End'?targets.length-1:
+          clamp(at+(event.key==='ArrowDown'?1:-1),0,targets.length-1);
+        targets[next]?.focus({preventScroll:true});
       });
-      track.addEventListener('focusout',event=>{
-        if(!(event.relatedTarget instanceof Node) || !track.contains(event.relatedTarget))this.resetRailFisheye();
+      const detail=this.$<HTMLElement>('#jp-rail-detail');
+      detail.addEventListener('pointerenter',()=>this.cancelRailDetailClose());
+      detail.addEventListener('pointerleave',()=>this.scheduleRailDetailClose());
+      detail.addEventListener('focusin',()=>{this.railPointerActive=true;this.cancelRailDetailClose();});
+      detail.addEventListener('focusout',event=>{
+        if(!(event.relatedTarget instanceof Node) || !detail.contains(event.relatedTarget))
+          this.scheduleRailDetailClose();
       });
       document.addEventListener('keydown', event => {
+        if(event.key==='Escape')this.closeRailDetail();
         if(event.key==='Escape') for(const card of this.cards.values()){const menu=card.querySelector<HTMLElement>('.note-menu');if(menu)menu.hidden=true;card.querySelector('.menu-trigger')?.setAttribute('aria-expanded','false');}
       });
       document.addEventListener('pointerdown', event => {
@@ -200,7 +209,7 @@ namespace JP {
         // mutation; natural user scrolling may still reveal a new prompt.
         if(this.conversationNavigation && conversationSite())this.scheduleConversationScan();
       }, true);
-      window.addEventListener('resize', () => {this.resetRailFisheye();this.schedulePosition();});
+      window.addEventListener('resize', () => {this.closeRailDetail();this.schedulePosition();});
       window.addEventListener('hashchange', () => this.checkPageRoute());
       window.addEventListener('popstate', () => this.checkPageRoute());
       chrome.runtime.onMessage.addListener((message: {type: string; selectionText?: string}, _sender: unknown, respond: (result: unknown) => void) => {
@@ -256,7 +265,7 @@ namespace JP {
       this.unpinUndo=null;
       this.openIds.clear(); this.explicitlyDetachedIds.clear(); this.cards.clear(); this.$<HTMLElement>('#jp-cards').replaceChildren();
       this.listOpen = false;
-      this.resetRailFisheye();
+      this.closeRailDetail();
       this.railGroups=[];this.railLayoutBase=null;
       this.conversationIndex.reset();
       this.conversationScrollRootRef = null;
@@ -561,7 +570,10 @@ namespace JP {
     }
 
     private renderDock():void {
+      // Freeze structural rebuild only while the local crowded selector is
+      // open. Mere pointer residence on a quiet rail must not block updates.
       if(this.railPointerActive){this.railPendingRefresh=true;return;}
+      this.railPendingRefresh=false;
       const rail=this.$<HTMLElement>('#jp-rail');
       const turns=this.conversationNavigation?this.conversation.turns:[];
       const showTurns=turns.length>=3&&!this.conversation.nativeRailPresent;
@@ -573,6 +585,7 @@ namespace JP {
       toggle.textContent=showTurns?'≡':String(this.notes.length);
       toggle.title=showTurns?`已发现 ${turns.length} 轮 · ${this.notes.length} 张便签`:`本页 ${this.notes.length} 张便签`;
       const track=this.$<HTMLElement>('#jp-rail-track');
+      this.closeRailDetail();
       track.replaceChildren();this.railGroups=[];this.railLayoutBase=null;
       const live=turns.filter(turn=>turn.element?.isConnected);
       const byTurn=new Map<string,Note[]>();
@@ -599,8 +612,13 @@ namespace JP {
           bar.dataset.turnId=turn.id;bar.dataset.railKey=`turn:${turn.id}`;
           bar.title=`已发现第 ${turn.order+1} 轮：${turn.preview}`;
           bar.setAttribute('aria-label',bar.title);
-          bar.addEventListener('click',()=>void this.jumpToTurn(turn));
-          bar.addEventListener('pointerenter',()=>this.showTurnPreview(turn,bar));
+          bar.addEventListener('click',event=>{
+            if(this.needsRailDetail(bar,event)){return;}
+            this.closeRailDetail();void this.jumpToTurn(turn);
+          });
+          bar.addEventListener('pointerenter',()=>{
+            if(!this.isCrowdedMarker(bar))this.showTurnPreview(turn,bar);
+          });
           bar.addEventListener('pointerleave',()=>this.hideTurnPreview());
           bar.addEventListener('focus',()=>this.showTurnPreview(turn,bar));
           bar.addEventListener('blur',()=>this.hideTurnPreview());
@@ -633,8 +651,13 @@ namespace JP {
       button.title=(note.anchor&&!this.liveMatch(note)?'原文暂未加载 · ':'')+
         (note.text.trim().slice(0,90)||note.anchor?.exact.slice(0,70)||'便签');
       button.setAttribute('aria-label',`跳转便签：${button.title}`);
-      button.addEventListener('click',()=>this.goTo(note.id));
-      button.addEventListener('pointerenter',()=>this.showNotePreview(note,button));
+      button.addEventListener('click',event=>{
+        if(this.needsRailDetail(button,event))return;
+        this.closeRailDetail();this.goTo(note.id);
+      });
+      button.addEventListener('pointerenter',()=>{
+        if(!this.isCrowdedMarker(button))this.showNotePreview(note,button);
+      });
       button.addEventListener('pointerleave',()=>this.hideTurnPreview());
       button.addEventListener('focus',()=>this.showNotePreview(note,button));
       button.addEventListener('blur',()=>this.hideTurnPreview());
@@ -645,72 +668,127 @@ namespace JP {
       const track=this.$<HTMLElement>('#jp-rail-track');
       this.railLayoutBase=layout;
       this.railLayoutHeight=layout.height;
-      this.railShownPositions=new Map(layout.positions);
+      this.railCrowded=findCrowdedRailGroups(layout);
+      const crowdedKeys=new Map<string,string>();
+      for(const group of this.railCrowded)for(const key of group.keys)crowdedKeys.set(key,group.id);
       for(const button of track.querySelectorAll<HTMLButtonElement>('[data-rail-key]')){
-        const y=layout.positions.get(button.dataset.railKey||'');
+        const key=button.dataset.railKey||'',y=layout.positions.get(key);
         if(y!==undefined)button.style.top=`${y}px`;
+        const cluster=crowdedKeys.get(key);
+        if(cluster)button.dataset.crowdedGroup=cluster;
+        else delete button.dataset.crowdedGroup;
       }
-      track.classList.toggle('dense',layout.dense);
-      track.classList.remove('fisheye');
+      track.classList.toggle('dense',this.railCrowded.length>0);
     }
 
-    private handleRailPointer(event:PointerEvent):void {
-      if(!this.railLayoutBase?.dense)return;
+    /** Returns a group ONLY when the pointer is in a locally crowded area. */
+    private crowdedAtPointer(clientY:number):RailCrowdedGroup|null {
+      const track=this.$<HTMLElement>('#jp-rail-track');
+      const localY=clientY-track.getBoundingClientRect().top;
+      return nearbyCrowdedGroup(this.railCrowded,localY);
+    }
+    private isCrowdedMarker(marker:HTMLButtonElement):boolean {
+      return !!marker.dataset.crowdedGroup;
+    }
+    private needsRailDetail(marker:HTMLButtonElement,event:MouseEvent):boolean {
+      // Keyboard-generated clicks target a focused, named button exactly.
+      if(event.detail===0)return false;
+      const group=this.railCrowded.find(g=>g.id===marker.dataset.crowdedGroup);
+      if(!group)return false;
+      event.preventDefault();event.stopPropagation();
+      this.openRailDetail(group);
+      return true;
+    }
+    private trackRailPointer(event:PointerEvent):void {
+      // A real marker identifies its own cluster. Pixel ranges from adjacent
+      // clusters may overlap; relying only on the nearest Y would show the
+      // wrong menu for a visibly hovered colored note.
+      const marker=(event.target as Element).closest<HTMLButtonElement>('[data-crowded-group]');
+      const group=(marker && this.railCrowded.find(item=>item.id===marker.dataset.crowdedGroup)) ||
+        this.crowdedAtPointer(event.clientY);
+      if(group){
+        // The currently open panel never jumps to another group mid-targeting.
+        if(this.railDetailId===group.id){this.cancelRailDetailClose();return;}
+        this.queueRailDetail(group);
+      }else{
+        this.cancelRailDetailOpen();
+        // Moving across sparse gray bars does not activate another group's UI.
+        if(this.railDetailId)this.scheduleRailDetailClose();
+      }
+    }
+    private cancelRailDetailOpen():void {
+      clearTimeout(this.railDetailDelay);this.railDetailDelay=0;this.railDetailCandidate=null;
+    }
+    private cancelRailDetailClose():void {
+      clearTimeout(this.railDetailCloseDelay);this.railDetailCloseDelay=0;
+    }
+    private queueRailDetail(group:RailCrowdedGroup):void {
+      this.cancelRailDetailClose();
+      if(this.railDetailCandidate===group.id)return;
+      this.cancelRailDetailOpen();
+      this.railDetailCandidate=group.id;
+      // The user has to linger over a genuinely ambiguous *local* region.
+      // This avoids incidental panels as the pointer crosses the rail.
+      this.railDetailDelay=window.setTimeout(()=>{
+        this.railDetailDelay=0;this.railDetailCandidate=null;
+        const source=this.railCrowded.find(item=>item.id===group.id);
+        if(source)this.openRailDetail(source);
+      },210);
+    }
+    private scheduleRailDetailClose():void {
+      this.cancelRailDetailOpen();
+      if(this.railDetailCloseDelay)return;
+      this.railDetailCloseDelay=window.setTimeout(()=>this.closeRailDetail(),310);
+    }
+    private openRailDetail(group:RailCrowdedGroup):void {
+      this.cancelRailDetailOpen();this.cancelRailDetailClose();
+      if(this.railDetailId===group.id && !this.$<HTMLElement>('#jp-rail-detail').hidden)return;
+      const detail=this.$<HTMLElement>('#jp-rail-detail');
+      const track=this.$<HTMLElement>('#jp-rail-track');
       this.railPointerActive=true;
-      const rect=this.$<HTMLElement>('#jp-rail-track').getBoundingClientRect();
-      if(!this.railPressed)this.railPointerY=clamp(event.clientY-rect.top,0,rect.height);
-      if(this.railFrame)return;
-      this.railFrame=requestAnimationFrame(()=>{
-        this.railFrame=0;this.applyRailFisheye();
-      });
-    }
-
-    private applyRailFisheye():void {
-      const layout=this.railLayoutBase;if(!layout||!layout.dense)return;
-      const shifted=fisheyePositions(layout,this.railPointerY);
-      this.railShownPositions=shifted;
-      const track=this.$<HTMLElement>('#jp-rail-track');
-      track.classList.add('fisheye');
-      for(const marker of track.querySelectorAll<HTMLButtonElement>('[data-rail-key]')){
-        const y=shifted.get(marker.dataset.railKey||'');
-        if(y!==undefined)marker.style.top=`${y}px`;
-        const near=y!==undefined&&Math.abs(y-this.railPointerY)<34;
-        marker.classList.toggle('rail-near',near);
-      }
-    }
-
-    private resetRailFisheye():void {
-      if(this.railFrame){cancelAnimationFrame(this.railFrame);this.railFrame=0;}
-      this.railPointerActive=false;this.railPressed=false;
-      const layout=this.railLayoutBase;
-      const track=this.shadow?.querySelector<HTMLElement>('#jp-rail-track');
-      if(layout&&track){
-        this.railShownPositions=new Map(layout.positions);
-        for(const marker of track.querySelectorAll<HTMLButtonElement>('[data-rail-key]')){
-          const y=layout.positions.get(marker.dataset.railKey||'');
-          if(y!==undefined)marker.style.top=`${y}px`;
-          marker.classList.remove('rail-near');
-        }
-        track.classList.remove('fisheye');
-      }
+      this.railDetailId=group.id;
       this.hideTurnPreview();
-      if(this.railPendingRefresh){this.railPendingRefresh=false;this.renderDock();}
-    }
-
-    private railHitTest(x:number,y:number):HTMLButtonElement|null {
-      const track=this.$<HTMLElement>('#jp-rail-track');
-      const rect=track.getBoundingClientRect();
-      const position=y-rect.top,preferNotes=(x-rect.left)<rect.width/2;
-      let nearest:HTMLButtonElement|null=null,score=Infinity;
-      for(const button of track.querySelectorAll<HTMLButtonElement>('[data-rail-key]')){
-        const key=button.dataset.railKey||'';
-        const pixel=this.railShownPositions.get(key);
-        if(pixel===undefined)continue;
-        const penalty=(key.startsWith('note:')!==preferNotes)?18:0;
-        const distance=Math.abs(pixel-position)+penalty;
-        if(distance<score){score=distance;nearest=button;}
+      detail.replaceChildren();
+      const heading=el('div','rail-detail-header');
+      heading.textContent=`附近 ${group.keys.length} 个导航目标`;
+      detail.appendChild(heading);
+      const notesById=new Map(this.notes.map(note=>[note.id,note]));
+      const turnsById=new Map(this.conversation.turns.map(turn=>[turn.id,turn]));
+      for(const key of group.keys){
+        const button=el('button','rail-detail-option');button.type='button';
+        button.dataset.railKey=key;
+        const mark=el('span',key.startsWith('note:')?'rail-detail-note':'rail-detail-turn');
+        const label=el('span','rail-detail-label');
+        if(key.startsWith('note:')){
+          const note=notesById.get(key.slice(5));if(!note)continue;
+          mark.style.background=COLOR_HEX[appearance(note).color];
+          mark.classList.toggle('missing',!!note.anchor&&!this.liveMatch(note));
+          label.textContent=note.text.trim().split('\n')[0]||note.anchor?.exact.slice(0,75)||'空白便签';
+          button.addEventListener('click',()=>{this.closeRailDetail();this.goTo(note.id);});
+        }else{
+          const turn=turnsById.get(key.slice(5));if(!turn)continue;
+          label.textContent=`第 ${turn.order+1} 轮 · ${turn.preview}`;
+          button.addEventListener('click',()=>{this.closeRailDetail();void this.jumpToTurn(turn);});
+        }
+        button.title=label.textContent||'';
+        button.append(mark,label);detail.appendChild(button);
       }
-      return score<=17?nearest:null;
+      const trackRect=track.getBoundingClientRect();
+      const center=trackRect.top+group.center;
+      const desiredHeight=Math.min(270,30+group.keys.length*31);
+      const railLeft=this.$<HTMLElement>('#jp-rail').getBoundingClientRect().left;
+      detail.style.right=`${Math.max(43,innerWidth-railLeft+6)}px`;
+      detail.style.top=`${clamp(center-desiredHeight/2,8,Math.max(8,innerHeight-desiredHeight-8))}px`;
+      detail.hidden=false;
+    }
+    private closeRailDetail():void {
+      this.cancelRailDetailOpen();this.cancelRailDetailClose();
+      this.railDetailId=null;
+      const detail=this.shadow?.querySelector<HTMLElement>('#jp-rail-detail');
+      if(detail){detail.hidden=true;detail.replaceChildren();}
+      this.railPointerActive=false;
+      this.hideTurnPreview();
+      if(!this.railPointerActive && this.railPendingRefresh){this.railPendingRefresh=false;this.renderDock();}
     }
 
     private renderList():void {
