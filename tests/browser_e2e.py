@@ -1,15 +1,30 @@
 """Stage 0 browser integration test. Run after `npm run build`.
 
-Tests actual DOM/selection/scroll in Chromium. Chrome extension APIs are shimmed
-here so these tests can exercise anchoring deterministically without a permissions
-prompt. They do NOT replace a manual MV3 smoke test of extension permissions.
+Tests actual DOM/selection/scroll behaviour. Chrome/Chromium is the default
+engine; set JP_E2E_BROWSER=firefox to run the same scenarios on Gecko using
+Playwright's bundled Firefox. Extension APIs are shimmed here so these tests can
+exercise anchoring deterministically without a permissions prompt. They do NOT
+replace a manual MV3 smoke test of extension permissions in a real browser.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
 
 ROOT = Path(__file__).resolve().parents[1]
+BROWSER = os.environ.get('JP_E2E_BROWSER', 'chromium').strip().lower()
+
+
+def launch(p):
+    if BROWSER == 'firefox':
+        return p.firefox.launch(headless=True)
+    return p.chromium.launch(
+        headless=True,
+        executable_path=os.environ.get('JP_CHROMIUM_PATH', '/usr/bin/chromium'),
+        args=['--no-sandbox'],
+    )
+
 
 STORAGE_SHIM = r"""
 (() => {
@@ -71,9 +86,9 @@ def new_page(context, fixture_html, seed=None):
 
 
 def run():
-    fixture_html = (ROOT / 'fixtures/long-page.html').read_text()
+    fixture_html = (ROOT / 'fixtures/long-page.html').read_text(encoding='utf-8')
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, executable_path='/usr/bin/chromium', args=['--no-sandbox'])
+        browser = launch(p)
         context = browser.new_context(viewport={'width': 1100, 'height': 750})
         page = new_page(context, fixture_html)
         expect(page.locator('#jotpatch-root #jp-rail')).to_be_hidden()

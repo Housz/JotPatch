@@ -1,4 +1,5 @@
-/* Applied by chrome.scripting.insertCSS and registered content scripts. */
+/* Applied by scripting.insertCSS (toolbar activation) and by the registered
+   per-site content script, in Chrome MV3 and Firefox MV3 alike. */
 ::highlight(jotpatch-anchored-text) {
   background-color: rgba(255, 198, 58, 0.34);
   text-decoration: underline;

@@ -18,24 +18,27 @@ Stage 0 deliberately omits arbitrary pixel anchoring, image anchors, full Markdo
 ## Current MV3 architecture
 
 ```text
-Chrome action click                  Extension Options (site grant)
-       |                                         |
-       v                                         v
-MV3 service worker  --------- optional per-origin script registration
-       |
-       | chrome.scripting.executeScript / insertCSS
-       v
+Toolbar action click                 Extension options (per-site grant)
+        |                                         |
+        v                                         v
+Background: Chrome MV3 service worker / Firefox MV3 event page
+        |   ^
+        |   +-- permissions.onAdded / onRemoved --> syncSiteScripts()
+        |       re-registers or removes optional per-origin content scripts
+        |
+        | scripting.executeScript / insertCSS
+        v
 Content script, isolated JS world
   - Page key normalization (`page-key.ts`)
   - Anchor capture + matching (`anchor.ts`)
   - UI layer + text highlights (`app.ts`)
   - Page-local note repository (`repository.ts`)
-       |
-       v
-chrome.storage.local  (one key per note, jotpatch:note:v1:<uuid>)
+        |
+        v
+storage.local  (one key per note, jotpatch:note:v1:<uuid>)
 ```
 
-Stage 0 compiles multiple TypeScript `namespace JP` files into one *classic* content script (`dist/content.js`) and a separate service worker (`dist/background.js`). There are no runtime dependencies and no remote services. Future work should separate the anchor engine from UI components and extend the repository as data volume grows.
+Stage 0 compiles multiple TypeScript `namespace JP` files into one *classic* content script (`dist/content.js`), one background bundle (`dist/background.js`) and one options bundle (`dist/options.js`). There are no runtime dependencies and no remote services. `src/shared/browser.ts` resolves the promise-based `browser` namespace (Firefox) or `chrome` (Chromium) once, and `src/shared/sites.ts` owns match patterns, registration ids and reconciliation, so the injected content code is identical in both browsers. Future work should separate the anchor engine from UI components and extend the repository as data volume grows.
 
 ### Anchor data model and resolution
 
@@ -51,7 +54,30 @@ Quotes are **not** matched fuzzily to unrelated content. When confidence is insu
 
 ### Privacy and permissions
 
-Required: `activeTab`, `scripting`, `storage`. No mandatory broad host permission. Clicking the toolbar injects the content script in the active tab. A user can opt in to *per-origin* site access in the extension options page; after granting it, a registered content script loads when pages on that site open. Disabling a site permission unregisters its script.
+Required: `activeTab`, `scripting`, `storage`. No mandatory broad host permission. Clicking the toolbar injects the content script in the active tab. A user can opt in to *per-origin* site access in the extension options page; after granting it, a registered content script loads when pages on that site open. Revoking a site permission unregisters its script.
+
+The same three permissions and the same optional `http://*/*` / `https://*/*` host patterns work in Chrome and Firefox. `optional_host_permissions` requires Firefox 128+, and the AMO-mandated `data_collection_permissions` declaration requires Firefox 142+, so the Firefox manifest pins that floor through `browser_specific_settings.gecko.strict_min_version`.
+
+The options page requests the permission inside the click gesture, then reconciles registrations itself. The background re-runs the same idempotent reconciliation on `runtime.onInstalled`, `runtime.onStartup`, `permissions.onAdded` and `permissions.onRemoved`, which keeps registrations correct after an extension update (updates clear registered scripts) and after a revocation.
+
+### Cross-browser packaging
+
+Two manifests describe one code base:
+
+| File | Target | Background | Notes |
+| --- | --- | --- | --- |
+| `manifest.json` | Chrome / Chromium MV3 | `background.service_worker` | Loaded from the repository root |
+| `manifest.firefox.json` | Firefox MV3 | `background.scripts` (event page) | Assembled into `dist/firefox/` by `scripts/build-firefox.mjs` |
+
+The Firefox package mirrors the repository layout, so `dist/content.js`, `styles/highlight.css` and `dist/options.js` keep identical paths in both builds and no source file needs a browser-specific path. `scripts/verify-firefox-build.mjs` fails the build if Chromium-only keys (`background.service_worker`, `minimum_chrome_version`, `short_name`, `options_page`) leak into the Firefox package, if a referenced file is missing, or if a bundle calls a Chrome-only global directly.
+
+Firefox-specific adaptations:
+
+- The background runs as an event page instead of a service worker; it holds no in-memory state, so being unloaded between events is harmless.
+- `scripting.registerContentScripts` with `persistAcrossSessions: true` exists in Firefox 105+, so per-site restore uses the same code path as Chrome. Registrations are still reconciled from `permissions.getAll()` rather than from stored bookkeeping, so no stale allowlist can drift.
+- The content-script instance is stored on `globalThis`, which is Firefox's content-script sandbox global, instead of on the page `window` that Gecko exposes through an Xray wrapper.
+- The CSS Custom Highlight API (`CSS.highlights`) is feature-detected; Firefox 140+ paints the inline highlight. Older Firefox still gets markers, the Dock and the card.
+- `options_ui` with `open_in_tab` replaces `options_page`, which is a Chromium-only manifest key under MV3.
 
 Notes are saved to `chrome.storage.local`. No account, analytics, network requests, cloud sync, or AI calls. Content scripts run in Chrome's isolated world, but their DOM overlays are not a security boundary; the extension must never execute arbitrary selected HTML.
 

@@ -7,7 +7,7 @@ namespace JP {
     static key(id: string): string { return PREFIX + id; }
 
     async list(page: string): Promise<Note[]> {
-      const stored = await chrome.storage.local.get(null) as Record<string, unknown>;
+      const stored = await JP.api.storage.local.get(null) as Record<string, unknown>;
       const output: Note[] = [];
       for (const [key, value] of Object.entries(stored)) {
         if (key.startsWith(PREFIX) && this.isNote(value) && value.pageKey === page) output.push(value);
@@ -16,11 +16,11 @@ namespace JP {
     }
 
     async put(note: Note): Promise<void> {
-      await chrome.storage.local.set({ [NoteRepository.key(note.id)]: note });
+      await JP.api.storage.local.set({ [NoteRepository.key(note.id)]: note });
     }
 
     async remove(id: string): Promise<void> {
-      await chrome.storage.local.remove(NoteRepository.key(id));
+      await JP.api.storage.local.remove(NoteRepository.key(id));
     }
 
     noteFromChange(key: string, newValue: unknown): Note | null {

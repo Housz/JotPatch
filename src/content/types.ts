@@ -1,7 +1,6 @@
 // Stage 0 intentionally compiles ordered TypeScript namespaces into one classic
 // content script; no runtime dependency or cross-origin imports are needed.
-declare const chrome: any;
-
+// The extension API handle lives in src/shared/browser.ts (JP.api).
 namespace JP {
   export interface TextAnchor {
     version: 1;

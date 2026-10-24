@@ -59,6 +59,37 @@ namespace JP {
     :focus-visible {outline:2px solid #7158ba;outline-offset:2px;}
   `;
 
+  // Static shell. Parsed with DOMParser in mount(); no page or note content is
+  // ever interpolated here, and note text only reaches the DOM via textContent.
+  const MARKUP = `
+        <section class="toolbar" aria-label="JotPatch 工具条">
+          <div class="toolbar-head">📒 JotPatch <span>阶段 0 · 内容锚定</span></div>
+          <div class="toolbar-actions">
+            <button id="jp-pin" class="primary" type="button">📌 贴住选中文字</button>
+            <button id="jp-restore" class="secondary" type="button">自动恢复设置</button>
+          </div>
+          <small>先选中网页文字，再点击旁边的「贴便签」。点击插件图标可隐藏/显示。</small>
+        </section>
+        <div id="jp-bubble" class="bubble" hidden><button type="button" id="jp-bubble-pin">📌 贴便签</button></div>
+        <nav id="jp-rail" class="rail" aria-label="本页便签导航" hidden>
+          <button id="jp-list-toggle" class="rail-head" title="查看本页便签" aria-label="查看本页便签">0</button>
+          <div id="jp-rail-track" class="rail-track"></div>
+        </nav>
+        <aside id="jp-list" class="list" aria-label="本页便签列表" hidden></aside>
+        <div id="jp-markers"></div>
+        <section id="jp-card" class="card" aria-label="便签编辑" hidden>
+          <div class="card-head"><strong id="jp-card-title">便签</strong><button id="jp-card-close" type="button" aria-label="收起便签">×</button></div>
+          <div class="quote" id="jp-quote"></div>
+          <textarea id="jp-editor" aria-label="便签内容" placeholder="写下你的想法…"></textarea>
+          <div class="card-foot">
+            <button id="jp-jump" type="button">↗ 原文</button>
+            <button id="jp-copy" type="button">复制</button>
+            <button id="jp-delete" class="delete" type="button">删除</button>
+            <span id="jp-save-state" class="save-state"></span>
+          </div>
+        </section>
+        <div id="jp-toast" class="toast" role="status" aria-live="polite" hidden></div>`;
+
   function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string): HTMLElementTagNameMap[K] {
     const result = document.createElement(tag);
     if (className) result.className = className;
@@ -125,35 +156,14 @@ namespace JP {
       this.host.setAttribute('data-jotpatch-exclude', '');
       this.host.style.cssText = 'position:fixed;inset:0;z-index:2147483647;pointer-events:none;';
       this.shadow = this.host.attachShadow({ mode: 'open' });
-      this.shadow.innerHTML = `
-        <style>${STYLE}</style>
-        <section class="toolbar" aria-label="JotPatch 工具条">
-          <div class="toolbar-head">📒 JotPatch <span>阶段 0 · 内容锚定</span></div>
-          <div class="toolbar-actions">
-            <button id="jp-pin" class="primary" type="button">📌 贴住选中文字</button>
-            <button id="jp-restore" class="secondary" type="button">自动恢复设置</button>
-          </div>
-          <small>先选中网页文字，再点击旁边的「贴便签」。点击插件图标可隐藏/显示。</small>
-        </section>
-        <div id="jp-bubble" class="bubble" hidden><button type="button" id="jp-bubble-pin">📌 贴便签</button></div>
-        <nav id="jp-rail" class="rail" aria-label="本页便签导航" hidden>
-          <button id="jp-list-toggle" class="rail-head" title="查看本页便签" aria-label="查看本页便签">0</button>
-          <div id="jp-rail-track" class="rail-track"></div>
-        </nav>
-        <aside id="jp-list" class="list" aria-label="本页便签列表" hidden></aside>
-        <div id="jp-markers"></div>
-        <section id="jp-card" class="card" aria-label="便签编辑" hidden>
-          <div class="card-head"><strong id="jp-card-title">便签</strong><button id="jp-card-close" type="button" aria-label="收起便签">×</button></div>
-          <div class="quote" id="jp-quote"></div>
-          <textarea id="jp-editor" aria-label="便签内容" placeholder="写下你的想法…"></textarea>
-          <div class="card-foot">
-            <button id="jp-jump" type="button">↗ 原文</button>
-            <button id="jp-copy" type="button">复制</button>
-            <button id="jp-delete" class="delete" type="button">删除</button>
-            <span id="jp-save-state" class="save-state"></span>
-          </div>
-        </section>
-        <div id="jp-toast" class="toast" role="status" aria-live="polite" hidden></div>`;
+      // Parse the static shell with DOMParser and assign the stylesheet through
+      // textContent: nothing from the page or a note is interpolated into markup.
+      // (A <style> inside a parsed string would land in the document head; Gecko
+      // and Chromium both agree on that, so the style element is built explicitly.)
+      const shell = new DOMParser().parseFromString(MARKUP, 'text/html');
+      const style = document.createElement('style');
+      style.textContent = STYLE;
+      this.shadow.append(style, ...Array.from(shell.body.childNodes));
       (document.body || document.documentElement).appendChild(this.host);
     }
 
@@ -168,7 +178,7 @@ namespace JP {
       this.$<HTMLButtonElement>('#jp-bubble-pin').addEventListener('pointerdown', (event) => event.preventDefault());
       this.$<HTMLButtonElement>('#jp-bubble-pin').addEventListener('click', () => void this.createFromSelection());
       this.$<HTMLButtonElement>('#jp-restore').addEventListener('click', () => {
-        void chrome.runtime.sendMessage({ type: 'JP_OPEN_SITE_SETUP' }).catch(() => {
+        void JP.api.runtime.sendMessage({ type: 'JP_OPEN_SITE_SETUP' }).catch(() => {
           this.toast('无法打开授权页面，请从插件详情进入选项。');
         });
       });

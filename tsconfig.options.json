@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "none",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "skipLibCheck": true,
+    "outFile": "dist/options.js",
+    "noEmitOnError": true
+  },
+  "files": [
+    "src/shared/browser.ts",
+    "src/shared/sites.ts",
+    "src/options/main.ts"
+  ]
+}

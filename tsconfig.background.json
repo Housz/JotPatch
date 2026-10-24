@@ -8,5 +8,9 @@
     "outFile": "dist/background.js",
     "noEmitOnError": true
   },
-  "files": ["src/background/index.ts"]
+  "files": [
+    "src/shared/browser.ts",
+    "src/shared/sites.ts",
+    "src/background/index.ts"
+  ]
 }

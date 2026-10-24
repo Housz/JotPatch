@@ -10,6 +10,7 @@
     "noEmitOnError": true
   },
   "files": [
+    "src/shared/browser.ts",
     "src/content/types.ts",
     "src/content/page-key.ts",
     "src/content/anchor.ts",
