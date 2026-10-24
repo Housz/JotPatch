@@ -53,13 +53,6 @@ namespace JP {
     private railGroups: RailTurnGroup[] = [];
     private railLayoutBase: RailLayout | null = null;
     private railLayoutHeight = 0;
-    private railPointerActive = false;
-    private railPendingRefresh = false;
-    private railCrowded: RailCrowdedGroup[] = [];
-    private railDetailId: string | null = null;
-    private railDetailDelay = 0;
-    private railDetailCloseDelay = 0;
-    private railDetailCandidate: string | null = null;
     private activeTurnId: string | null = null;
     private refreshTimer = 0;
     private scrollScheduled = false;
@@ -128,7 +121,6 @@ namespace JP {
           <div class="rail-track" id="jp-rail-track"></div>
           <button id="jp-loose-toggle" class="rail-loose" title="本页悬浮或待定位便签" aria-label="查看本页悬浮和待定位便签" type="button" hidden>▤</button>
         </nav>
-        <aside id="jp-rail-detail" class="rail-detail" aria-label="密集便签精细选择" hidden></aside>
         <div id="jp-turn-preview" class="turn-preview" role="tooltip" hidden></div>
         <aside id="jp-list" class="list" aria-label="本页便签列表" hidden></aside>
         <div id="jp-markers"></div>
@@ -157,18 +149,11 @@ namespace JP {
         this.listOpen = true; this.renderList();
       });
       const track=this.$<HTMLElement>('#jp-rail-track');
-      track.addEventListener('pointerenter',()=>this.cancelRailDetailClose());
-      track.addEventListener('pointermove',event=>this.trackRailPointer(event));
-      track.addEventListener('pointerleave',()=>this.scheduleRailDetailClose());
-      // A blank-track click must NEVER guess and jump to a neighboring note.
-      // Only a genuinely crowded local cluster can open disambiguation.
-      track.addEventListener('click',event=>{
-        if((event.target as Element).closest('button'))return;
-        const group=this.crowdedAtPointer(event.clientY);
-        if(group)this.openRailDetail(group);
-      });
+      // Rail buttons themselves own hover previews and direct navigation.
+      // Even if several buttons are only pixels apart, never intercept clicks
+      // to open an extra list or guess which neighboring note was intended.
       track.addEventListener('keydown',event=>{
-        if(event.key==='Escape'){this.closeRailDetail();return;}
+        if(event.key==='Escape'){this.hideTurnPreview();return;}
         if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key))return;
         const targets=Array.from(track.querySelectorAll<HTMLButtonElement>('[data-rail-key]'))
           .sort((a,b)=>Number.parseFloat(a.style.top)-Number.parseFloat(b.style.top));
@@ -179,16 +164,8 @@ namespace JP {
           clamp(at+(event.key==='ArrowDown'?1:-1),0,targets.length-1);
         targets[next]?.focus({preventScroll:true});
       });
-      const detail=this.$<HTMLElement>('#jp-rail-detail');
-      detail.addEventListener('pointerenter',()=>this.cancelRailDetailClose());
-      detail.addEventListener('pointerleave',()=>this.scheduleRailDetailClose());
-      detail.addEventListener('focusin',()=>{this.railPointerActive=true;this.cancelRailDetailClose();});
-      detail.addEventListener('focusout',event=>{
-        if(!(event.relatedTarget instanceof Node) || !detail.contains(event.relatedTarget))
-          this.scheduleRailDetailClose();
-      });
       document.addEventListener('keydown', event => {
-        if(event.key==='Escape')this.closeRailDetail();
+        if(event.key==='Escape')this.hideTurnPreview();
         if(event.key==='Escape') for(const card of this.cards.values()){const menu=card.querySelector<HTMLElement>('.note-menu');if(menu)menu.hidden=true;card.querySelector('.menu-trigger')?.setAttribute('aria-expanded','false');}
       });
       document.addEventListener('pointerdown', event => {
@@ -209,7 +186,7 @@ namespace JP {
         // mutation; natural user scrolling may still reveal a new prompt.
         if(this.conversationNavigation && conversationSite())this.scheduleConversationScan();
       }, true);
-      window.addEventListener('resize', () => {this.closeRailDetail();this.schedulePosition();});
+      window.addEventListener('resize', () => {this.hideTurnPreview();this.schedulePosition();});
       window.addEventListener('hashchange', () => this.checkPageRoute());
       window.addEventListener('popstate', () => this.checkPageRoute());
       chrome.runtime.onMessage.addListener((message: {type: string; selectionText?: string}, _sender: unknown, respond: (result: unknown) => void) => {
@@ -265,7 +242,7 @@ namespace JP {
       this.unpinUndo=null;
       this.openIds.clear(); this.explicitlyDetachedIds.clear(); this.cards.clear(); this.$<HTMLElement>('#jp-cards').replaceChildren();
       this.listOpen = false;
-      this.closeRailDetail();
+      this.hideTurnPreview();
       this.railGroups=[];this.railLayoutBase=null;
       this.conversationIndex.reset();
       this.conversationScrollRootRef = null;
@@ -403,16 +380,17 @@ namespace JP {
     }
     private hideTurnPreview(): void { this.$<HTMLElement>('#jp-turn-preview').hidden = true; }
     private showTurnPreview(turn: ConversationTurn, button: HTMLButtonElement): void {
-      const preview = this.$<HTMLElement>('#jp-turn-preview');
-      preview.replaceChildren();
-      const label = el('small'); label.textContent = `已发现第 ${turn.order + 1} / ${this.conversation.turns.length} 轮${turn.element?'':' · 暂未挂载'}`;
-      const summary = el('span'); summary.textContent = turn.preview;
-      preview.append(label, summary);
-      const rect = button.getBoundingClientRect();
-      const railRect = this.$<HTMLElement>('#jp-rail').getBoundingClientRect();
-      preview.style.right = `${Math.max(44, innerWidth - railRect.left + 9)}px`;
-      preview.style.top = `${clamp(rect.top - 13, 8, innerHeight - 96)}px`;
-      preview.hidden = false;
+      this.showRailPreview(turn.preview || '非文本提问',button);
+    }
+    /** Same compact, headerless preview for both gray turns and note markers. */
+    private showRailPreview(content:string,button:HTMLButtonElement):void {
+      const preview=this.$<HTMLElement>('#jp-turn-preview');
+      preview.textContent=content;
+      const rect=button.getBoundingClientRect();
+      const railRect=this.$<HTMLElement>('#jp-rail').getBoundingClientRect();
+      preview.style.right=`${Math.max(44,innerWidth-railRect.left+9)}px`;
+      preview.style.top=`${clamp(rect.top-13,8,innerHeight-96)}px`;
+      preview.hidden=false;
     }
     private async jumpToTurn(turn: ConversationTurn): Promise<void> {
       this.hideTurnPreview();
@@ -465,20 +443,9 @@ namespace JP {
       }
     }
 
-    /** A tiny preview is shared by turn bars and individual colored notes. */
     private showNotePreview(note:Note,button:HTMLButtonElement):void {
-      const preview=this.$<HTMLElement>('#jp-turn-preview');
-      preview.replaceChildren();
-      const label=el('small');
-      label.textContent=note.anchor ? (this.liveMatch(note)?'📌 原文便签':'📌 原文暂未加载') : '本页悬浮便签';
-      const content=el('span');
-      content.textContent=note.text.trim().slice(0,210)||'空白便签';
-      preview.append(label,content);
-      const rect=button.getBoundingClientRect();
-      const railRect=this.$<HTMLElement>('#jp-rail').getBoundingClientRect();
-      preview.style.right=`${Math.max(44,innerWidth-railRect.left+9)}px`;
-      preview.style.top=`${clamp(rect.top-13,8,innerHeight-96)}px`;
-      preview.hidden=false;
+      const content=note.text.trim().slice(0,210) || note.anchor?.exact.slice(0,210) || '空白便签';
+      this.showRailPreview(content,button);
     }
 
     /** Resolve the fraction of a note *within the entire response turn*.
@@ -570,10 +537,6 @@ namespace JP {
     }
 
     private renderDock():void {
-      // Freeze structural rebuild only while the local crowded selector is
-      // open. Mere pointer residence on a quiet rail must not block updates.
-      if(this.railPointerActive){this.railPendingRefresh=true;return;}
-      this.railPendingRefresh=false;
       const rail=this.$<HTMLElement>('#jp-rail');
       const turns=this.conversationNavigation?this.conversation.turns:[];
       const showTurns=turns.length>=3&&!this.conversation.nativeRailPresent;
@@ -585,7 +548,7 @@ namespace JP {
       toggle.textContent=showTurns?'≡':String(this.notes.length);
       toggle.title=showTurns?`已发现 ${turns.length} 轮 · ${this.notes.length} 张便签`:`本页 ${this.notes.length} 张便签`;
       const track=this.$<HTMLElement>('#jp-rail-track');
-      this.closeRailDetail();
+      this.hideTurnPreview();
       track.replaceChildren();this.railGroups=[];this.railLayoutBase=null;
       const live=turns.filter(turn=>turn.element?.isConnected);
       const byTurn=new Map<string,Note[]>();
@@ -610,15 +573,9 @@ namespace JP {
           this.railGroups.push({turnId:turn.id,noteIds:notes.map(note=>note.id),fractions:fraction,weightHint});
           const bar=el('button','rail-turn');bar.type='button';
           bar.dataset.turnId=turn.id;bar.dataset.railKey=`turn:${turn.id}`;
-          bar.title=`已发现第 ${turn.order+1} 轮：${turn.preview}`;
-          bar.setAttribute('aria-label',bar.title);
-          bar.addEventListener('click',event=>{
-            if(this.needsRailDetail(bar,event)){return;}
-            this.closeRailDetail();void this.jumpToTurn(turn);
-          });
-          bar.addEventListener('pointerenter',()=>{
-            if(!this.isCrowdedMarker(bar))this.showTurnPreview(turn,bar);
-          });
+          bar.setAttribute('aria-label',`第 ${turn.order+1} 轮：${turn.preview}`);
+          bar.addEventListener('click',()=>void this.jumpToTurn(turn));
+          bar.addEventListener('pointerenter',()=>this.showTurnPreview(turn,bar));
           bar.addEventListener('pointerleave',()=>this.hideTurnPreview());
           bar.addEventListener('focus',()=>this.showTurnPreview(turn,bar));
           bar.addEventListener('blur',()=>this.hideTurnPreview());
@@ -648,16 +605,10 @@ namespace JP {
       const button=el('button',`rail-pin${note.anchor&&!this.liveMatch(note)?' missing':''}`);
       button.type='button';button.dataset.noteId=note.id;button.dataset.railKey=`note:${note.id}`;
       button.style.background=COLOR_HEX[appearance(note).color];
-      button.title=(note.anchor&&!this.liveMatch(note)?'原文暂未加载 · ':'')+
-        (note.text.trim().slice(0,90)||note.anchor?.exact.slice(0,70)||'便签');
-      button.setAttribute('aria-label',`跳转便签：${button.title}`);
-      button.addEventListener('click',event=>{
-        if(this.needsRailDetail(button,event))return;
-        this.closeRailDetail();this.goTo(note.id);
-      });
-      button.addEventListener('pointerenter',()=>{
-        if(!this.isCrowdedMarker(button))this.showNotePreview(note,button);
-      });
+      const description=note.text.trim().slice(0,90)||note.anchor?.exact.slice(0,70)||'空白便签';
+      button.setAttribute('aria-label',`${note.anchor&&!this.liveMatch(note)?'原文暂未加载，':''}跳转便签：${description}`);
+      button.addEventListener('click',()=>this.goTo(note.id));
+      button.addEventListener('pointerenter',()=>this.showNotePreview(note,button));
       button.addEventListener('pointerleave',()=>this.hideTurnPreview());
       button.addEventListener('focus',()=>this.showNotePreview(note,button));
       button.addEventListener('blur',()=>this.hideTurnPreview());
@@ -668,127 +619,25 @@ namespace JP {
       const track=this.$<HTMLElement>('#jp-rail-track');
       this.railLayoutBase=layout;
       this.railLayoutHeight=layout.height;
-      this.railCrowded=findCrowdedRailGroups(layout);
-      const crowdedKeys=new Map<string,string>();
-      for(const group of this.railCrowded)for(const key of group.keys)crowdedKeys.set(key,group.id);
+      const lanes=railNoteLanes(layout.positions);
       for(const button of track.querySelectorAll<HTMLButtonElement>('[data-rail-key]')){
-        const key=button.dataset.railKey||'',y=layout.positions.get(key);
+        const key=button.dataset.railKey||'';
+        const y=layout.positions.get(key);
         if(y!==undefined)button.style.top=`${y}px`;
-        const cluster=crowdedKeys.get(key);
-        if(cluster)button.dataset.crowdedGroup=cluster;
-        else delete button.dataset.crowdedGroup;
-      }
-      track.classList.toggle('dense',this.railCrowded.length>0);
-    }
-
-    /** Returns a group ONLY when the pointer is in a locally crowded area. */
-    private crowdedAtPointer(clientY:number):RailCrowdedGroup|null {
-      const track=this.$<HTMLElement>('#jp-rail-track');
-      const localY=clientY-track.getBoundingClientRect().top;
-      return nearbyCrowdedGroup(this.railCrowded,localY);
-    }
-    private isCrowdedMarker(marker:HTMLButtonElement):boolean {
-      return !!marker.dataset.crowdedGroup;
-    }
-    private needsRailDetail(marker:HTMLButtonElement,event:MouseEvent):boolean {
-      // Keyboard-generated clicks target a focused, named button exactly.
-      if(event.detail===0)return false;
-      const group=this.railCrowded.find(g=>g.id===marker.dataset.crowdedGroup);
-      if(!group)return false;
-      event.preventDefault();event.stopPropagation();
-      this.openRailDetail(group);
-      return true;
-    }
-    private trackRailPointer(event:PointerEvent):void {
-      // A real marker identifies its own cluster. Pixel ranges from adjacent
-      // clusters may overlap; relying only on the nearest Y would show the
-      // wrong menu for a visibly hovered colored note.
-      const marker=(event.target as Element).closest<HTMLButtonElement>('[data-crowded-group]');
-      const group=(marker && this.railCrowded.find(item=>item.id===marker.dataset.crowdedGroup)) ||
-        this.crowdedAtPointer(event.clientY);
-      if(group){
-        // The currently open panel never jumps to another group mid-targeting.
-        if(this.railDetailId===group.id){this.cancelRailDetailClose();return;}
-        this.queueRailDetail(group);
-      }else{
-        this.cancelRailDetailOpen();
-        // Moving across sparse gray bars does not activate another group's UI.
-        if(this.railDetailId)this.scheduleRailDetailClose();
-      }
-    }
-    private cancelRailDetailOpen():void {
-      clearTimeout(this.railDetailDelay);this.railDetailDelay=0;this.railDetailCandidate=null;
-    }
-    private cancelRailDetailClose():void {
-      clearTimeout(this.railDetailCloseDelay);this.railDetailCloseDelay=0;
-    }
-    private queueRailDetail(group:RailCrowdedGroup):void {
-      this.cancelRailDetailClose();
-      if(this.railDetailCandidate===group.id)return;
-      this.cancelRailDetailOpen();
-      this.railDetailCandidate=group.id;
-      // The user has to linger over a genuinely ambiguous *local* region.
-      // This avoids incidental panels as the pointer crosses the rail.
-      this.railDetailDelay=window.setTimeout(()=>{
-        this.railDetailDelay=0;this.railDetailCandidate=null;
-        const source=this.railCrowded.find(item=>item.id===group.id);
-        if(source)this.openRailDetail(source);
-      },210);
-    }
-    private scheduleRailDetailClose():void {
-      this.cancelRailDetailOpen();
-      if(this.railDetailCloseDelay)return;
-      this.railDetailCloseDelay=window.setTimeout(()=>this.closeRailDetail(),310);
-    }
-    private openRailDetail(group:RailCrowdedGroup):void {
-      this.cancelRailDetailOpen();this.cancelRailDetailClose();
-      if(this.railDetailId===group.id && !this.$<HTMLElement>('#jp-rail-detail').hidden)return;
-      const detail=this.$<HTMLElement>('#jp-rail-detail');
-      const track=this.$<HTMLElement>('#jp-rail-track');
-      this.railPointerActive=true;
-      this.railDetailId=group.id;
-      this.hideTurnPreview();
-      detail.replaceChildren();
-      const heading=el('div','rail-detail-header');
-      heading.textContent=`附近 ${group.keys.length} 个导航目标`;
-      detail.appendChild(heading);
-      const notesById=new Map(this.notes.map(note=>[note.id,note]));
-      const turnsById=new Map(this.conversation.turns.map(turn=>[turn.id,turn]));
-      for(const key of group.keys){
-        const button=el('button','rail-detail-option');button.type='button';
-        button.dataset.railKey=key;
-        const mark=el('span',key.startsWith('note:')?'rail-detail-note':'rail-detail-turn');
-        const label=el('span','rail-detail-label');
-        if(key.startsWith('note:')){
-          const note=notesById.get(key.slice(5));if(!note)continue;
-          mark.style.background=COLOR_HEX[appearance(note).color];
-          mark.classList.toggle('missing',!!note.anchor&&!this.liveMatch(note));
-          label.textContent=note.text.trim().split('\n')[0]||note.anchor?.exact.slice(0,75)||'空白便签';
-          button.addEventListener('click',()=>{this.closeRailDetail();this.goTo(note.id);});
+        const lane=lanes.get(key);
+        if(lane!==undefined){
+          // 3 * 9px fits the 29px-wide track; vertical ordering is untouched.
+          button.style.left=`${1+lane*9}px`;
+          button.style.width='8px';
+          button.style.height='6px';
+          button.dataset.railLane=String(lane);
         }else{
-          const turn=turnsById.get(key.slice(5));if(!turn)continue;
-          label.textContent=`第 ${turn.order+1} 轮 · ${turn.preview}`;
-          button.addEventListener('click',()=>{this.closeRailDetail();void this.jumpToTurn(turn);});
+          button.style.removeProperty('left');
+          button.style.removeProperty('width');
+          button.style.removeProperty('height');
+          delete button.dataset.railLane;
         }
-        button.title=label.textContent||'';
-        button.append(mark,label);detail.appendChild(button);
       }
-      const trackRect=track.getBoundingClientRect();
-      const center=trackRect.top+group.center;
-      const desiredHeight=Math.min(270,30+group.keys.length*31);
-      const railLeft=this.$<HTMLElement>('#jp-rail').getBoundingClientRect().left;
-      detail.style.right=`${Math.max(43,innerWidth-railLeft+6)}px`;
-      detail.style.top=`${clamp(center-desiredHeight/2,8,Math.max(8,innerHeight-desiredHeight-8))}px`;
-      detail.hidden=false;
-    }
-    private closeRailDetail():void {
-      this.cancelRailDetailOpen();this.cancelRailDetailClose();
-      this.railDetailId=null;
-      const detail=this.shadow?.querySelector<HTMLElement>('#jp-rail-detail');
-      if(detail){detail.hidden=true;detail.replaceChildren();}
-      this.railPointerActive=false;
-      this.hideTurnPreview();
-      if(!this.railPointerActive && this.railPendingRefresh){this.railPendingRefresh=false;this.renderDock();}
     }
 
     private renderList():void {

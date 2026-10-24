@@ -41,21 +41,8 @@ def seed_dense(page):
     expect(page.locator('#jotpatch-root .rail-turn')).to_have_count(100)
 
 
-def dense_group(page, key='note:r50-n1'):
-    groups=page.evaluate('''() => window.__jotpatchStage0.railCrowded.map(g=>({id:g.id,keys:g.keys,center:g.center}))''')
-    group=next((g for g in groups if key in g['keys']),None)
-    assert group,groups
-    return group
-
-
-def hover_group(page, group):
-    track=page.locator('#jotpatch-root #jp-rail-track')
-    rect=track.bounding_box()
-    page.mouse.move(rect['x']+6,rect['y']+group['center'],steps=5)
-    detail=page.locator('#jotpatch-root #jp-rail-detail')
-    expect(detail).to_be_visible(timeout=3000)
-    return detail
-
+def rail_preview(page):
+    return page.locator('#jotpatch-root #jp-turn-preview')
 
 def run():
     with sync_playwright() as p:
@@ -63,115 +50,100 @@ def run():
         errors=[]
         for height in (640,850):
             context=browser.new_context(viewport={'width':1200,'height':height})
-            page=new_site(context,'https://chatgpt.com/c/stable-rail-dense',html(100,260))
+            page=new_site(context,'https://chatgpt.com/c/direct-rail-dense',html(100,260))
             page.on('pageerror',lambda e:errors.append(str(e)))
             seed_dense(page)
-            base=point_map(page)
-            group=dense_group(page)
-            detail=hover_group(page,group)
-            assert point_map(page)==base,'DENSE pointer hover moved navigation targets'
-            assert page.locator('#jotpatch-root .rail-track.fisheye').count()==0
-            assert 2<=detail.locator('.rail-detail-option').count()<=12
-            snap(page,f'stable-rail-{height}-dense.png')
-            bound=detail.bounding_box()
-            assert bound and bound['x']>=0 and bound['y']>=0 and bound['y']+bound['height']<=height+2,bound
-            assert detail.locator('[data-rail-key="note:r50-n1"]').is_visible()
-            # Direct pointer transition from rail to picker remains stable.
-            detail.locator('[data-rail-key="note:r50-n1"]').hover()
-            expect(detail).to_be_visible()
-            assert point_map(page)==base
-            print(f'PASS: {height}px, 100 turns, 60 notes: stable markers, local picker, mouse crossing')
-
-            # Clicking a crowded target directly cannot silently pick one of its neighbors.
-            page.mouse.move(770,24)
-            expect(detail).to_be_hidden(timeout=1600)
-            # In a true overlap a specific tiny button may be obscured by its
-            # neighbor. Click the visible *pixel* in the local group instead.
-            trackrect=page.locator('#jotpatch-root #jp-rail-track').bounding_box()
-            page.mouse.click(trackrect['x']+6,trackrect['y']+group['center'])
-            expect(detail).to_be_visible()
+            track=page.locator('#jotpatch-root #jp-rail-track')
+            expect(page.locator('#jotpatch-root .rail-pin')).to_have_count(60)
+            expect(page.locator('#jotpatch-root .rail-turn')).to_have_count(100)
+            assert page.locator('#jotpatch-root #jp-rail-detail').count()==0
+            before=point_map(page)
+            # Real hover of a physically visible note, not an internal method.
+            pins=page.locator('#jotpatch-root .rail-pin')
+            target=pins.nth(7)
+            target.hover(force=True)
+            expect(rail_preview(page)).to_be_visible()
+            assert rail_preview(page).locator('small,header,[role=heading]').count()==0
+            assert 'Stored' in rail_preview(page).inner_text()
+            assert '原文便签' not in rail_preview(page).inner_text()
+            assert point_map(page)==before
+            # Actual physical pointer interaction, not synthetic click or
+            # keyboard-only activation. Three near-overlapping note markers
+            # must remain independently hittable (same Y, different X lanes).
+            for j in range(3):
+                key=f'note:r50-n{j}'
+                marker=page.locator(f'#jotpatch-root [data-rail-key="{key}"]')
+                box=marker.bounding_box()
+                x=box['x']+box['width']/2; y=box['y']+box['height']/2
+                assert page.evaluate('''({x,y,key}) => {
+                  const root=document.querySelector('#jotpatch-root').shadowRoot;
+                  return root.elementFromPoint(x,y)?.dataset?.railKey===key;
+                }''',{'x':x,'y':y,'key':key}),f'not directly clickable: {key}'
+                page.mouse.move(x,y)
+                expect(rail_preview(page)).to_contain_text(f'Stored 50/{j}')
+                assert rail_preview(page).locator('small').count()==0
+                snap(page,f'simple-hover-{height}-{j}.png')
+                page.mouse.click(x,y)
+                expect(page.locator('#jotpatch-root .paper')).to_have_count(1)
+                expect(page.locator('#jotpatch-root .note-editor')).to_contain_text(f'Stored 50/{j}')
+                page.evaluate('(id)=>window.__jotpatchStage0.closeCard(id)',f'r50-n{j}')
+                expect(page.locator('#jotpatch-root .paper')).to_have_count(0)
+            assert point_map(page)==before
+            # A crowded gray prompt marker must also remain a direct physical
+            # click target rather than accidentally hitting a colored note.
+            prompt=page.locator('#jotpatch-root [data-rail-key="turn:data-turn-key:turn-50"]')
+            bounds=prompt.bounding_box()
+            mx=bounds['x']+bounds['width']/2; my=bounds['y']+bounds['height']/2
+            assert page.evaluate('''({x,y})=>document.querySelector('#jotpatch-root').shadowRoot
+              .elementFromPoint(x,y)?.dataset?.railKey==='turn:data-turn-key:turn-50' ''',{'x':mx,'y':my})
+            page.mouse.move(mx,my)
+            expect(rail_preview(page)).to_contain_text('导航比例位置验证')
+            assert rail_preview(page).locator('small,header').count()==0
+            page.mouse.click(mx,my)
+            page.wait_for_function('''()=>{
+              const prompt=document.querySelector('[data-turn-key="turn-50"] [data-user-message-bubble]');
+              return prompt && prompt.getBoundingClientRect().top>0 && prompt.getBoundingClientRect().top<180;
+            }''')
             assert page.locator('#jotpatch-root .paper').count()==0
-            detail.locator('[data-rail-key="note:r50-n1"]').click()
-            expect(page.locator('#jotpatch-root .paper')).to_have_count(1)
-            expect(page.locator('#jotpatch-root .paper .note-editor')).to_contain_text('Stored 50/1')
-            assert point_map(page)==base
-            print(f'PASS: {height}px, crowded click is disambiguated; exact target selected')
-
-            # Escape and keyboard activation are accessible and deterministic.
-            button=page.locator('#jotpatch-root [data-rail-key="note:r50-n1"]')
-            button.focus();button.press('Enter')
-            expect(page.locator('#jotpatch-root .paper')).to_have_count(1)
-            page.mouse.move(770,24)
-            detail=hover_group(page,group)
-            page.keyboard.press('Escape')
-            expect(detail).to_be_hidden()
-            assert point_map(page)==base
-            print(f'PASS: {height}px, keyboard direct activation and Escape close')
-            if height==850:
-                detail=hover_group(page,group)
-                frozen=point_map(page)
-                # Simulate a new earlier message mounted by a React app while
-                # the user reads a crowded selector. The active target must
-                # not be re-built underneath the pointer.
-                page.evaluate('''() => {
-                  const article=document.createElement('article');
-                  article.dataset.turnKey='turn-loaded-later';
-                  article.innerHTML='<div data-user-message-bubble>稍后加载的另一轮问题</div>';
-                  document.querySelector('main').appendChild(article);
-                }''')
-                page.wait_for_timeout(1170)
-                expect(detail).to_be_visible()
-                assert point_map(page)==frozen
-                assert page.locator('#jotpatch-root .rail-turn').count()==100
-                page.mouse.move(770,24)
-                expect(detail).to_be_hidden(timeout=1800)
-                expect(page.locator('#jotpatch-root .rail-turn')).to_have_count(101,timeout=5000)
-                print('PASS: virtualized chat mutation is queued during target selection and applied after exit')
+            assert point_map(page)==before
+            print(f'PASS: {height}px dense 100 turns + 60 notes: THREE direct physical clicks, direct gray turn, headerless hover, no picker')
             page.close();context.close()
 
-        # Negative test: hundreds of gray bars alone can be very dense but
-        # MUST NOT activate any local note selection panel.
         context=browser.new_context(viewport={'width':1200,'height':640})
-        page=new_site(context,'https://chatgpt.com/c/stable-only-turns',html(100,260))
+        page=new_site(context,'https://chatgpt.com/c/direct-only-turns',html(100,260))
         page.on('pageerror',lambda e:errors.append(str(e)))
-        expect(page.locator('#jotpatch-root .rail-turn')).to_have_count(100)
-        assert page.evaluate('window.__jotpatchStage0.railCrowded.length')==0
-        rail=page.locator('#jotpatch-root #jp-rail-track').bounding_box()
-        for fraction in (.12,.50,.88):
-            page.mouse.move(rail['x']+rail['width']/2,rail['y']+rail['height']*fraction,steps=4)
-            page.wait_for_timeout(290)
-            expect(page.locator('#jotpatch-root #jp-rail-detail')).to_be_hidden()
-        assert page.locator('#jotpatch-root .paper').count()==0
-        print('PASS: gray-only 100-turn navigation has NO unwanted picker in sparse-note areas')
+        for index in (15,50,85):
+            line=page.locator('#jotpatch-root .rail-turn').nth(index)
+            line.focus()
+            expect(rail_preview(page)).to_contain_text('轮')
+            assert '已发现第' not in rail_preview(page).inner_text()
+            assert rail_preview(page).locator('small').count()==0
+        assert page.locator('#jotpatch-root #jp-rail-detail').count()==0
+        print('PASS: 100 gray bars: prompt-only hover, no auxiliary picker')
         page.close();context.close()
 
-        # Sparse case: three widely separated note targets should be immediately
-        # actionable with normal hover preview and without any auxiliary picker.
         context=browser.new_context(viewport={'width':1200,'height':850})
-        page=new_site(context,'https://chatgpt.com/c/stable-sparse',html(12))
+        page=new_site(context,'https://chatgpt.com/c/direct-sparse',html(12))
         page.on('pageerror',lambda e:errors.append(str(e)))
-        for css,word,title in [('#answer-4-10','first-token-4','TEN'),('#answer-4-50','middle-token-4','FIFTY'),('#answer-4-90','end-token-4','NINETY')]:
+        for css,word,title in [('#answer-4-10','first-token-4','TEN'),
+            ('#answer-4-50','middle-token-4','FIFTY'),('#answer-4-90','end-token-4','NINETY')]:
             create_note(page,css,word,title)
         expect(page.locator('#jotpatch-root .rail-pin')).to_have_count(3)
-        assert page.evaluate('window.__jotpatchStage0.railCrowded.length')==0
         before=point_map(page)
         for marker in page.locator('#jotpatch-root .rail-pin').all():
             marker.hover()
-            expect(page.locator('#jotpatch-root #jp-rail-detail')).to_be_hidden()
-            expect(page.locator('#jotpatch-root #jp-turn-preview')).to_be_visible()
+            expect(rail_preview(page)).to_be_visible()
+            assert rail_preview(page).locator('small,header').count()==0
             assert point_map(page)==before
-        # Text-bound papers may be hidden while the original quote is offscreen.
-        # Close via app state instead of asking Playwright to click hidden UI.
-        page.evaluate('''() => window.__jotpatchStage0.notes.forEach(note=>window.__jotpatchStage0.closeCard(note.id))''')
+        page.evaluate("() => window.__jotpatchStage0.notes.forEach(note=>window.__jotpatchStage0.closeCard(note.id))")
         page.locator('#jotpatch-root .rail-pin').nth(1).click()
         expect(page.locator('#jotpatch-root .paper')).to_have_count(1)
         expect(page.locator('#jotpatch-root .note-editor')).to_contain_text('FIFTY')
-        print('PASS: sparse targets retain one-click navigation, readable previews and unchanged positions')
+        print('PASS: sparse normal mouse one-click, notes open directly, labels are headerless')
         page.close();context.close()
 
         assert not errors,errors
         browser.close()
-        print('PASS: no uncaught JavaScript exceptions across Stable Rail UX flows')
-
+        print('PASS: no uncaught JavaScript errors')
 
 if __name__=='__main__':run()

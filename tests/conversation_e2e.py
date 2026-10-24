@@ -86,12 +86,13 @@ def run():
         expect(page.locator('#jotpatch-root .rail-turn')).to_have_count(7)
         expect(page.locator('#jotpatch-root .rail-pin')).to_have_count(0)
         expect(page.locator('#jotpatch-root #jp-rail')).to_be_visible()
-        assert '提问第3轮' in page.locator('#jotpatch-root .rail-turn').nth(2).get_attribute('title')
+        assert '提问第3轮' in page.locator('#jotpatch-root .rail-turn').nth(2).get_attribute('aria-label')
         print('PASS: classic ChatGPT markup → seven question turns, no note required')
 
         # Hover preview is text-only, keyboard accessible, and does not permanently occupy the rail.
         page.locator('#jotpatch-root .rail-turn').nth(3).hover()
-        expect(page.locator('#jotpatch-root #jp-turn-preview')).to_contain_text('第 4 / 7 轮')
+        expect(page.locator('#jotpatch-root #jp-turn-preview')).to_contain_text('提问第4轮')
+        assert '已发现第' not in page.locator('#jotpatch-root #jp-turn-preview').inner_text()
         page.locator('#jotpatch-root .rail-turn').nth(3).click()
         page.wait_for_function("document.querySelector('#gpt-turn-3').getBoundingClientRect().top > 0 && document.querySelector('#gpt-turn-3').getBoundingClientRect().top < innerHeight")
         expect(page.locator('#jotpatch-root #jp-turn-preview')).to_be_hidden()

@@ -71,7 +71,7 @@ test('stage 1.8 WYSIWYG editor and passive navigation stay local-first', () => {
 
 
 test('0.1.7 rejects missing or stale anchored ranges before showing papers', () => {
-  assert.equal(manifest.version, '0.1.12');
+  assert.equal(manifest.version, '0.1.13');
   const app = readFileSync('src/content/app.ts', 'utf8');
   assert.ok(app.includes('private liveMatch(note:Note):Match|null'));
   assert.ok(app.includes('if(!match||!rect)'));
@@ -81,25 +81,22 @@ test('0.1.7 rejects missing or stale anchored ranges before showing papers', () 
 });
 
 
-test('spatial rail keeps all note markers, one-way unpin and no new permissions', () => {
+test('minimal rail keeps independent markers, original spatial hints and one-click actions', () => {
   const app=readFileSync('src/content/app.ts','utf8');
   const css=readFileSync('src/content/paper-styles.ts','utf8');
   const layout=readFileSync('src/content/rail-layout.ts','utf8');
-  for (const name of ['associateNotesToTurns','spatialProgress','pageProgress','addRailNote',
-      'applyRailLayout','trackRailPointer','openRailDetail','closeRailDetail',
-      'unpinNote','undoLastAction','rail-loose','conversationTurnId'])
-    assert.ok(app.includes(name),name);
+  for (const name of ['associateNotesToTurns','spatialProgress','pageProgress',
+      'addRailNote','applyRailLayout','showRailPreview','unpinNote','undoLastAction',
+      'rail-loose','conversationTurnId','railNoteLanes']) assert.ok(app.includes(name),name);
+  for (const forbidden of ['jp-rail-detail','rail-detail-header','needsRailDetail',
+      'openRailDetail','closeRailDetail','trackRailPointer','railCrowded',
+      'railPointerActive','railPendingRefresh','fisheyePositions','railHitTest'])
+    assert.ok(!app.includes(forbidden),`should remove ${forbidden}`);
+  assert.doesNotMatch(css,/\.rail-detail\{/);
+  assert.doesNotMatch(css,/\.turn-preview small\{/);
   assert.match(css,/\.rail-head\{[^}]*left:50%;transform:translateX\(-50%\)/);
-  assert.match(css,/\.note-entry\.nested/);
-  assert.match(css,/\.rail-detail\{/);
   assert.match(css,/\.rail-pin\.missing\{border:1px dashed/);
-  assert.ok(!app.includes('scanOlderTurns'));
-  assert.ok(!app.includes('addRailOverview'));
-  assert.ok(!app.includes('applyRailFisheye'));
-  assert.ok(!app.includes('fisheyePositions'));
-  assert.ok(!app.includes('this.railHitTest'));
-  assert.ok(app.includes('jp-rail-detail'));
-  assert.ok(!layout.includes('OVERVIEW_NOTE_THRESHOLD'));
+  assert.ok(!layout.includes('findCrowdedRailGroups'));
   assert.equal(manifest.host_permissions,undefined);
 });
 
@@ -112,15 +109,14 @@ test('new spatial hints are optional; old note schema and colors are preserved',
 });
 
 
-test('stable rail never relocates markers in pointermove or guesses blank-track destinations',()=>{
+test('v0.1.13 has headerless preview and direct click on both note and question',()=>{
   const app=readFileSync('src/content/app.ts','utf8');
-  const layout=readFileSync('src/content/rail-layout.ts','utf8');
   const css=readFileSync('src/content/paper-styles.ts','utf8');
-  assert.ok(!/fisheyePositions|fisheyeCoordinate|resetRailFisheye/.test(app+layout+css));
-  assert.ok(app.includes('nearbyCrowdedGroup'));
-  assert.ok(app.includes('trackRailPointer'));
-  assert.ok(app.includes('scheduleRailDetailClose'));
-  assert.ok(!app.includes('railHitTest'));
+  assert.ok(!/fisheyePositions|fisheyeCoordinate|resetRailFisheye/.test(app));
+  assert.ok(app.includes("bar.addEventListener('click',()=>void this.jumpToTurn(turn))"));
+  assert.ok(app.includes("button.addEventListener('click',()=>this.goTo(note.id))"));
+  assert.ok(app.includes("preview.textContent=content"));
+  assert.ok(!app.includes('已发现第 ${turn.order + 1} /'));
   assert.ok(!css.includes('transition:top'));
-  assert.equal(manifest.version,'0.1.12');
+  assert.equal(manifest.version,'0.1.13');
 });

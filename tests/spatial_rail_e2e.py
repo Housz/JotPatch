@@ -136,25 +136,19 @@ def run():
         expect(page.locator('#jotpatch-root .rail-turn')).to_have_count(100)
         before=point_map(page)
         track=page.locator('#jotpatch-root #jp-rail-track')
-        groups=page.evaluate('''() => window.__jotpatchStage0.railCrowded.map(g=>({id:g.id,keys:g.keys,center:g.center}))''')
-        candidate=next((g for g in groups if 'note:r50-n1' in g['keys']),None)
-        assert candidate is not None,groups
-        rect=track.bounding_box()
-        page.mouse.move(rect['x']+6,rect['y']+candidate['center'],steps=4)
-        detail=page.locator('#jotpatch-root #jp-rail-detail')
-        expect(detail).to_be_visible(timeout=3500)
-        assert point_map(page)==before,'Pointer changed a navigation coordinate'
-        expect(detail.locator('[data-rail-key="note:r50-n1"]')).to_be_visible()
-        snapshot(page,'stable-rail-crowded-hover.png')
-        print('PASS: local crowded notes show stationary selector; all 160 base coordinates remain fixed')
-        detail.locator('[data-rail-key="note:r50-n1"]').click()
-        expect(detail).to_be_hidden()
+        assert page.locator('#jotpatch-root #jp-rail-detail').count()==0
+        # Direct note navigation in a crowded rail still uses each note button.
+        target=page.locator('#jotpatch-root [data-rail-key="note:r50-n1"]')
+        target.focus()
+        expect(page.locator('#jotpatch-root #jp-turn-preview')).to_contain_text('Position 50/1')
+        assert page.locator('#jotpatch-root #jp-turn-preview small').count()==0
+        target.press('Enter')
         expect(page.locator('#jotpatch-root .paper')).to_have_count(1)
         expect(page.locator('#jotpatch-root .paper .note-editor')).to_contain_text('Position 50/1')
-        print('PASS: selecting explicit target opens exactly the correct note')
-        page.mouse.move(880,36)
-        page.wait_for_timeout(400)
         assert point_map(page)==before
+        print('PASS: 100-turn dense rail uses direct note activation and stationary markers')
+        page.mouse.move(880,36)
+        rect=track.bounding_box()
         page.set_viewport_size({'width':1200,'height':640})
         page.wait_for_timeout(360)
         resized=point_map(page)

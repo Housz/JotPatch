@@ -1,6 +1,6 @@
 {
   "name": "jotpatch",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "private": true,
   "description": "Tiny local-first paper notes pinned to webpage text.",
   "scripts": {
