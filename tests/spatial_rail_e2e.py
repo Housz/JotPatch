@@ -1,4 +1,4 @@
-"""Spatial Rail browser QA: geometry, proportional order, in-place fisheye.
+"""Stable Rail browser QA: geometry, proportional order, stationary click targets.
 Synthetic DOM + fake storage; tests real pointer coordinates and visual captures.
 """
 from __future__ import annotations
@@ -111,83 +111,59 @@ def run():
         print('PASS: reload preserves old note identities and front-of-answer spatial memory')
         restored.close();context.close()
 
-        # Hover in a long dense conversation changes only this same rail:
+        # Dense chat with many notes: the rail NEVER moves its click targets.
         context=browser.new_context(viewport={'width':1200,'height':850})
         page=new_site(context,'https://chatgpt.com/c/spatial-dense',html(100,260))
         page.on('pageerror',lambda e:errors.append(str(e)))
-        # Populate saved notes with intrinsic percentages; the UI re-resolves
-        # anchors when the synthetic storage broadcasts a change.
         page.evaluate('''() => {
-          const root=window.__jotpatchStage0;
-          const index=JP.buildTextIndex();
-          const items={};
-          for(let round=0;round<100;round+=5){
-            for(const [j,p] of [10,50,90].entries()){
-              const el=document.querySelector(`#answer-${round}-${p}`),node=el.firstChild;
-              const word=[`first-token-${round}`,`middle-token-${round}`,`end-token-${round}`][j];
-              const pos=node.data.indexOf(word),range=document.createRange();
-              range.setStart(node,pos);range.setEnd(node,pos+word.length);
-              const id=`r${round}-n${j}`;
-              items[`jotpatch:note:v1:${id}`]={schemaVersion:1,id,
-                pageKey:JP.pageKey(location.href),sourceUrl:location.href,sourceTitle:document.title,
-                anchor:JP.captureSelection(range,index),conversationTurnId:`data-turn-key:turn-${round}`,
-                spatial:{withinTurnProgress:[.10,.50,.90][j],pageProgress:(round+j/3)/100,confidence:'geometry'},
-                text:`Position ${round}/${j}`,appearance:{color:['yellow','pink','green'][j],width:256,height:202,offsetX:0,offsetY:0},
-                createdAt:Date.now()+round+j,updatedAt:Date.now()+round+j,revision:0};
-            }
+          const index=JP.buildTextIndex(),items={};
+          for(let round=0;round<100;round+=5)for(const [j,p] of [10,50,90].entries()){
+            const el=document.querySelector(`#answer-${round}-${p}`),node=el.firstChild;
+            const word=[`first-token-${round}`,`middle-token-${round}`,`end-token-${round}`][j];
+            const pos=node.data.indexOf(word),range=document.createRange();
+            range.setStart(node,pos);range.setEnd(node,pos+word.length);
+            const id=`r${round}-n${j}`;
+            items[`jotpatch:note:v1:${id}`]={schemaVersion:1,id,
+              pageKey:JP.pageKey(location.href),sourceUrl:location.href,sourceTitle:document.title,
+              anchor:JP.captureSelection(range,index),conversationTurnId:`data-turn-key:turn-${round}`,
+              spatial:{withinTurnProgress:[.10,.50,.90][j],pageProgress:(round+j/3)/100,confidence:'geometry'},
+              text:`Position ${round}/${j}`,appearance:{color:['yellow','pink','green'][j],width:256,height:202,offsetX:0,offsetY:0},
+              createdAt:Date.now()+round+j,updatedAt:Date.now()+round+j,revision:0};
           }
           return chrome.storage.local.set(items);
         }''')
         expect(page.locator('#jotpatch-root .rail-pin')).to_have_count(60,timeout=15000)
         expect(page.locator('#jotpatch-root .rail-turn')).to_have_count(100)
-        assert page.locator('#jotpatch-root .rail-overview').count()==0
-        assert page.locator('#jotpatch-root .rail-lens').count()==0
         before=point_map(page)
         track=page.locator('#jotpatch-root #jp-rail-track')
-        expect(track).to_have_class('rail-track dense')
-        track_rect=track.bounding_box()
-        # Hover at the actual note lane near one of the dense target's original coordinates.
-        center=before['note:r50-n1']
-        page.mouse.move(track_rect['x']+6,track_rect['y']+center,steps=4)
-        page.wait_for_timeout(120)
-        expect(track).to_have_class('rail-track dense fisheye')
-        shifted=point_map(page)
-        keys=['note:r50-n0','note:r50-n1','note:r50-n2']
-        span_before=before[keys[2]]-before[keys[0]]
-        span_after=shifted[keys[2]]-shifted[keys[0]]
-        assert span_after>span_before*1.3,(span_before,span_after)
-        assert abs(shifted[keys[1]]-center)<5,(center,shifted[keys[1]])
-        assert len(shifted)==len(before)==160
-        # No turn bar or note reverses order under the non-linear lens.
-        ranked=sorted(before,key=before.get)
-        assert all(shifted[ranked[i]]<=shifted[ranked[i+1]]+1e-7
-            for i in range(len(ranked)-1))
-        snapshot(page,'spatial-fisheye-hover.png')
-        print('PASS: real-pointer fisheye expands inline markers without any popup or count consolidation')
-        # One click on an identified note after moving focus to it.
-        button=page.locator('#jotpatch-root [data-rail-key="note:r50-n1"]')
-        button.click(timeout=6000)
+        groups=page.evaluate('''() => window.__jotpatchStage0.railCrowded.map(g=>({id:g.id,keys:g.keys,center:g.center}))''')
+        candidate=next((g for g in groups if 'note:r50-n1' in g['keys']),None)
+        assert candidate is not None,groups
+        rect=track.bounding_box()
+        page.mouse.move(rect['x']+6,rect['y']+candidate['center'],steps=4)
+        detail=page.locator('#jotpatch-root #jp-rail-detail')
+        expect(detail).to_be_visible(timeout=3500)
+        assert point_map(page)==before,'Pointer changed a navigation coordinate'
+        expect(detail.locator('[data-rail-key="note:r50-n1"]')).to_be_visible()
+        snapshot(page,'stable-rail-crowded-hover.png')
+        print('PASS: local crowded notes show stationary selector; all 160 base coordinates remain fixed')
+        detail.locator('[data-rail-key="note:r50-n1"]').click()
+        expect(detail).to_be_hidden()
         expect(page.locator('#jotpatch-root .paper')).to_have_count(1)
         expect(page.locator('#jotpatch-root .paper .note-editor')).to_contain_text('Position 50/1')
-        print('PASS: one-click hit target opens correct note after continuous enlargement')
+        print('PASS: selecting explicit target opens exactly the correct note')
         page.mouse.move(880,36)
-        page.wait_for_timeout(170)
-        expect(track).to_have_class('rail-track dense')
-        final=point_map(page)
-        assert max(abs(final[k]-before[k]) for k in before)<.01
-        print('PASS: pointer leaves rail, exact original pixel positions restored')
-        # Resize between small/large windows, reflow layout in-place, then
-        # ensure keyboard navigation still exposes all individual targets.
+        page.wait_for_timeout(400)
+        assert point_map(page)==before
         page.set_viewport_size({'width':1200,'height':640})
-        page.wait_for_timeout(170)
+        page.wait_for_timeout(360)
         resized=point_map(page)
         H=page.locator('#jotpatch-root #jp-rail-track').evaluate('el=>el.clientHeight')
-        assert H<track_rect['height'] and all(0<=v<=H for v in resized.values()),(H,resized)
+        assert H<rect['height'] and all(0<=v<=H for v in resized.values()),(H,resized)
         note=page.locator('#jotpatch-root [data-rail-key="note:r50-n1"]')
         note.focus();note.press('ArrowDown')
         assert page.evaluate('''() => document.querySelector('#jotpatch-root').shadowRoot.activeElement.dataset.railKey''')
-        page.mouse.move(840,16)
-        print('PASS: window resize recalculates bounded rail; arrow-key navigation remains usable')
+        print('PASS: resize recomputes bounded layout; keyboard navigation works')
         page.close();context.close()
         assert not errors,errors
         browser.close()

@@ -108,59 +108,47 @@ namespace JP {
     return {positions,regions:[],minPitch,dense:minPitch<MIN_COMFORTABLE_PITCH,height};
   }
 
-  /**
-   * Continuous focus+context lens. Integrate a strictly positive Gaussian
-   * derivative on *each side* of the focus. This preserves the two endpoints,
-   * keeps the pointer's focus coordinate fixed and can never reorder targets.
-   */
-  export function fisheyeCoordinate(y: number, focus: number, height: number, radius = 38, strength = 13): number {
-    const H = Math.max(1,height);
-    const f = clampRail(focus,0,H), v=clampRail(y,0,H);
-    if (v===f || v===0 || v===H) return v;
-    // Simpson integration, bounded samples (<=48 per interval) for predictable
-    // input latency even on 1200+ turn synthetic documents.
-    const integrate = (start:number,end:number):number => {
-      if (end <= start) return 0;
-      const n=Math.min(48,Math.max(6,2*Math.ceil((end-start)/9)));
-      const h=(end-start)/n;
-      const weight=(x:number) => 1+strength*Math.exp(-.5*((x-f)/radius)**2);
-      let sum=weight(start)+weight(end);
-      for(let i=1;i<n;i++)sum+=(i%2?4:2)*weight(start+i*h);
-      return h/3*sum;
+  /** Two or more nearby notes form a genuine local hit-target collision.
+   * Only notes trigger assistance: tightly packed gray turns alone never open
+   * a selector. No items are merged or removed from the actual timeline. */
+  export interface RailCrowdedGroup {
+    id: string;
+    keys: string[];
+    start: number;
+    end: number;
+    center: number;
+  }
+  export function findCrowdedRailGroups(layout: RailLayout, pitch = 9, maxNotes = 7): RailCrowdedGroup[] {
+    const notes = [...layout.positions.entries()]
+      .filter(([key]) => key.startsWith('note:'))
+      .sort((a,b) => a[1]-b[1] || a[0].localeCompare(b[0]));
+    const turns = [...layout.positions.entries()].filter(([key]) => key.startsWith('turn:'));
+    const result: RailCrowdedGroup[] = [];
+    let cluster: typeof notes = [];
+    const flush = () => {
+      if (cluster.length < 2) {cluster=[];return;}
+      const low = cluster[0][1], high = cluster[cluster.length-1][1];
+      // Nearby gray turns can be selected too, without letting turn-only
+      // crowds activate the popup in a note-free region.
+      const turnKeys = turns.filter(([,y])=>y>=low-5&&y<=high+5);
+      const keys = [...cluster,...turnKeys].sort((a,b)=>a[1]-b[1]||a[0].localeCompare(b[0])).map(([key])=>key);
+      result.push({id:`crowd:${cluster[0][0]}`,keys,start:Math.max(0,low-7),
+        end:Math.min(layout.height,high+7),center:(low+high)/2});
+      cluster=[];
     };
-    if(v<f){const total=integrate(0,f);return total>0?f*integrate(0,v)/total:v;}
-    const total=integrate(f,H);
-    return total>0?f+(H-f)*integrate(f,v)/total:v;
+    for (const note of notes) {
+      if (!cluster.length) {cluster=[note];continue;}
+      const prev=cluster[cluster.length-1][1];
+      // Hard cap prevents huge panels in long conversations. Neighbors remain
+      // reachable via their native buttons, keyboard and the full list.
+      if (note[1]-prev<=pitch && cluster.length<maxNotes && note[1]-cluster[0][1]<=58) cluster.push(note);
+      else {flush();cluster=[note];}
+    }
+    flush();
+    return result;
   }
 
-  export function fisheyePositions(base:RailLayout,focus:number):Map<string,number>{
-    const H=Math.max(1,base.height), f=clampRail(focus,0,H);
-    // Reuse one ~2px numeric CDF per animation frame. The old per-marker
-    // integration was ~14ms for 1200 targets; this is O(H + markerCount).
-    const cells=Math.max(8,Math.ceil(H/2)),step=H/cells;
-    const area=new Float64Array(cells+1);
-    const radius=38,strength=13;
-    const weight=(x:number)=>1+strength*Math.exp(-.5*((x-f)/radius)**2);
-    let previous=weight(0);
-    for(let i=1;i<=cells;i++){
-      const next=weight(i*step);
-      area[i]=area[i-1]+(previous+next)*step/2;
-      previous=next;
-    }
-    const at=(y:number)=>{
-      if(y<=0)return 0;if(y>=H)return area[cells];
-      const pos=y/step,i=Math.floor(pos),fraction=pos-i;
-      return area[i]+(area[i+1]-area[i])*fraction;
-    };
-    const midArea=at(f),totalArea=area[cells],out=new Map<string,number>();
-    for(const [key,y] of base.positions){
-      if(y===f||y===0||y===H){out.set(key,y);continue;}
-      const sample=at(y);
-      const next=y<f ? (midArea>0?f*sample/midArea:y) :
-        (totalArea>midArea ? f+(H-f)*(sample-midArea)/(totalArea-midArea):y);
-      out.set(key,clampRail(next,0,H));
-    }
-    return out;
+  export function nearbyCrowdedGroup(groups: RailCrowdedGroup[], y:number): RailCrowdedGroup|null {
+    return groups.find(g=>y>=g.start&&y<=g.end)||null;
   }
-
 }
