@@ -55,6 +55,7 @@ namespace JP {
   export interface Preferences {
     selectionTrigger: SelectionTrigger;
     conversationNavigation: boolean;
+    navigationLab: boolean;
     defaultNoteColorMode: DefaultNoteColorMode;
   }
 

@@ -5,6 +5,8 @@ const status = document.querySelector('#status');
 const preferenceStatus = document.querySelector('#preference-status');
 const prefKey = 'jotpatch:preferences:v1';
 const conversationToggle = document.querySelector('#conversation-navigation');
+const labToggle = document.querySelector('#navigation-lab');
+const labStatus = document.querySelector('#lab-status');
 const conversationStatus = document.querySelector('#conversation-status');
 const colorStatus = document.querySelector('#color-status');
 let preferenceWrite = Promise.resolve();
@@ -25,6 +27,7 @@ chrome.storage.local.get(prefKey).then((stored) => {
   const mode = modes.has(setting) ? setting : 'always';
   document.querySelector(`input[name="selectionTrigger"][value="${mode}"]`).checked = true;
   conversationToggle.checked = stored[prefKey]?.conversationNavigation !== false;
+  labToggle.checked = stored[prefKey]?.navigationLab === true;
   const colorMode = stored[prefKey]?.defaultNoteColorMode === 'random' ? 'random' : 'yellow';
   document.querySelector(`input[name="defaultNoteColorMode"][value="${colorMode}"]`).checked = true;
 });
@@ -39,6 +42,13 @@ for (const radio of document.querySelectorAll('input[name="selectionTrigger"]'))
     }
   });
 }
+
+labToggle.addEventListener('change', async () => {
+  try {
+    await updatePreferences({ navigationLab: labToggle.checked });
+    labStatus.textContent = labToggle.checked ? 'Navigation Lab 已开启。' : 'Navigation Lab 已关闭。';
+  } catch { labStatus.textContent = '保存失败，请重试。'; }
+});
 
 conversationToggle.addEventListener('change', async () => {
   try {

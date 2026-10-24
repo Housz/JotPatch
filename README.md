@@ -2,7 +2,7 @@
 
 **随地大小贴。** A tiny, local-first sticky-note layer for Chrome / Edge.
 
-目前版本：**v0.1.14 · 随地大小贴（品牌与颜色偏好）**。继承 Stage 1 的极简便签纸与阶段 0 的文本锚定，新增 ChatGPT / Gemini 对话轮次横条，与原有便签 Dock 融合。
+当前开发分支：**v0.1.15 · Navigation Lab（实验，默认关闭）**，基于 v0.1.14 发布基线。。继承 Stage 1 的极简便签纸与阶段 0 的文本锚定，新增 ChatGPT / Gemini 对话轮次横条，与原有便签 Dock 融合。
 
 ## 体验一览
 
@@ -14,7 +14,8 @@
 - **小范围 WYSIWYG Markdown**：编辑时直接看见粗体、斜体及两种列表，而不是 `**源码**`；保存与复制是标准 Markdown 文本。支持 Ctrl/⌘+B、Ctrl/⌘+I。`···` 可选小/中/大字号；在纸上按 Ctrl+滚轮调整字号并拦截网页缩放。
 - **AI 对话 + 便签 Simple Hover Rail（v0.1.13）**：灰色短线对应提问，彩色短线对应独立便签；按原文比例排列并保持顺序。**无论普通或密集区域，每个可见标记悬停只显示无标题的正文摘要，单击就直达目标。彻底移除弹出的精细选择列表。** 标记纵向位置不随鼠标移动；重叠时仅在极窄轨道内横向错开，避免互相遮挡。
 - **可关闭**：设置中的「AI 会话导航」只关闭灰色轮次横线，不影响已有便签标记；若检测到已知的官方轮次导航标记，也会优先收起 JotPatch 的灰色横条。
-- **被动历史索引**：用户自然滚动时增量记住已发现的轮次；**没有主动自动滚屏扫描按钮**，不会为了索引历史而改变当前阅读位置。
+- **被动历史索引**：用户自然滚动时增量记住已发现的轮次；没有默认后台扫描，不会为了建立索引而自动滚屏。
+- **Navigation Lab（0.1.15 实验开关）**：设置里可单独开启 ChatGPT 长会话导航策略。默认关闭，继续使用 0.1.14 导航；开启后仅在点击已发现但卸载的轮次/便签时尝试经检查点或逐段滚动恢复。可随时取消；不会调用未公开 API，也不保存聊天全文。
 - **Dock 分层列表**：便签在所属的用户提问下显示，原文关联用紧凑 Pin 图标表达；本页悬浮与待定位便签单独放置。
 - **便签 Pin 状态**：原文便签左上角显示一个淡色 Pin，点击可变为本页悬浮便签，并可撤销；悬浮便签没有反向锚定按钮。
 - **Dock 保留**：普通网页少量记录使用独立颜色点，密集时也不会合并；锚点不在视口内时便签自动离开视口，返回原文时可继续使用。
@@ -23,9 +24,9 @@
 
 ## 安装与试用
 
-### 从 v0.1.14 ZIP / 源码安装
+### 从 v0.1.15 实验 ZIP / 源码安装
 
-1. 解压 v0.1.14 安装包；打开 `chrome://extensions` / `edge://extensions`。
+1. 解压 v0.1.15 实验安装包；打开 `chrome://extensions` / `edge://extensions`。
 2. 开启 **开发者模式**，点击 **加载已解压的扩展程序**；选择包含 `manifest.json` 与 `dist/` 的 **JotPatch 根目录**（不要只选 `dist`）。
 3. 进入普通 `https://` 网页（如 ChatGPT / Gemini），点击浏览器右上角的 JotPatch 扩展图标一次。此操作只对当前网页临时授权。
 4. 选中文字，点选区旁的 📌；或右键选中的文字选择 JotPatch。对于不依赖具体文字的想法，点击扩展图标，再点小快捷区中的 `+`。
@@ -51,7 +52,8 @@
 ```bash
 npm install
 npm run check
-npm run test:e2e  # Python Playwright + Chromium（额外安装）
+npm run test:e2e  # 正式导航与便签回归（Python Playwright + Chromium）
+npm run test:lab  # Navigation Lab：独立长会话负载模型（更慢，按需）
 ```
 
 `npm run build` 生成 `dist/content.js`、`dist/background.js`。发布 ZIP 中已经包含这些编译产物，可以不安装 Node 直接加载。
@@ -71,11 +73,12 @@ npm run test:e2e  # Python Playwright + Chromium（额外安装）
 | **1.11 (0.1.11)** | **轮次内真实位置比例 + 动态间距 + 有序避让 + 同轨连续鱼眼** | 历史版本 |
 | **1.12 (0.1.12)** | **取消移动目标的鱼眼；普通区域固定直达，局部拥挤时使用二次选择弹窗（已撤回）** | 历史版本 |
 | **1.13 (0.1.13)** | **彻底移除二次选择；对话和便签统一无标题摘要、直接点击；重叠标记横向避让** | 已完成 |
-| **1.14 (0.1.14)** | **正式 Logo（16/32/48/128）、品牌文案与 Powered by Housz、默认新建便签颜色偏好** | **当前版本** |
+| **1.14 (0.1.14)** | **Logo、品牌、默认颜色及稳定导航修复** | 正式基线 |
+| **Navigation Lab (0.1.15)** | **长会话按需恢复技术实验：检查点、延迟分页、反向滚动、取消/回滚，默认关闭** | **当前独立实验分支** |
 | 2 | **Follow 模式 B**：在不同浏览器网页迁移同一张悬浮便签（不是侧边栏） | 待开发，方向已确定 |
 | 3 | 真正独立便签窗口 | 暂不实施 |
 
-架构见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)；**[v0.1.13 简洁直达导航与验证](docs/SIMPLE_HOVER_RAIL_0_1_13.md)**；[v0.1.12 历史方案](docs/STABLE_RAIL_0_1_12.md)；[v0.1.11 历史空间方案](docs/SPATIAL_RAIL_0_1_11.md)；[v0.1.10 历史方案](docs/BUGFIX_0_1_10.md)；[Stage 1.9 密集导航修复](docs/BUGFIX_0_1_9.md)；[Stage 1.8 被动导航架构与交互](docs/STAGE1_8_PASSIVE_RAIL.md)；交互细节见 [docs/STAGE1_INTERACTIONS.md](docs/STAGE1_INTERACTIONS.md)；[Stage 1.5 会话导航技术与交互说明](docs/STAGE1_5_CONVERSATION.md)；**[Stage 1.5 优化调查与实现限制](docs/STAGE1_6_FIXES.md)**。
+**[v0.1.15 Navigation Lab 测试结果与限制](docs/NAVIGATION_LAB_0_1_15.md)**；架构见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)；**[v0.1.13 简洁直达导航与验证](docs/SIMPLE_HOVER_RAIL_0_1_13.md)**；[v0.1.12 历史方案](docs/STABLE_RAIL_0_1_12.md)；[v0.1.11 历史空间方案](docs/SPATIAL_RAIL_0_1_11.md)；[v0.1.10 历史方案](docs/BUGFIX_0_1_10.md)；[Stage 1.9 密集导航修复](docs/BUGFIX_0_1_9.md)；[Stage 1.8 被动导航架构与交互](docs/STAGE1_8_PASSIVE_RAIL.md)；交互细节见 [docs/STAGE1_INTERACTIONS.md](docs/STAGE1_INTERACTIONS.md)；[Stage 1.5 会话导航技术与交互说明](docs/STAGE1_5_CONVERSATION.md)；**[Stage 1.5 优化调查与实现限制](docs/STAGE1_6_FIXES.md)**。
 
 ## 隐私与限制
 
@@ -130,3 +133,8 @@ v0.1.11 的鼠标鱼眼会让标记在接近点击时连续移动，难以选中
 针对用户反馈的“最新轮次重复、流式输出时导航抖动、虚拟化历史无法跳转、便签无法精准找回”进行定向修复。重用现有导航 DOM 节点，流式更新时避免整轨重绘；在 ChatGPT/Gemini 对话中逐段恢复**已访问**的旧轮次，支持取消。便签先验证所属轮次，再匹配具体原文；遇到重复文本不会误跳到其他问答。
 
 详见 [v0.1.14 导航可靠性修复](docs/NAVIGATION_BUGFIX_0_1_14.md)。此分支不包含任何下一阶段的私有接口或后台研究实现。
+
+
+## v0.1.15 — Navigation Lab（实验分支，不建议作为稳定版本推广）
+
+基于 v0.1.14 的可选历史导航实现：支持通过已观察的检查点快速恢复旧轮次，以及在分页加载、滚动高度变化与容器替换时退化为有界逐段恢复。**默认关闭**，原有笔记/权限/颜色设置不变。详细测试结果、局限和所有实验入口见 [NAVIGATION_LAB_0_1_15.md](docs/NAVIGATION_LAB_0_1_15.md)。

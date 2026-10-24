@@ -141,3 +141,8 @@ See [Stage 1.5.1 reliability / UX investigation](STAGE1_6_FIXES.md) for virtuali
 ## v0.1.14 Navigation recovery bugfix
 
 新增 `src/content/navigation-recovery.ts` 有界、可取消的用户点击导航状态机。`ConversationIndex` 增加同一物理 Prompt ID 的别名机制与同位置 DOM 过渡去重；`app.ts` 使用稳定结构签名来避免流式回答期间全轨 DOM 替换。便签恢复只在原 `conversationTurnId` 对应的轮次内匹配文本 Range，并在滚动后重新验证。见 [NAVIGATION_BUGFIX_0_1_14.md](NAVIGATION_BUGFIX_0_1_14.md)。
+
+
+## v0.1.15 experimental Navigation Lab
+
+`src/content/navigation-lab.ts` implements a bounded 1,200-entry in-memory ID/scroll-checkpoint cache and opt-in `recoverConversationTurnLab`. The default remains `recoverConversationTurn` from v0.1.14. The Lab is gated by `Preferences.navigationLab===true` and a recognized ChatGPT site adapter, reset on SPA navigation, and neither persists checkpoints nor calls ChatGPT private endpoints. See [NAVIGATION_LAB_0_1_15.md](NAVIGATION_LAB_0_1_15.md) for synthetic test results and limitations.

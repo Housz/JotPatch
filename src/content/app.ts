@@ -47,6 +47,9 @@ namespace JP {
     private listOpen = false;
     private selectionTrigger: SelectionTrigger = 'always';
     private conversationNavigation = true;
+    private navigationLab = false;
+    private navigationLabIndex = new NavigationLabIndex();
+    private labLastMetrics: Omit<LabNavigationResult,'turn'>|null = null;
     private defaultNoteColorMode: DefaultNoteColorMode = 'yellow';
     private lastAutoColor: NoteColor | null = null;
     private conversation: ConversationSnapshot = { site: null, turns: [], nativeRailPresent: false };
@@ -235,6 +238,9 @@ namespace JP {
           const trigger = preferences?.selectionTrigger;
           this.selectionTrigger = trigger === 'alt' || trigger === 'off' ? trigger : 'always';
           this.conversationNavigation = preferences?.conversationNavigation !== false;
+          const wasLab=this.navigationLab;
+          this.navigationLab=preferences?.navigationLab===true;
+          if(wasLab!==this.navigationLab){this.cancelNavigation(false);this.labLastMetrics=null;}
           this.defaultNoteColorMode = preferences?.defaultNoteColorMode === 'random' ? 'random' : 'yellow';
           this.$<HTMLElement>('#jp-bubble').hidden = true;
           this.refreshConversation();
@@ -251,8 +257,9 @@ namespace JP {
         const prefs = await this.repo.preferences();
         this.selectionTrigger = prefs.selectionTrigger;
         this.conversationNavigation = prefs.conversationNavigation;
+        this.navigationLab = prefs.navigationLab;
         this.defaultNoteColorMode = prefs.defaultNoteColorMode;
-      } catch { this.selectionTrigger = 'always'; this.conversationNavigation = true; this.defaultNoteColorMode = 'yellow'; }
+      } catch { this.selectionTrigger = 'always'; this.conversationNavigation = true; this.defaultNoteColorMode = 'yellow'; this.navigationLab=false; }
     }
     private openSettings(): void {
       void chrome.runtime.sendMessage({ type: 'JP_OPEN_SITE_SETUP' }).catch(() => this.toast('请从扩展管理页打开 JotPatch 设置。'));
@@ -264,6 +271,8 @@ namespace JP {
       if (next === this.page) return;
       for (const id of this.openIds) void this.saveNow(id);
       this.cancelNavigation(false);
+      this.navigationLabIndex.clear();
+      this.labLastMetrics=null;
       this.page = next;
       this.railSignature='';
       this.pendingRange = null;
@@ -416,6 +425,8 @@ namespace JP {
       this.conversation = this.conversationNavigation ? this.conversationIndex.combine(snapshot) : snapshot;
       const activeSource = this.conversation.turns.find(t=>t.element?.isConnected)?.element;
       if(activeSource)this.conversationScrollRootRef=conversationScrollRoot(activeSource);
+      if(this.navigationLab && conversationSite()==='chatgpt')
+        this.navigationLabIndex.observe(this.conversation.turns,this.navigationRoot());
       this.associateNotesToTurns();
       this.renderDock();
       this.schedulePosition();
@@ -474,6 +485,12 @@ namespace JP {
       // the rail is not rebuilt until the operation completes.
       const snapshot=this.conversationIndex.combine(collectConversation());
       this.conversation=snapshot;
+      // React may replace the entire scroll container during lazy paging.
+      // Always refresh the root after observing newly mounted prompts.
+      const mounted=snapshot.turns.find(turn=>turn.element?.isConnected)?.element;
+      if(mounted)this.conversationScrollRootRef=conversationScrollRoot(mounted);
+      if(this.navigationLab && conversationSite()==='chatgpt')
+        this.navigationLabIndex.observe(snapshot.turns,this.navigationRoot());
       return snapshot.turns;
     }
 
@@ -505,6 +522,20 @@ namespace JP {
       const record=this.conversation.turns.find(t=>t.id===key);
       const root=this.navigationRoot();
       if(!root || !record || !record.stableId)return null;
+      if(this.navigationLab && conversationSite()==='chatgpt'){
+        const result=await recoverConversationTurnLab({
+          targetId:key,signal:controller.signal,
+          hint:record.scrollHint,hintExtent:record.scrollExtent,
+          checkpoints:this.navigationLabIndex,
+          getRoot:()=>this.navigationRoot(),
+          getTurns:()=>this.scanLiveTurns()
+        });
+        // Test diagnostics stay in this page's memory. Never persist text,
+        // transcript, private state, or navigation samples to storage.
+        const {turn,...metrics}=result;
+        this.labLastMetrics=metrics;
+        return turn;
+      }
       return recoverConversationTurn({root,targetId:key,signal:controller.signal,
         hint:record.scrollHint,hintExtent:record.scrollExtent,
         getTurns:()=>this.scanLiveTurns()});
