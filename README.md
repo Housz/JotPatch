@@ -44,6 +44,7 @@ See [docs/FIREFOX.md](docs/FIREFOX.md) for the port details, API mapping, and th
 - `npm run build:firefox`: build, then assemble and verify the loadable Firefox package in `dist/firefox/`.
 - `npm run check`: build both packages and run the dependency-free Node contract tests.
 - `npx web-ext lint --source-dir dist/firefox --self-hosted`: run Mozilla's own add-on validator over the Firefox package.
+- `npm run tour` (or `python tools/firefox_tour.py`): open a visible Firefox window with the content script injected, walk through the UI step by step with hand-offs, and save screenshots to `preview/`; add `-- --auto` to skip the pauses.
 - `npm run test:e2e`: run DOM integration tests in Chromium (requires Python Playwright and `/usr/bin/chromium`; set `JP_E2E_BROWSER=firefox` to run the same scenarios on Gecko with Playwright's bundled Firefox). Tests use a storage shim and do not replace a manual extension permission smoke test.
 
 ## Architecture and constraints

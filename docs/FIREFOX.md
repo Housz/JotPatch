@@ -107,6 +107,24 @@ in both browsers.
 What still needs a human: the permission prompt and the real toolbar click. Use
 the checklist below.
 
+## Guided tour with screenshots
+
+`tools/firefox_tour.py` opens a **visible** Firefox window, injects the same
+content script into the demo page, and hands control over at each step: you
+select text, attach notes, scroll and click the Dock; press Enter in the terminal
+and it captures a screenshot.
+
+```bash
+python tools/firefox_tour.py              # step-by-step hand-off (default)
+python tools/firefox_tour.py --auto       # no pauses, full screenshot set
+python tools/firefox_tour.py --out DIR    # choose the screenshot directory
+```
+
+Screenshots land in `preview/` (git-ignored) by default. Extension APIs are
+shimmed with an in-memory store because the permission prompt cannot be scripted;
+the UI code is byte-for-byte the shipped content script. To exercise the real
+add-on and its permission prompt, use `about:debugging` plus the checklist above.
+
 ## Manual Firefox smoke checklist
 
 1. Load `dist/firefox/manifest.json`; the add-on appears without errors in

@@ -7,6 +7,7 @@
     "build": "tsc -p tsconfig.content.json && tsc -p tsconfig.background.json && tsc -p tsconfig.options.json && node scripts/verify-build.mjs",
     "build:firefox": "npm run build && node scripts/build-firefox.mjs && node scripts/verify-firefox-build.mjs",
     "check": "npm run build:firefox && node --test tests/*.test.mjs",
+    "tour": "python tools/firefox_tour.py",
     "test:e2e": "python tests/browser_e2e.py"
   },
   "devDependencies": {
