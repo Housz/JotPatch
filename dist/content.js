@@ -625,50 +625,30 @@ var JP;
         return { positions, regions: [], minPitch, dense: minPitch < MIN_COMFORTABLE_PITCH, height };
     }
     JP.layoutPageRail = layoutPageRail;
-    function findCrowdedRailGroups(layout, pitch = 9, maxNotes = 7) {
-        const notes = [...layout.positions.entries()]
-            .filter(([key]) => key.startsWith('note:'))
+    /** Independent lane assignment for overlapping note hit targets.
+     *  The vertical/document coordinate is never changed. Groups of locally
+     *  overlapping colored markers use at most three narrow horizontal lanes.
+     *  This avoids the last DOM button covering every earlier note's center.
+     */
+    function railNoteLanes(positions, verticalPitch = 7, lanes = 3) {
+        const ordered = [...positions.entries()].filter(([key]) => key.startsWith('note:'))
             .sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]));
-        const turns = [...layout.positions.entries()].filter(([key]) => key.startsWith('turn:'));
-        const result = [];
-        let cluster = [];
+        const result = new Map();
+        let run = [];
         const flush = () => {
-            if (cluster.length < 2) {
-                cluster = [];
-                return;
-            }
-            const low = cluster[0][1], high = cluster[cluster.length - 1][1];
-            // Nearby gray turns can be selected too, without letting turn-only
-            // crowds activate the popup in a note-free region.
-            const turnKeys = turns.filter(([, y]) => y >= low - 5 && y <= high + 5);
-            const keys = [...cluster, ...turnKeys].sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0])).map(([key]) => key);
-            result.push({ id: `crowd:${cluster[0][0]}`, keys, start: Math.max(0, low - 7),
-                end: Math.min(layout.height, high + 7), center: (low + high) / 2 });
-            cluster = [];
+            if (run.length > 1)
+                run.forEach(([key], index) => result.set(key, index % lanes));
+            run = [];
         };
-        for (const note of notes) {
-            if (!cluster.length) {
-                cluster = [note];
-                continue;
-            }
-            const prev = cluster[cluster.length - 1][1];
-            // Hard cap prevents huge panels in long conversations. Neighbors remain
-            // reachable via their native buttons, keyboard and the full list.
-            if (note[1] - prev <= pitch && cluster.length < maxNotes && note[1] - cluster[0][1] <= 58)
-                cluster.push(note);
-            else {
+        for (const entry of ordered) {
+            if (run.length && entry[1] - run[run.length - 1][1] >= verticalPitch)
                 flush();
-                cluster = [note];
-            }
+            run.push(entry);
         }
         flush();
         return result;
     }
-    JP.findCrowdedRailGroups = findCrowdedRailGroups;
-    function nearbyCrowdedGroup(groups, y) {
-        return groups.find(g => y >= g.start && y <= g.end) || null;
-    }
-    JP.nearbyCrowdedGroup = nearbyCrowdedGroup;
+    JP.railNoteLanes = railNoteLanes;
 })(JP || (JP = {}));
 var JP;
 (function (JP) {
@@ -776,26 +756,8 @@ var JP;
     .rail-turn:hover,.rail-turn:focus-visible{width:20px;background:#818894;z-index:6}
     .rail-turn[aria-current="location"]{width:19px;background:#717883}
     .rail.with-conversation .rail-pin{left:2px;width:13px;height:7px;z-index:3;border-radius:9px}
-    /* Stable Rail: no mouse-dependent relocation of the tiny targets. The
-       adjacent selector only appears when nearby *notes* truly collide. */
+    /* Direct one-click navigation at every density. No auxiliary picker. */
     .rail-track .rail-pin,.rail-track .rail-turn{transition:width .12s ease,background .12s ease}
-    .rail-track [data-crowded-group]{cursor:default}
-    .rail-detail{position:fixed;z-index:45;width:min(232px,74vw);max-height:min(270px,68vh);
-      background:#fffefaf9;border:1px solid #e3dbcd;box-shadow:0 7px 22px #0003;
-      border-radius:9px;padding:5px;overflow-y:auto;pointer-events:auto}
-    .rail-detail-header{font-size:10px;color:#847d71;padding:6px 7px 8px;
-      border-bottom:1px solid #ece7df}
-    .rail-detail-option{width:100%;min-height:29px;display:flex;align-items:center;gap:8px;
-      padding:6px 7px;text-align:left;background:transparent;color:#464039;font-size:12px;
-      border-radius:5px}
-    .rail-detail-option:hover,.rail-detail-option:focus-visible{background:#f3ede3;
-      outline:1px solid #b6a898;outline-offset:-1px}
-    .rail-detail-label{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .rail-detail-note{width:13px;height:7px;border-radius:6px;flex:0 0 13px;
-      border:1px solid #0002}
-    .rail-detail-note.missing{border-style:dashed}
-    .rail-detail-turn{width:14px;height:3px;border-radius:5px;flex:0 0 14px;
-      background:#aaaeb6}
     .rail-pin{position:absolute;left:5px;width:11px;height:10px;border:1px solid #0002;border-radius:50%;
       box-shadow:0 1px 4px #0002;transform:translateY(-50%);padding:0;
       transition:width .1s ease;cursor:pointer}
@@ -804,9 +766,9 @@ var JP;
     .rail-pin:hover,.rail-pin:focus-visible,.marker:hover{outline:2px solid #7562a4;outline-offset:2px;z-index:8}
     .turn-preview{position:fixed;max-width:252px;min-width:140px;z-index:40;pointer-events:none;
       border-radius:8px;padding:9px 11px;background:#fffefcf7;border:1px solid #e6e3dc;
-      box-shadow:0 4px 18px #0002;font-size:12px;color:#37342e;overflow-wrap:anywhere}
-    .turn-preview small{display:block;font-size:10px;color:#8d877d;margin-bottom:3px}
-    .turn-preview span{display:block;line-height:1.5;max-height:6em;overflow:hidden;white-space:pre-line}
+      box-shadow:0 4px 18px #0002;font-size:12px;line-height:1.5;color:#37342e;
+      overflow-wrap:anywhere;white-space:pre-line;max-height:8.4em;overflow:hidden}
+
     .list{position:fixed;right:43px;top:19%;width:min(298px,78vw);max-height:69vh;overflow:auto;pointer-events:auto;
       background:#fffefaf7;border:1px solid #eae5da;border-radius:9px;box-shadow:0 8px 26px #0002;padding:6px}
     .list-header{display:flex;justify-content:space-between;align-items:center;padding:7px 7px 10px;font-weight:600}
@@ -944,13 +906,6 @@ var JP;
         railGroups = [];
         railLayoutBase = null;
         railLayoutHeight = 0;
-        railPointerActive = false;
-        railPendingRefresh = false;
-        railCrowded = [];
-        railDetailId = null;
-        railDetailDelay = 0;
-        railDetailCloseDelay = 0;
-        railDetailCandidate = null;
         activeTurnId = null;
         refreshTimer = 0;
         scrollScheduled = false;
@@ -1029,7 +984,6 @@ var JP;
           <div class="rail-track" id="jp-rail-track"></div>
           <button id="jp-loose-toggle" class="rail-loose" title="本页悬浮或待定位便签" aria-label="查看本页悬浮和待定位便签" type="button" hidden>▤</button>
         </nav>
-        <aside id="jp-rail-detail" class="rail-detail" aria-label="密集便签精细选择" hidden></aside>
         <div id="jp-turn-preview" class="turn-preview" role="tooltip" hidden></div>
         <aside id="jp-list" class="list" aria-label="本页便签列表" hidden></aside>
         <div id="jp-markers"></div>
@@ -1059,21 +1013,12 @@ var JP;
                 this.renderList();
             });
             const track = this.$('#jp-rail-track');
-            track.addEventListener('pointerenter', () => this.cancelRailDetailClose());
-            track.addEventListener('pointermove', event => this.trackRailPointer(event));
-            track.addEventListener('pointerleave', () => this.scheduleRailDetailClose());
-            // A blank-track click must NEVER guess and jump to a neighboring note.
-            // Only a genuinely crowded local cluster can open disambiguation.
-            track.addEventListener('click', event => {
-                if (event.target.closest('button'))
-                    return;
-                const group = this.crowdedAtPointer(event.clientY);
-                if (group)
-                    this.openRailDetail(group);
-            });
+            // Rail buttons themselves own hover previews and direct navigation.
+            // Even if several buttons are only pixels apart, never intercept clicks
+            // to open an extra list or guess which neighboring note was intended.
             track.addEventListener('keydown', event => {
                 if (event.key === 'Escape') {
-                    this.closeRailDetail();
+                    this.hideTurnPreview();
                     return;
                 }
                 if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key))
@@ -1088,17 +1033,9 @@ var JP;
                     clamp(at + (event.key === 'ArrowDown' ? 1 : -1), 0, targets.length - 1);
                 targets[next]?.focus({ preventScroll: true });
             });
-            const detail = this.$('#jp-rail-detail');
-            detail.addEventListener('pointerenter', () => this.cancelRailDetailClose());
-            detail.addEventListener('pointerleave', () => this.scheduleRailDetailClose());
-            detail.addEventListener('focusin', () => { this.railPointerActive = true; this.cancelRailDetailClose(); });
-            detail.addEventListener('focusout', event => {
-                if (!(event.relatedTarget instanceof Node) || !detail.contains(event.relatedTarget))
-                    this.scheduleRailDetailClose();
-            });
             document.addEventListener('keydown', event => {
                 if (event.key === 'Escape')
-                    this.closeRailDetail();
+                    this.hideTurnPreview();
                 if (event.key === 'Escape')
                     for (const card of this.cards.values()) {
                         const menu = card.querySelector('.note-menu');
@@ -1130,7 +1067,7 @@ var JP;
                 if (this.conversationNavigation && JP.conversationSite())
                     this.scheduleConversationScan();
             }, true);
-            window.addEventListener('resize', () => { this.closeRailDetail(); this.schedulePosition(); });
+            window.addEventListener('resize', () => { this.hideTurnPreview(); this.schedulePosition(); });
             window.addEventListener('hashchange', () => this.checkPageRoute());
             window.addEventListener('popstate', () => this.checkPageRoute());
             chrome.runtime.onMessage.addListener((message, _sender, respond) => {
@@ -1210,7 +1147,7 @@ var JP;
             this.cards.clear();
             this.$('#jp-cards').replaceChildren();
             this.listOpen = false;
-            this.closeRailDetail();
+            this.hideTurnPreview();
             this.railGroups = [];
             this.railLayoutBase = null;
             this.conversationIndex.reset();
@@ -1391,13 +1328,12 @@ var JP;
         }
         hideTurnPreview() { this.$('#jp-turn-preview').hidden = true; }
         showTurnPreview(turn, button) {
+            this.showRailPreview(turn.preview || '非文本提问', button);
+        }
+        /** Same compact, headerless preview for both gray turns and note markers. */
+        showRailPreview(content, button) {
             const preview = this.$('#jp-turn-preview');
-            preview.replaceChildren();
-            const label = el('small');
-            label.textContent = `已发现第 ${turn.order + 1} / ${this.conversation.turns.length} 轮${turn.element ? '' : ' · 暂未挂载'}`;
-            const summary = el('span');
-            summary.textContent = turn.preview;
-            preview.append(label, summary);
+            preview.textContent = content;
             const rect = button.getBoundingClientRect();
             const railRect = this.$('#jp-rail').getBoundingClientRect();
             preview.style.right = `${Math.max(44, innerWidth - railRect.left + 9)}px`;
@@ -1469,20 +1405,9 @@ var JP;
                     button.removeAttribute('aria-current');
             }
         }
-        /** A tiny preview is shared by turn bars and individual colored notes. */
         showNotePreview(note, button) {
-            const preview = this.$('#jp-turn-preview');
-            preview.replaceChildren();
-            const label = el('small');
-            label.textContent = note.anchor ? (this.liveMatch(note) ? '📌 原文便签' : '📌 原文暂未加载') : '本页悬浮便签';
-            const content = el('span');
-            content.textContent = note.text.trim().slice(0, 210) || '空白便签';
-            preview.append(label, content);
-            const rect = button.getBoundingClientRect();
-            const railRect = this.$('#jp-rail').getBoundingClientRect();
-            preview.style.right = `${Math.max(44, innerWidth - railRect.left + 9)}px`;
-            preview.style.top = `${clamp(rect.top - 13, 8, innerHeight - 96)}px`;
-            preview.hidden = false;
+            const content = note.text.trim().slice(0, 210) || note.anchor?.exact.slice(0, 210) || '空白便签';
+            this.showRailPreview(content, button);
         }
         /** Resolve the fraction of a note *within the entire response turn*.
          *  Never normalize against the earliest/latest notes or invent 50% when
@@ -1577,13 +1502,6 @@ var JP;
             }
         }
         renderDock() {
-            // Freeze structural rebuild only while the local crowded selector is
-            // open. Mere pointer residence on a quiet rail must not block updates.
-            if (this.railPointerActive) {
-                this.railPendingRefresh = true;
-                return;
-            }
-            this.railPendingRefresh = false;
             const rail = this.$('#jp-rail');
             const turns = this.conversationNavigation ? this.conversation.turns : [];
             const showTurns = turns.length >= 3 && !this.conversation.nativeRailPresent;
@@ -1595,7 +1513,7 @@ var JP;
             toggle.textContent = showTurns ? '≡' : String(this.notes.length);
             toggle.title = showTurns ? `已发现 ${turns.length} 轮 · ${this.notes.length} 张便签` : `本页 ${this.notes.length} 张便签`;
             const track = this.$('#jp-rail-track');
-            this.closeRailDetail();
+            this.hideTurnPreview();
             track.replaceChildren();
             this.railGroups = [];
             this.railLayoutBase = null;
@@ -1626,19 +1544,9 @@ var JP;
                     bar.type = 'button';
                     bar.dataset.turnId = turn.id;
                     bar.dataset.railKey = `turn:${turn.id}`;
-                    bar.title = `已发现第 ${turn.order + 1} 轮：${turn.preview}`;
-                    bar.setAttribute('aria-label', bar.title);
-                    bar.addEventListener('click', event => {
-                        if (this.needsRailDetail(bar, event)) {
-                            return;
-                        }
-                        this.closeRailDetail();
-                        void this.jumpToTurn(turn);
-                    });
-                    bar.addEventListener('pointerenter', () => {
-                        if (!this.isCrowdedMarker(bar))
-                            this.showTurnPreview(turn, bar);
-                    });
+                    bar.setAttribute('aria-label', `第 ${turn.order + 1} 轮：${turn.preview}`);
+                    bar.addEventListener('click', () => void this.jumpToTurn(turn));
+                    bar.addEventListener('pointerenter', () => this.showTurnPreview(turn, bar));
                     bar.addEventListener('pointerleave', () => this.hideTurnPreview());
                     bar.addEventListener('focus', () => this.showTurnPreview(turn, bar));
                     bar.addEventListener('blur', () => this.hideTurnPreview());
@@ -1677,19 +1585,10 @@ var JP;
             button.dataset.noteId = note.id;
             button.dataset.railKey = `note:${note.id}`;
             button.style.background = COLOR_HEX[JP.appearance(note).color];
-            button.title = (note.anchor && !this.liveMatch(note) ? '原文暂未加载 · ' : '') +
-                (note.text.trim().slice(0, 90) || note.anchor?.exact.slice(0, 70) || '便签');
-            button.setAttribute('aria-label', `跳转便签：${button.title}`);
-            button.addEventListener('click', event => {
-                if (this.needsRailDetail(button, event))
-                    return;
-                this.closeRailDetail();
-                this.goTo(note.id);
-            });
-            button.addEventListener('pointerenter', () => {
-                if (!this.isCrowdedMarker(button))
-                    this.showNotePreview(note, button);
-            });
+            const description = note.text.trim().slice(0, 90) || note.anchor?.exact.slice(0, 70) || '空白便签';
+            button.setAttribute('aria-label', `${note.anchor && !this.liveMatch(note) ? '原文暂未加载，' : ''}跳转便签：${description}`);
+            button.addEventListener('click', () => this.goTo(note.id));
+            button.addEventListener('pointerenter', () => this.showNotePreview(note, button));
             button.addEventListener('pointerleave', () => this.hideTurnPreview());
             button.addEventListener('focus', () => this.showNotePreview(note, button));
             button.addEventListener('blur', () => this.hideTurnPreview());
@@ -1700,161 +1599,26 @@ var JP;
             const track = this.$('#jp-rail-track');
             this.railLayoutBase = layout;
             this.railLayoutHeight = layout.height;
-            this.railCrowded = JP.findCrowdedRailGroups(layout);
-            const crowdedKeys = new Map();
-            for (const group of this.railCrowded)
-                for (const key of group.keys)
-                    crowdedKeys.set(key, group.id);
+            const lanes = JP.railNoteLanes(layout.positions);
             for (const button of track.querySelectorAll('[data-rail-key]')) {
-                const key = button.dataset.railKey || '', y = layout.positions.get(key);
+                const key = button.dataset.railKey || '';
+                const y = layout.positions.get(key);
                 if (y !== undefined)
                     button.style.top = `${y}px`;
-                const cluster = crowdedKeys.get(key);
-                if (cluster)
-                    button.dataset.crowdedGroup = cluster;
-                else
-                    delete button.dataset.crowdedGroup;
-            }
-            track.classList.toggle('dense', this.railCrowded.length > 0);
-        }
-        /** Returns a group ONLY when the pointer is in a locally crowded area. */
-        crowdedAtPointer(clientY) {
-            const track = this.$('#jp-rail-track');
-            const localY = clientY - track.getBoundingClientRect().top;
-            return JP.nearbyCrowdedGroup(this.railCrowded, localY);
-        }
-        isCrowdedMarker(marker) {
-            return !!marker.dataset.crowdedGroup;
-        }
-        needsRailDetail(marker, event) {
-            // Keyboard-generated clicks target a focused, named button exactly.
-            if (event.detail === 0)
-                return false;
-            const group = this.railCrowded.find(g => g.id === marker.dataset.crowdedGroup);
-            if (!group)
-                return false;
-            event.preventDefault();
-            event.stopPropagation();
-            this.openRailDetail(group);
-            return true;
-        }
-        trackRailPointer(event) {
-            // A real marker identifies its own cluster. Pixel ranges from adjacent
-            // clusters may overlap; relying only on the nearest Y would show the
-            // wrong menu for a visibly hovered colored note.
-            const marker = event.target.closest('[data-crowded-group]');
-            const group = (marker && this.railCrowded.find(item => item.id === marker.dataset.crowdedGroup)) ||
-                this.crowdedAtPointer(event.clientY);
-            if (group) {
-                // The currently open panel never jumps to another group mid-targeting.
-                if (this.railDetailId === group.id) {
-                    this.cancelRailDetailClose();
-                    return;
-                }
-                this.queueRailDetail(group);
-            }
-            else {
-                this.cancelRailDetailOpen();
-                // Moving across sparse gray bars does not activate another group's UI.
-                if (this.railDetailId)
-                    this.scheduleRailDetailClose();
-            }
-        }
-        cancelRailDetailOpen() {
-            clearTimeout(this.railDetailDelay);
-            this.railDetailDelay = 0;
-            this.railDetailCandidate = null;
-        }
-        cancelRailDetailClose() {
-            clearTimeout(this.railDetailCloseDelay);
-            this.railDetailCloseDelay = 0;
-        }
-        queueRailDetail(group) {
-            this.cancelRailDetailClose();
-            if (this.railDetailCandidate === group.id)
-                return;
-            this.cancelRailDetailOpen();
-            this.railDetailCandidate = group.id;
-            // The user has to linger over a genuinely ambiguous *local* region.
-            // This avoids incidental panels as the pointer crosses the rail.
-            this.railDetailDelay = window.setTimeout(() => {
-                this.railDetailDelay = 0;
-                this.railDetailCandidate = null;
-                const source = this.railCrowded.find(item => item.id === group.id);
-                if (source)
-                    this.openRailDetail(source);
-            }, 210);
-        }
-        scheduleRailDetailClose() {
-            this.cancelRailDetailOpen();
-            if (this.railDetailCloseDelay)
-                return;
-            this.railDetailCloseDelay = window.setTimeout(() => this.closeRailDetail(), 310);
-        }
-        openRailDetail(group) {
-            this.cancelRailDetailOpen();
-            this.cancelRailDetailClose();
-            if (this.railDetailId === group.id && !this.$('#jp-rail-detail').hidden)
-                return;
-            const detail = this.$('#jp-rail-detail');
-            const track = this.$('#jp-rail-track');
-            this.railPointerActive = true;
-            this.railDetailId = group.id;
-            this.hideTurnPreview();
-            detail.replaceChildren();
-            const heading = el('div', 'rail-detail-header');
-            heading.textContent = `附近 ${group.keys.length} 个导航目标`;
-            detail.appendChild(heading);
-            const notesById = new Map(this.notes.map(note => [note.id, note]));
-            const turnsById = new Map(this.conversation.turns.map(turn => [turn.id, turn]));
-            for (const key of group.keys) {
-                const button = el('button', 'rail-detail-option');
-                button.type = 'button';
-                button.dataset.railKey = key;
-                const mark = el('span', key.startsWith('note:') ? 'rail-detail-note' : 'rail-detail-turn');
-                const label = el('span', 'rail-detail-label');
-                if (key.startsWith('note:')) {
-                    const note = notesById.get(key.slice(5));
-                    if (!note)
-                        continue;
-                    mark.style.background = COLOR_HEX[JP.appearance(note).color];
-                    mark.classList.toggle('missing', !!note.anchor && !this.liveMatch(note));
-                    label.textContent = note.text.trim().split('\n')[0] || note.anchor?.exact.slice(0, 75) || '空白便签';
-                    button.addEventListener('click', () => { this.closeRailDetail(); this.goTo(note.id); });
+                const lane = lanes.get(key);
+                if (lane !== undefined) {
+                    // 3 * 9px fits the 29px-wide track; vertical ordering is untouched.
+                    button.style.left = `${1 + lane * 9}px`;
+                    button.style.width = '8px';
+                    button.style.height = '6px';
+                    button.dataset.railLane = String(lane);
                 }
                 else {
-                    const turn = turnsById.get(key.slice(5));
-                    if (!turn)
-                        continue;
-                    label.textContent = `第 ${turn.order + 1} 轮 · ${turn.preview}`;
-                    button.addEventListener('click', () => { this.closeRailDetail(); void this.jumpToTurn(turn); });
+                    button.style.removeProperty('left');
+                    button.style.removeProperty('width');
+                    button.style.removeProperty('height');
+                    delete button.dataset.railLane;
                 }
-                button.title = label.textContent || '';
-                button.append(mark, label);
-                detail.appendChild(button);
-            }
-            const trackRect = track.getBoundingClientRect();
-            const center = trackRect.top + group.center;
-            const desiredHeight = Math.min(270, 30 + group.keys.length * 31);
-            const railLeft = this.$('#jp-rail').getBoundingClientRect().left;
-            detail.style.right = `${Math.max(43, innerWidth - railLeft + 6)}px`;
-            detail.style.top = `${clamp(center - desiredHeight / 2, 8, Math.max(8, innerHeight - desiredHeight - 8))}px`;
-            detail.hidden = false;
-        }
-        closeRailDetail() {
-            this.cancelRailDetailOpen();
-            this.cancelRailDetailClose();
-            this.railDetailId = null;
-            const detail = this.shadow?.querySelector('#jp-rail-detail');
-            if (detail) {
-                detail.hidden = true;
-                detail.replaceChildren();
-            }
-            this.railPointerActive = false;
-            this.hideTurnPreview();
-            if (!this.railPointerActive && this.railPendingRefresh) {
-                this.railPendingRefresh = false;
-                this.renderDock();
             }
         }
         renderList() {

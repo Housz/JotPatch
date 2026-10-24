@@ -124,6 +124,15 @@ See [Stage 1.5.1 reliability / UX investigation](STAGE1_6_FIXES.md) for virtuali
 原聚合导航与“轨道旁边弹出 dense lens”是历史实现，当前版本被单轴连续放大替换。新 `rail-layout.ts` 使用轮次内真实比例、PAVA 有序避让、加权高度与 `fisheyePositions` 严格单调映射，保持一张便签一个可点目标。详见 [SPATIAL_RAIL_0_1_11.md](SPATIAL_RAIL_0_1_11.md)。
 
 
-## v0.1.12 Stable Rail（当前）
+## v0.1.12 Stable Rail（历史方案）
 
 取消 v0.1.11 的鼠标驱动鱼眼变形及空白轨道最近目标猜测。轨道仍按绝对轮次比例、PAVA 有序避让稳定分配像素坐标；`findCrowdedRailGroups` 只识别局部真正拥挤的**便签**，不使用全局 `dense` 开关作为交互触发。鼠标短暂停留时于左侧生成一个固定位置的局部选择区，原条目 `top` 不改变；只在选择区打开时暂缓 DOM 结构更新，关闭时刷新。见 [STABLE_RAIL_0_1_12.md](STABLE_RAIL_0_1_12.md)。
+
+
+## v0.1.13 Simple Hover Rail（当前）
+
+取消完整 `jp-rail-detail` 的 DOM、CSS、指针悬停定时器、拥挤组计算、密集按钮点击拦截以及为弹窗冻结结构更新的逻辑。所有 `.rail-pin` 与 `.rail-turn` 按钮始终直接负责 `goTo(note.id)` / `jumpToTurn(turn)`，无需第二次选择。公用 `showRailPreview` 仅渲染安全的 `textContent` 内容正文，没有轮次编号、Pin 状态标题，也不再通过 native `title` 重复渲染提示。保持 aria-label 供读屏与键盘使用。
+
+当前轨道仍保留 `layoutConversationRail` 的固定纵向坐标、PAVA 有序间距与用户阅读时自然积累的轮次索引。`railNoteLanes` 对中心距不足 7px 的相邻便签，在最多三个水平窄通道内错开鼠标命中区域，**不改变原文位置、保存字段或纵向坐标**；仍极度重叠时使用主动展开目录或键盘访问。不要重新引入自动聚合、悬停弹出的选择器、隐式邻近目标猜测或移动式鱼眼放大。
+
+回归见 `tests/stable_rail_e2e.py`：鼠标按像素分别点击 100 轮、60 张便签中的三张相邻笔记及一个灰色轮次横条；还检查无标题摘要、无弹窗 DOM、没有 JS 错误、布局坐标稳定，以及原有浏览器集成回归。

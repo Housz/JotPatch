@@ -8,8 +8,7 @@ const js=ts.transpileModule(readFileSync('src/content/rail-layout.ts','utf8'),{
   compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.None}
 }).outputText;
 const ctx=vm.createContext({Math,Map});vm.runInContext(js,ctx);
-const {layoutConversationRail:layout,layoutPageRail:pageLayout,
-  findCrowdedRailGroups, nearbyCrowdedGroup}=ctx.JP;
+const {layoutConversationRail:layout,layoutPageRail:pageLayout}=ctx.JP;
 const group=(id, fractions=[])=>({turnId:id,noteIds:fractions.map((_,i)=>`${id}-n${i}`),fractions});
 const groups=(n, populated, fractions)=>Array.from({length:n},(_,i)=>group(`t${i}`,i===populated?fractions:[]));
 
@@ -51,28 +50,15 @@ test('low density with many turns preserves strict global order',()=>{
   assert.equal(out.positions.size,75);
 });
 
-test('100 rounds / 60 notes creates local detail groups with unchanged coordinates',()=>{
+test('100 rounds / 60 notes keep all independent pixels under a fixed layout',()=>{
   const input=Array.from({length:100},(_,i)=>group(`r${i}`,i%5===0?[.05,.50,.95]:[]));
-  const out=layout(input,480),groups=findCrowdedRailGroups(out);
-  assert.ok(out.dense);
+  const out=layout(input,480);
   assert.equal(out.positions.size,160);
+  assert.equal(out.dense,true);
   assert.equal(out.positions.has('overview:r0'),false);
-  assert.ok(groups.length>=2,groups);
-  assert.ok(groups.every(g=>g.keys.filter(key=>key.startsWith('note:')).length>=2));
-  const ordered=[...out.positions.values()].sort((a,b)=>a-b);
-  assert.ok(ordered.every((y,i)=>i===0||y>=ordered[i-1]));
-  const empty=out.positions.get('turn:r76');
-  const local=nearbyCrowdedGroup(groups,empty);
-  // A pair of close gray turn bars alone is insufficient to open the picker.
-  if(local)assert.ok(local.keys.some(key=>key.startsWith('note:')));
-});
-
-test('nearbyCrowdedGroup returns null in unrelated space',()=>{
-  const input=Array.from({length:100},(_,i)=>group(`r${i}`,i%5===0?[.02,.03,.04,.05,.06,.07]:[]));
-  const out=layout(input,480),groups=findCrowdedRailGroups(out);
-  assert.ok(groups.length>0);
-  assert.equal(nearbyCrowdedGroup(groups,-100),null);
-  assert.equal(nearbyCrowdedGroup(groups,900),null);
+  const repeat=layout(input,480);
+  for(const [key,y] of out.positions)assert.equal(repeat.positions.get(key),y);
+  assert.ok([...out.positions.values()].every(y=>y>=0&&y<=480));
 });
 
 test('page-only 30 notes retain order, never create a count or segment overview',()=>{

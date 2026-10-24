@@ -29,26 +29,8 @@ namespace JP {
     .rail-turn:hover,.rail-turn:focus-visible{width:20px;background:#818894;z-index:6}
     .rail-turn[aria-current="location"]{width:19px;background:#717883}
     .rail.with-conversation .rail-pin{left:2px;width:13px;height:7px;z-index:3;border-radius:9px}
-    /* Stable Rail: no mouse-dependent relocation of the tiny targets. The
-       adjacent selector only appears when nearby *notes* truly collide. */
+    /* Direct one-click navigation at every density. No auxiliary picker. */
     .rail-track .rail-pin,.rail-track .rail-turn{transition:width .12s ease,background .12s ease}
-    .rail-track [data-crowded-group]{cursor:default}
-    .rail-detail{position:fixed;z-index:45;width:min(232px,74vw);max-height:min(270px,68vh);
-      background:#fffefaf9;border:1px solid #e3dbcd;box-shadow:0 7px 22px #0003;
-      border-radius:9px;padding:5px;overflow-y:auto;pointer-events:auto}
-    .rail-detail-header{font-size:10px;color:#847d71;padding:6px 7px 8px;
-      border-bottom:1px solid #ece7df}
-    .rail-detail-option{width:100%;min-height:29px;display:flex;align-items:center;gap:8px;
-      padding:6px 7px;text-align:left;background:transparent;color:#464039;font-size:12px;
-      border-radius:5px}
-    .rail-detail-option:hover,.rail-detail-option:focus-visible{background:#f3ede3;
-      outline:1px solid #b6a898;outline-offset:-1px}
-    .rail-detail-label{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .rail-detail-note{width:13px;height:7px;border-radius:6px;flex:0 0 13px;
-      border:1px solid #0002}
-    .rail-detail-note.missing{border-style:dashed}
-    .rail-detail-turn{width:14px;height:3px;border-radius:5px;flex:0 0 14px;
-      background:#aaaeb6}
     .rail-pin{position:absolute;left:5px;width:11px;height:10px;border:1px solid #0002;border-radius:50%;
       box-shadow:0 1px 4px #0002;transform:translateY(-50%);padding:0;
       transition:width .1s ease;cursor:pointer}
@@ -57,9 +39,9 @@ namespace JP {
     .rail-pin:hover,.rail-pin:focus-visible,.marker:hover{outline:2px solid #7562a4;outline-offset:2px;z-index:8}
     .turn-preview{position:fixed;max-width:252px;min-width:140px;z-index:40;pointer-events:none;
       border-radius:8px;padding:9px 11px;background:#fffefcf7;border:1px solid #e6e3dc;
-      box-shadow:0 4px 18px #0002;font-size:12px;color:#37342e;overflow-wrap:anywhere}
-    .turn-preview small{display:block;font-size:10px;color:#8d877d;margin-bottom:3px}
-    .turn-preview span{display:block;line-height:1.5;max-height:6em;overflow:hidden;white-space:pre-line}
+      box-shadow:0 4px 18px #0002;font-size:12px;line-height:1.5;color:#37342e;
+      overflow-wrap:anywhere;white-space:pre-line;max-height:8.4em;overflow:hidden}
+
     .list{position:fixed;right:43px;top:19%;width:min(298px,78vw);max-height:69vh;overflow:auto;pointer-events:auto;
       background:#fffefaf7;border:1px solid #eae5da;border-radius:9px;box-shadow:0 8px 26px #0002;padding:6px}
     .list-header{display:flex;justify-content:space-between;align-items:center;padding:7px 7px 10px;font-weight:600}
