@@ -21,6 +21,7 @@
     "src/content/markdown.ts",
     "src/content/conversation-index.ts",
     "src/content/navigation-recovery.ts",
+    "src/content/navigation-lab.ts",
     "src/content/rail-layout.ts",
     "src/content/repository.ts",
     "src/content/paper-styles.ts",

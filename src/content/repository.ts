@@ -64,6 +64,7 @@ namespace JP {
       return {
         selectionTrigger: prefs.selectionTrigger === 'alt' || prefs.selectionTrigger === 'off' ? prefs.selectionTrigger : 'always',
         conversationNavigation: prefs.conversationNavigation !== false,
+        navigationLab: prefs.navigationLab === true,
         defaultNoteColorMode: prefs.defaultNoteColorMode === 'random' ? 'random' : DEFAULT_COLOR_MODE
       };
     }

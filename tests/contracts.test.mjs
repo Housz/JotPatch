@@ -71,7 +71,7 @@ test('stage 1.8 WYSIWYG editor and passive navigation stay local-first', () => {
 
 
 test('0.1.7 rejects missing or stale anchored ranges before showing papers', () => {
-  assert.equal(manifest.version, '0.1.14');
+  assert.equal(manifest.version, '0.1.15');
   const app = readFileSync('src/content/app.ts', 'utf8');
   assert.ok(app.includes('private liveMatch(note:Note):Match|null'));
   assert.ok(app.includes('if(!match||!rect)'));
@@ -118,12 +118,12 @@ test('v0.1.13 has headerless preview and direct click on both note and question'
   assert.ok(app.includes("preview.textContent=content"));
   assert.ok(!app.includes('已发现第 ${turn.order + 1} /'));
   assert.ok(!css.includes('transition:top'));
-  assert.equal(manifest.version,'0.1.14');
+  assert.equal(manifest.version,'0.1.15');
 });
 
 
 test('v0.1.14 branding assets and color preferences are complete', () => {
-  assert.equal(manifest.version, '0.1.14');
+  assert.equal(manifest.version, '0.1.15');
   assert.equal(manifest.description, 'JotPatch · 随地大小贴。');
   for (const size of [16, 32, 48, 128]) {
     const filename = `icons/icon${size}.png`;
@@ -153,7 +153,7 @@ test('v0.1.14 navigation bugfix keeps stable bars and bounded user-initiated rec
   const app=readFileSync('src/content/app.ts','utf8');
   const recovery=readFileSync('src/content/navigation-recovery.ts','utf8');
   const index=readFileSync('src/content/conversation-index.ts','utf8');
-  assert.equal(manifest.version,'0.1.14');
+  assert.equal(manifest.version,'0.1.15');
   for(const name of ['navController','navigationBusy','railSignature','recoverNote','locateTurn','trustedNoteMatch',
                      'jp-cancel-nav','syncRailMetadata'])assert.ok(app.includes(name),name);
   for(const name of ['AbortSignal','maxSteps','deadline','navigationPause','targetId'])assert.ok(recovery.includes(name),name);
@@ -169,4 +169,31 @@ test('v0.1.14 note recovery filters matches to the recorded conversation round',
   assert.ok(app.includes('turnForRange(range,turns)?.id===targetId'));
   assert.ok(app.includes('conversationTurnId:linked?.stableId'));
   assert.ok(app.includes("if(document.hidden)userInterrupt()"));
+});
+
+test('v0.1.15 lab is opt-in only and does not broaden permissions',()=>{
+  const settings=readFileSync('options.html','utf8');
+  const optionsJs=readFileSync('options.js','utf8');
+  const app=readFileSync('src/content/app.ts','utf8');
+  const repo=readFileSync('src/content/repository.ts','utf8');
+  const lab=readFileSync('src/content/navigation-lab.ts','utf8');
+  assert.equal(manifest.version,'0.1.15');
+  assert.match(settings,/id="navigation-lab"/);
+  assert.match(optionsJs,/updatePreferences\(\{ navigationLab: labToggle.checked \}\)/);
+  assert.match(repo,/navigationLab: prefs.navigationLab === true/);
+  assert.match(app,/if\(this.navigationLab && conversationSite\(\)==='chatgpt'\)/);
+  assert.match(lab,/class NavigationLabIndex/);
+  assert.match(lab,/recoverConversationTurnLab/);
+  assert.match(lab,/maxMilliseconds/);
+  assert.doesNotMatch(lab,/fetch\(|localStorage|storage.local|innerText|textContent/);
+  assert.equal(manifest.host_permissions,undefined);
+});
+
+
+test('Lab route scoping and reset cannot leak checkpoints across conversations',()=>{
+  const app=readFileSync('src/content/app.ts','utf8');
+  assert.ok(app.includes('this.navigationLabIndex.clear()'));
+  assert.ok(app.includes("this.navigationLab && conversationSite()==='chatgpt'"));
+  assert.ok(app.includes('const {turn,...metrics}=result'));
+  assert.ok(!app.includes('chrome.storage.local.set({navigationLabIndex'));
 });

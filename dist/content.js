@@ -725,6 +725,164 @@ var JP;
 })(JP || (JP = {}));
 var JP;
 (function (JP) {
+    class NavigationLabIndex {
+        entries = new Map();
+        limit = 1200;
+        clear() { this.entries.clear(); }
+        size() { return this.entries.size; }
+        lookup(id) { return this.entries.get(id); }
+        observe(turns, root) {
+            if (!root || !root.isConnected)
+                return;
+            const extent = root.scrollHeight;
+            for (const turn of turns) {
+                if (!turn.stableId || !turn.element?.isConnected)
+                    continue;
+                const rect = turn.element.getBoundingClientRect();
+                if (!Number.isFinite(rect.top))
+                    continue;
+                const rootTop = root === document.scrollingElement ? 0 : root.getBoundingClientRect().top;
+                const top = root.scrollTop + rect.top - rootTop;
+                // A DOM-recycling virtualization window can have a short-lived bad
+                // rect. A later trusted observation of the same ID replaces it.
+                if (!Number.isFinite(top))
+                    continue;
+                this.entries.delete(turn.id);
+                this.entries.set(turn.id, { id: turn.id, top, extent, observedAt: Date.now() });
+                if (this.entries.size > this.limit) {
+                    const oldest = this.entries.keys().next().value;
+                    if (oldest)
+                        this.entries.delete(oldest);
+                }
+            }
+        }
+        /** Extent validation prevents stale absolute hints after lazy paging. */
+        usable(id, root) {
+            const checkpoint = this.entries.get(id);
+            if (!checkpoint)
+                return undefined;
+            const changed = Math.abs(root.scrollHeight - checkpoint.extent) / Math.max(1, checkpoint.extent);
+            return changed <= .18 ? checkpoint : undefined;
+        }
+    }
+    JP.NavigationLabIndex = NavigationLabIndex;
+    /** Opt-in, bounded recovery for an explicitly selected historical target.
+     *  A target is considered reached ONLY when its logical ID is mounted. It
+     *  never fetches internal ChatGPT endpoints or background-scans a transcript. */
+    async function recoverConversationTurnLab(search) {
+        const start = Date.now(), signal = search.signal;
+        const result = (turn, strategy, steps) => ({
+            turn,
+            outcome: signal.aborted ? 'cancelled' : turn ? 'arrived' : 'unreachable',
+            strategy, steps, elapsedMs: Date.now() - start
+        });
+        const find = () => search.getTurns().find(turn => turn.id === search.targetId && !!turn.element?.isConnected && turn.element.getClientRects().length > 0) || null;
+        let direct = find();
+        if (direct || signal.aborted)
+            return result(direct, 'direct', 0);
+        let root = search.getRoot();
+        if (!root || !root.isConnected)
+            return result(null, 'progressive', 0);
+        const checkpoint = search.checkpoints.usable(search.targetId, root);
+        const hint = checkpoint?.top ?? search.hint;
+        const extent = checkpoint?.extent ?? search.hintExtent;
+        if (Number.isFinite(hint) && Number.isFinite(extent) &&
+            Math.abs(root.scrollHeight - extent) / Math.max(1, extent) <= .18) {
+            root.scrollTo({ top: hint, behavior: 'auto' });
+            // Keep fast path short, but wait long enough for async DOM commit.
+            for (let n = 0; n < 3; n++) {
+                if (!await JP.navigationPause(n === 0 ? 140 : 165, signal))
+                    return result(null, 'checkpoint', 0);
+                direct = find();
+                if (direct)
+                    return result(direct, 'checkpoint', 0);
+            }
+        }
+        const maxSteps = Math.max(1, Math.min(220, search.maxSteps ?? 140));
+        const deadline = start + Math.max(1000, Math.min(60000, search.maxMilliseconds ?? 32000));
+        let stationary = 0, windowBefore = '', previousRoot = root, usedSteps = 0;
+        for (let step = 1; step <= maxSteps && Date.now() < deadline; step++) {
+            usedSteps = step;
+            if (signal.aborted)
+                return result(null, 'progressive', step - 1);
+            // Re-scan first: getTurns can discover replacement scroll containers.
+            search.getTurns();
+            root = search.getRoot();
+            if (!root?.isConnected) {
+                // React can replace the entire scroll container during transitions.
+                if (!await JP.navigationPause(250, signal))
+                    return result(null, 'progressive', step - 1);
+                root = search.getRoot();
+                if (!root?.isConnected)
+                    continue;
+            }
+            if (root !== previousRoot) {
+                stationary = 0;
+                windowBefore = '';
+                previousRoot = root;
+            }
+            const turns = search.getTurns();
+            const target = turns.find(turn => turn.id === search.targetId);
+            const visible = turns.filter(turn => turn.element?.isConnected).sort((a, b) => a.order - b.order);
+            direct = visible.find(turn => turn.id === search.targetId) || null;
+            if (direct)
+                return result(direct, 'progressive', step - 1);
+            if (!target || !visible.length)
+                break;
+            const near = visible.reduce((best, item) => Math.abs(item.order - target.order) < Math.abs(best.order - target.order) ? item : best, visible[0]);
+            let direction = target.order < near.order ? -1 : 1;
+            if (visible.length >= 2) {
+                const first = visible[0].element.getBoundingClientRect().top;
+                const last = visible[visible.length - 1].element.getBoundingClientRect().top;
+                if (first > last)
+                    direction *= -1;
+            }
+            const before = root.scrollTop;
+            const amount = direction * Math.max(200, root.clientHeight || innerHeight) * .82;
+            root.scrollTo({ top: before + amount, behavior: 'auto' });
+            // Dynamic window updates typically finish in ~100-200ms; slow boundary
+            // pagination requires an adaptive wait, not rapid repeated scrolls.
+            const quiet = stationary > 0;
+            if (!await JP.navigationPause(quiet ? 280 : 115, signal))
+                return result(null, 'progressive', step);
+            direct = find();
+            if (direct)
+                return result(direct, 'progressive', step);
+            let afterTurns = search.getTurns().filter(turn => turn.element?.isConnected);
+            let windowNow = afterTurns.map(turn => turn.id).join('|');
+            let moved = Math.abs(root.scrollTop - before) > 2;
+            if (!moved && windowNow === windowBefore) {
+                // The scroll boundary may be waiting for a network request and React
+                // commit. Re-sample at increasing intervals only at such boundaries.
+                for (let patience = 0; patience < 3; patience++) {
+                    if (!await JP.navigationPause(250 + patience * 220, signal))
+                        return result(null, 'progressive', step);
+                    direct = find();
+                    if (direct)
+                        return result(direct, 'progressive', step);
+                    const newer = search.getTurns().filter(turn => turn.element?.isConnected);
+                    const signature = newer.map(turn => turn.id).join('|');
+                    if (signature !== windowNow || Math.abs(root.scrollTop - before) > 2) {
+                        windowNow = signature;
+                        moved = true;
+                        break;
+                    }
+                }
+            }
+            if (!moved && windowNow === windowBefore)
+                stationary++;
+            else
+                stationary = 0;
+            windowBefore = windowNow;
+            if (stationary >= 4)
+                break;
+        }
+        return result(null, 'progressive', usedSteps);
+    }
+    JP.recoverConversationTurnLab = recoverConversationTurnLab;
+})(JP || (JP = {}));
+var JP;
+(function (JP) {
     const BOUNDARY = 5;
     const TURN_WEIGHT = 17;
     const NOTE_WEIGHT = 10;
@@ -907,6 +1065,7 @@ var JP;
             return {
                 selectionTrigger: prefs.selectionTrigger === 'alt' || prefs.selectionTrigger === 'off' ? prefs.selectionTrigger : 'always',
                 conversationNavigation: prefs.conversationNavigation !== false,
+                navigationLab: prefs.navigationLab === true,
                 defaultNoteColorMode: prefs.defaultNoteColorMode === 'random' ? 'random' : DEFAULT_COLOR_MODE
             };
         }
@@ -1097,6 +1256,9 @@ var JP;
         listOpen = false;
         selectionTrigger = 'always';
         conversationNavigation = true;
+        navigationLab = false;
+        navigationLabIndex = new JP.NavigationLabIndex();
+        labLastMetrics = null;
         defaultNoteColorMode = 'yellow';
         lastAutoColor = null;
         conversation = { site: null, turns: [], nativeRailPresent: false };
@@ -1333,6 +1495,12 @@ var JP;
                     const trigger = preferences?.selectionTrigger;
                     this.selectionTrigger = trigger === 'alt' || trigger === 'off' ? trigger : 'always';
                     this.conversationNavigation = preferences?.conversationNavigation !== false;
+                    const wasLab = this.navigationLab;
+                    this.navigationLab = preferences?.navigationLab === true;
+                    if (wasLab !== this.navigationLab) {
+                        this.cancelNavigation(false);
+                        this.labLastMetrics = null;
+                    }
                     this.defaultNoteColorMode = preferences?.defaultNoteColorMode === 'random' ? 'random' : 'yellow';
                     this.$('#jp-bubble').hidden = true;
                     this.refreshConversation();
@@ -1349,12 +1517,14 @@ var JP;
                 const prefs = await this.repo.preferences();
                 this.selectionTrigger = prefs.selectionTrigger;
                 this.conversationNavigation = prefs.conversationNavigation;
+                this.navigationLab = prefs.navigationLab;
                 this.defaultNoteColorMode = prefs.defaultNoteColorMode;
             }
             catch {
                 this.selectionTrigger = 'always';
                 this.conversationNavigation = true;
                 this.defaultNoteColorMode = 'yellow';
+                this.navigationLab = false;
             }
         }
         openSettings() {
@@ -1368,6 +1538,8 @@ var JP;
             for (const id of this.openIds)
                 void this.saveNow(id);
             this.cancelNavigation(false);
+            this.navigationLabIndex.clear();
+            this.labLastMetrics = null;
             this.page = next;
             this.railSignature = '';
             this.pendingRange = null;
@@ -1567,6 +1739,8 @@ var JP;
             const activeSource = this.conversation.turns.find(t => t.element?.isConnected)?.element;
             if (activeSource)
                 this.conversationScrollRootRef = JP.conversationScrollRoot(activeSource);
+            if (this.navigationLab && JP.conversationSite() === 'chatgpt')
+                this.navigationLabIndex.observe(this.conversation.turns, this.navigationRoot());
             this.associateNotesToTurns();
             this.renderDock();
             this.schedulePosition();
@@ -1630,6 +1804,13 @@ var JP;
             // the rail is not rebuilt until the operation completes.
             const snapshot = this.conversationIndex.combine(JP.collectConversation());
             this.conversation = snapshot;
+            // React may replace the entire scroll container during lazy paging.
+            // Always refresh the root after observing newly mounted prompts.
+            const mounted = snapshot.turns.find(turn => turn.element?.isConnected)?.element;
+            if (mounted)
+                this.conversationScrollRootRef = JP.conversationScrollRoot(mounted);
+            if (this.navigationLab && JP.conversationSite() === 'chatgpt')
+                this.navigationLabIndex.observe(snapshot.turns, this.navigationRoot());
             return snapshot.turns;
         }
         findLiveTurn(id) {
@@ -1660,6 +1841,20 @@ var JP;
             const root = this.navigationRoot();
             if (!root || !record || !record.stableId)
                 return null;
+            if (this.navigationLab && JP.conversationSite() === 'chatgpt') {
+                const result = await JP.recoverConversationTurnLab({
+                    targetId: key, signal: controller.signal,
+                    hint: record.scrollHint, hintExtent: record.scrollExtent,
+                    checkpoints: this.navigationLabIndex,
+                    getRoot: () => this.navigationRoot(),
+                    getTurns: () => this.scanLiveTurns()
+                });
+                // Test diagnostics stay in this page's memory. Never persist text,
+                // transcript, private state, or navigation samples to storage.
+                const { turn, ...metrics } = result;
+                this.labLastMetrics = metrics;
+                return turn;
+            }
             return JP.recoverConversationTurn({ root, targetId: key, signal: controller.signal,
                 hint: record.scrollHint, hintExtent: record.scrollExtent,
                 getTurns: () => this.scanLiveTurns() });
