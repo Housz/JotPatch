@@ -128,7 +128,7 @@ var JP;
         return n;
     }
     /** Prefer verified quote + context; never trust the old character offset alone. */
-    function resolveAnchor(anchor, index) {
+    function resolveAnchor(anchor, index, allowedRange) {
         if (!anchor.exact || anchor.exact.length > MAX_QUOTE)
             return null;
         const candidates = [];
@@ -143,6 +143,13 @@ var JP;
             const after = index.text.slice(end, end + anchor.suffix.length);
             const context = commonSuffix(before, anchor.prefix) + commonPrefix(after, anchor.suffix);
             const distance = Math.abs(start - anchor.start);
+            if (allowedRange) {
+                const probe = makeRange(index, start, end);
+                if (!probe || !allowedRange(probe)) {
+                    from = start + 1;
+                    continue;
+                }
+            }
             candidates.push({ start, context, score: context * 4 - Math.min(12, distance / 1000) });
             from = start + 1;
         }
@@ -289,7 +296,8 @@ var JP;
         const top = element.getBoundingClientRect().top;
         const rootTop = root === document.scrollingElement ? 0 : root.getBoundingClientRect().top;
         // Align the precise user message bubble near the TOP, not the answer midpoint.
-        const desired = Math.max(0, root.scrollTop + top - rootTop - 86);
+        // Negative scrollTop is valid for reverse-direction scroll containers.
+        const desired = root.scrollTop + top - rootTop - 86;
         root.scrollTo({ top: desired, behavior: 'auto' });
     }
     JP.navigateToPrompt = navigateToPrompt;
@@ -299,6 +307,8 @@ var JP;
             return { site, turns: [], nativeRailPresent: false };
         const adapter = site === 'chatgpt' ? CHATGPT : GEMINI;
         const seen = new Set();
+        const seenPrompts = new Set();
+        const sameText = new Map();
         const turns = [];
         for (const candidate of Array.from(document.querySelectorAll(adapter.selectors))) {
             const wrapper = adapter.canonical(candidate);
@@ -307,11 +317,31 @@ var JP;
             const prompt = adapter.prompt(candidate, wrapper);
             if (!usable(prompt))
                 continue;
+            // Nested or overlapping wrappers can expose the same user bubble through
+            // multiple selectors. Count the real prompt once, not each React shell.
+            if (seenPrompts.has(prompt))
+                continue;
+            const text = compactText(prompt);
+            const rect = prompt.getBoundingClientRect();
+            // During a React transition, two different shells can briefly paint the
+            // SAME question at the SAME visual coordinates. This is not two turns.
+            // Equal text at distinct positions is NOT de-duplicated.
+            if ((sameText.get(text) || []).some(turn => turn.element && (() => {
+                const old = turn.element.getBoundingClientRect();
+                return Math.abs(old.top - rect.top) < 4 && Math.abs(old.left - rect.left) < 12;
+            })()))
+                continue;
             seen.add(wrapper);
+            seenPrompts.add(prompt);
             const stableId = sourceId(wrapper) || sourceId(candidate) || sourceId(prompt) || undefined;
-            turns.push({ id: stableId || `ordinal:${turns.length}`, order: turns.length,
-                preview: compactText(prompt) || '非文本提问', element: prompt, stableId,
-                scrollHint: conversationScrollHint(prompt) });
+            const turn = { id: stableId || `ordinal:${turns.length}`, order: turns.length,
+                preview: text || '非文本提问', element: prompt, stableId,
+                scrollHint: conversationScrollHint(prompt),
+                scrollExtent: conversationScrollRoot(prompt).scrollHeight };
+            turns.push(turn);
+            if (!sameText.has(text))
+                sameText.set(text, []);
+            sameText.get(text).push(turn);
             if (turns.length >= 1200)
                 break;
         }
@@ -475,58 +505,223 @@ var JP;
 })(JP || (JP = {}));
 var JP;
 (function (JP) {
-    /** Passive, in-memory navigation history. Never scrolls the host page. */
+    /** Ephemeral turn history. Only stable site IDs survive DOM virtualization. */
     class ConversationIndex {
         known = new Map();
         sequence = [];
-        reset() { this.known.clear(); this.sequence = []; }
+        physicalIds = new WeakMap();
+        aliases = new Map();
+        reset() {
+            this.known.clear();
+            this.sequence = [];
+            this.physicalIds = new WeakMap();
+            this.aliases.clear();
+        }
+        resolveId(id) {
+            let current = id;
+            for (let i = 0; i < 8; i++) {
+                const next = this.aliases.get(current);
+                if (!next || next === current)
+                    break;
+                current = next;
+            }
+            return current;
+        }
         combine(snapshot) {
-            // Scan whatever ChatGPT/Gemini actually mounted. A detached prompt must
-            // never be retained as a live Element in our cache.
-            const liveById = new Map(snapshot.turns.map(turn => [turn.id, turn]));
-            const stable = snapshot.turns.filter(turn => !!turn.stableId);
-            const stableIds = stable.map(turn => turn.stableId);
-            for (const turn of stable)
-                this.known.set(turn.stableId, { ...turn, element: null });
-            // Insert newly discovered messages relative to adjacent *overlapping*
-            // stable IDs, so adding older DOM nodes does not scramble known order.
-            // Disjoint virtualized windows use their approximate scroll hints only
-            // as a fallback; their precise global ordinal is not claimed.
-            for (let index = 0; index < stableIds.length; index++) {
-                const id = stableIds[index];
+            const seenStable = new Set();
+            const incomingIds = new Set(snapshot.turns.map(t => t.stableId).filter((id) => !!id));
+            const live = [];
+            for (let incomingIndex = 0; incomingIndex < snapshot.turns.length; incomingIndex++) {
+                const entry = snapshot.turns[incomingIndex];
+                let next = { ...entry };
+                if (next.stableId) {
+                    let id = this.resolveId(next.stableId);
+                    // React may change the data-turn-key while reusing the *same*
+                    // actual user message node. A WeakMap is evidence of identity; the
+                    // same prompt text is NOT (users can ask identical questions twice).
+                    const container = next.element?.closest('article[data-turn], [data-turn-key], [data-turn-id], user-query');
+                    const prior = (next.element ? this.physicalIds.get(next.element) : undefined) ||
+                        (container ? this.physicalIds.get(container) : undefined);
+                    const previous = prior ? this.known.get(prior) : undefined;
+                    // Some virtualizers recycle a physical DOM node for a completely
+                    // different question. Identity continuity also requires its text.
+                    if (prior && prior !== id && previous && previous.preview === next.preview) {
+                        this.aliases.set(id, prior);
+                        id = prior;
+                    }
+                    else if (!this.known.has(id) && next.preview.length >= 8) {
+                        // If React replaces the entire DOM shell while promoting a temp
+                        // ID to a final ID, physical identity is lost. Merge only with
+                        // strong adjacent-turn evidence, identical prompt and close
+                        // measured position. Never merge on prompt text alone.
+                        const priorVisible = snapshot.turns.slice(0, incomingIndex).reverse()
+                            .find(t => t.stableId && this.sequence.includes(this.resolveId(t.stableId)));
+                        const successorVisible = snapshot.turns.slice(incomingIndex + 1)
+                            .find(t => t.stableId && this.sequence.includes(this.resolveId(t.stableId)));
+                        const left = priorVisible?.stableId ? this.resolveId(priorVisible.stableId) : null;
+                        const right = successorVisible?.stableId ? this.resolveId(successorVisible.stableId) : null;
+                        const candidates = this.sequence.filter(oldId => {
+                            const original = this.known.get(oldId);
+                            if (!original || incomingIds.has(oldId))
+                                return false;
+                            if (original.preview !== next.preview || !Number.isFinite(original.scrollHint) ||
+                                !Number.isFinite(next.scrollHint) || Math.abs(original.scrollHint - next.scrollHint) > 36)
+                                return false;
+                            const index = this.sequence.indexOf(oldId);
+                            return (!!left && this.sequence[index - 1] === left) ||
+                                (!!right && this.sequence[index + 1] === right);
+                        });
+                        if (candidates.length === 1) {
+                            this.aliases.set(id, candidates[0]);
+                            id = candidates[0];
+                        }
+                    }
+                    next.stableId = id;
+                    next.id = id;
+                    if (next.element)
+                        this.physicalIds.set(next.element, id);
+                    if (container)
+                        this.physicalIds.set(container, id);
+                    if (seenStable.has(id))
+                        continue;
+                    seenStable.add(id);
+                    // Do not retain detached Elements in the long-lived index.
+                    this.known.set(id, { ...next, element: null });
+                }
+                live.push(next);
+            }
+            // In a virtualized list, two overlapping loaded windows establish a
+            // reliable relative sequence. Disjoint windows can only be estimated.
+            const stableIds = live.filter(t => !!t.stableId).map(t => t.stableId);
+            for (let i = 0; i < stableIds.length; i++) {
+                const id = stableIds[i];
                 if (this.sequence.includes(id))
                     continue;
-                const previous = stableIds.slice(0, index).reverse().find(key => this.sequence.includes(key));
-                const next = stableIds.slice(index + 1).find(key => this.sequence.includes(key));
+                const previous = stableIds.slice(0, i).reverse().find(key => this.sequence.includes(key));
+                const following = stableIds.slice(i + 1).find(key => this.sequence.includes(key));
                 if (previous)
                     this.sequence.splice(this.sequence.indexOf(previous) + 1, 0, id);
-                else if (next)
-                    this.sequence.splice(this.sequence.indexOf(next), 0, id);
+                else if (following)
+                    this.sequence.splice(this.sequence.indexOf(following), 0, id);
                 else {
                     const hint = this.known.get(id)?.scrollHint;
-                    const at = this.sequence.findIndex(key => (this.known.get(key)?.scrollHint ?? Infinity) > (hint ?? Infinity));
-                    this.sequence.splice(at < 0 ? this.sequence.length : at, 0, id);
+                    const insertion = this.sequence.findIndex(key => (this.known.get(key)?.scrollHint ?? Infinity) > (hint ?? Infinity));
+                    this.sequence.splice(insertion < 0 ? this.sequence.length : insertion, 0, id);
                 }
             }
-            const result = [];
-            for (const key of this.sequence) {
-                const current = stable.find(turn => turn.stableId === key);
-                const record = current || this.known.get(key);
-                if (record)
-                    result.push({ ...record, element: current?.element || null });
+            const currentById = new Map(live.filter(t => !!t.stableId).map(t => [t.id, t]));
+            const turns = [];
+            for (const id of this.sequence) {
+                const current = currentById.get(id);
+                const saved = current || this.known.get(id);
+                if (saved)
+                    turns.push({ ...saved, element: current?.element || null });
             }
-            // An unlabeled turn cannot safely persist across virtualized unmounts.
-            // Include it only while in the live DOM, in approximately its position.
-            for (const turn of snapshot.turns.filter(turn => !turn.stableId)) {
-                const at = result.findIndex(existing => (existing.scrollHint ?? Infinity) > (turn.scrollHint ?? Infinity));
-                result.splice(at < 0 ? result.length : at, 0, { ...turn });
+            // A turn without a site ID remains transient. Never persist its DOM
+            // ordinal through virtualized unmounts or merge it with identical text.
+            for (const turn of live.filter(t => !t.stableId)) {
+                const at = turns.findIndex(t => (t.scrollHint ?? Infinity) > (turn.scrollHint ?? Infinity));
+                turns.splice(at < 0 ? turns.length : at, 0, turn);
             }
-            result.forEach((turn, order) => { turn.order = order; });
-            return { ...snapshot, turns: result };
+            turns.forEach((turn, i) => { turn.order = i; });
+            return { ...snapshot, turns };
         }
         discoveredCount() { return this.known.size; }
     }
     JP.ConversationIndex = ConversationIndex;
+})(JP || (JP = {}));
+var JP;
+(function (JP) {
+    async function navigationPause(duration, signal) {
+        if (signal.aborted)
+            return false;
+        return new Promise(resolve => {
+            let completed = false;
+            const done = (valid) => {
+                if (completed)
+                    return;
+                completed = true;
+                clearTimeout(timer);
+                signal.removeEventListener('abort', cancel);
+                resolve(valid);
+            };
+            const cancel = () => done(false);
+            const timer = window.setTimeout(() => done(true), duration);
+            signal.addEventListener('abort', cancel, { once: true });
+            if (signal.aborted)
+                cancel();
+        });
+    }
+    JP.navigationPause = navigationPause;
+    /** Navigation by verified identity, *not* by stale document coordinates.
+     *  Read-only until explicitly invoked by a user's click. Bounded traversal;
+     *  no internal ChatGPT APIs, no background scanning, no persistent transcript. */
+    async function recoverConversationTurn(search) {
+        const { root, signal, targetId, getTurns } = search;
+        const find = () => getTurns().find(t => t.id === targetId && !!t.element?.isConnected && t.element.getClientRects().length > 0);
+        const found = find();
+        if (found)
+            return found;
+        if (signal.aborted)
+            return null;
+        // Hint only when the virtual scroll extent has not changed significantly.
+        // A browser may virtualize a stable-height region, where this fast path
+        // avoids walking dozens of screens.
+        if (Number.isFinite(search.hint) && Number.isFinite(search.hintExtent) &&
+            Math.abs(root.scrollHeight - search.hintExtent) / Math.max(1, search.hintExtent) < .22) {
+            root.scrollTo({ top: search.hint, behavior: 'auto' });
+            if (!await navigationPause(260, signal))
+                return null;
+            const hit = find();
+            if (hit)
+                return hit;
+        }
+        let stationary = 0;
+        let previousWindow = '';
+        const deadline = Date.now() + 18000;
+        for (let step = 0; step < (search.maxSteps ?? 95) && Date.now() < deadline; step++) {
+            if (signal.aborted)
+                return null;
+            const turns = getTurns();
+            const hit = turns.find(t => t.id === targetId && !!t.element?.isConnected);
+            if (hit)
+                return hit;
+            const live = turns.filter(t => t.element?.isConnected).sort((a, b) => a.order - b.order);
+            if (!live.length)
+                break;
+            const target = turns.find(t => t.id === targetId);
+            if (!target)
+                break;
+            const closest = live.reduce((best, t) => Math.abs(t.order - target.order) < Math.abs(best.order - target.order) ? t : best, live[0]);
+            let direction = target.order < closest.order ? -1 : 1;
+            if (live.length >= 2 && live[0].element && live[live.length - 1].element &&
+                live[0].element.getBoundingClientRect().top > live[live.length - 1].element.getBoundingClientRect().top) {
+                direction *= -1; // reversed visual order
+            }
+            const height = Math.max(180, root.clientHeight || innerHeight);
+            const amount = direction * height * .77;
+            const before = root.scrollTop;
+            root.scrollTo({ top: before + amount, behavior: 'auto' });
+            if (!await navigationPause(stationary > 1 ? 420 : 190, signal))
+                return null;
+            const arrived = find();
+            if (arrived)
+                return arrived;
+            const windowIds = getTurns().filter(t => t.element?.isConnected).map(t => t.id).join('|');
+            if (Math.abs(root.scrollTop - before) < 2 && windowIds === previousWindow) {
+                stationary++;
+            }
+            else
+                stationary = 0;
+            previousWindow = windowIds;
+            if (stationary >= 8)
+                break; // exhausted loading boundary, including slow lazy loads
+        }
+        // On failure, the caller decides whether restoring the original reading
+        // position is still appropriate (a user cancellation must never rewind).
+        return null;
+    }
+    JP.recoverConversationTurn = recoverConversationTurn;
 })(JP || (JP = {}));
 var JP;
 (function (JP) {
@@ -911,6 +1106,10 @@ var JP;
         railGroups = [];
         railLayoutBase = null;
         railLayoutHeight = 0;
+        railSignature = '';
+        navController = null;
+        navGeneration = 0;
+        navigationBusy = false;
         activeTurnId = null;
         refreshTimer = 0;
         scrollScheduled = false;
@@ -993,7 +1192,7 @@ var JP;
         <aside id="jp-list" class="list" aria-label="本页便签列表" hidden></aside>
         <div id="jp-markers"></div>
         <div id="jp-cards"></div>
-        <div id="jp-toast" class="toast" role="status" aria-live="polite" hidden><span id="jp-toast-text"></span><button id="jp-undo" type="button" hidden>撤销</button></div>`;
+        <div id="jp-toast" class="toast" role="status" aria-live="polite" hidden><span id="jp-toast-text"></span><button id="jp-cancel-nav" type="button" hidden>取消</button><button id="jp-undo" type="button" hidden>撤销</button></div>`;
             (document.body || document.documentElement).appendChild(this.host);
         }
         $(selector) {
@@ -1013,6 +1212,30 @@ var JP;
                 this.renderList();
             });
             this.$('#jp-undo').addEventListener('click', () => void this.undoLastAction());
+            this.$('#jp-cancel-nav').addEventListener('click', () => this.cancelNavigation(true));
+            // Only *user input* interrupts a targeted history navigation. Scroll
+            // events fired by the extension's own scrollTo() are not user input.
+            const userInterrupt = () => { if (this.navigationBusy)
+                this.cancelNavigation(false); };
+            window.addEventListener('wheel', userInterrupt, { capture: true, passive: true });
+            window.addEventListener('touchstart', userInterrupt, { capture: true, passive: true });
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden)
+                    userInterrupt();
+            });
+            document.addEventListener('pointerdown', event => {
+                if (!this.navigationBusy)
+                    return;
+                const path = event.composedPath();
+                if (path.includes(this.$('#jp-rail')) ||
+                    path.includes(this.$('#jp-cancel-nav')))
+                    return;
+                userInterrupt();
+            }, true);
+            window.addEventListener('keydown', event => {
+                if (['PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown', ' '].includes(event.key))
+                    userInterrupt();
+            }, true);
             this.$('#jp-loose-toggle').addEventListener('click', () => {
                 this.listOpen = true;
                 this.renderList();
@@ -1144,7 +1367,9 @@ var JP;
                 return;
             for (const id of this.openIds)
                 void this.saveNow(id);
+            this.cancelNavigation(false);
             this.page = next;
+            this.railSignature = '';
             this.pendingRange = null;
             this.$('#jp-bubble').hidden = true;
             if (this.unpinUndo)
@@ -1244,7 +1469,7 @@ var JP;
             const linked = anchor && sourceRange ? JP.turnForRange(sourceRange, this.conversation.turns.filter(t => t.element?.isConnected)) : null;
             const note = {
                 schemaVersion: 1, id: id(), pageKey: this.page, sourceUrl: location.href,
-                sourceTitle: document.title, anchor, text: '',
+                sourceTitle: document.title, anchor, conversationTurnId: linked?.stableId, text: '',
                 appearance: { color: this.pickDefaultColor(), width: 256, height: 202, offsetX: 0, offsetY: 0 },
                 createdAt: now, updatedAt: now, revision: 0
             };
@@ -1284,9 +1509,14 @@ var JP;
                 return;
             this.index = JP.buildTextIndex();
             this.matches.clear();
+            const live = this.conversation.turns.filter(t => t.element?.isConnected);
             for (const note of this.notes)
                 if (note.anchor) {
-                    const match = JP.resolveAnchor(note.anchor, this.index);
+                    const expected = note.conversationTurnId && JP.conversationSite() ?
+                        this.conversationIndex.resolveId(note.conversationTurnId) : null;
+                    // Never reattach a lost quote to an identical phrase in another Q/A.
+                    const filter = expected ? (range) => JP.turnForRange(range, live)?.id === expected : undefined;
+                    const match = JP.resolveAnchor(note.anchor, this.index, filter);
                     if (match)
                         this.matches.set(note.id, match);
                 }
@@ -1337,7 +1567,6 @@ var JP;
             const activeSource = this.conversation.turns.find(t => t.element?.isConnected)?.element;
             if (activeSource)
                 this.conversationScrollRootRef = JP.conversationScrollRoot(activeSource);
-            this.hideTurnPreview();
             this.associateNotesToTurns();
             this.renderDock();
             this.schedulePosition();
@@ -1356,45 +1585,125 @@ var JP;
             preview.style.top = `${clamp(rect.top - 13, 8, innerHeight - 96)}px`;
             preview.hidden = false;
         }
+        cancelNavigation(explicit) {
+            if (this.navController)
+                this.navController.abort();
+            this.navController = null;
+            this.navigationBusy = false;
+            this.navGeneration++;
+            if (this.shadow?.querySelector('#jp-cancel-nav')) {
+                this.$('#jp-cancel-nav').hidden = true;
+                if (explicit)
+                    this.toast('已停止定位');
+                else if (this.$('#jp-toast-text').textContent === '正在定位…')
+                    this.hideToast();
+            }
+        }
+        beginNavigation() {
+            this.cancelNavigation(false);
+            const controller = new AbortController();
+            this.navController = controller;
+            this.navigationBusy = true;
+            const generation = this.navGeneration;
+            clearTimeout(this.toastTimer);
+            this.$('#jp-toast').hidden = false;
+            this.$('#jp-toast-text').textContent = '正在定位…';
+            this.$('#jp-undo').hidden = true;
+            this.$('#jp-cancel-nav').hidden = false;
+            return { controller, generation, page: this.page };
+        }
+        finishNavigation(job, message) {
+            if (this.navController !== job.controller || this.navGeneration !== job.generation)
+                return;
+            this.navController = null;
+            this.navigationBusy = false;
+            this.$('#jp-cancel-nav').hidden = true;
+            if (message)
+                this.toast(message);
+            else
+                this.hideToast();
+            this.refreshConversation();
+        }
+        scanLiveTurns() {
+            // This method never calls a private API and never moves the page on its
+            // own. During navigation, newly mounted DOM joins the passive index but
+            // the rail is not rebuilt until the operation completes.
+            const snapshot = this.conversationIndex.combine(JP.collectConversation());
+            this.conversation = snapshot;
+            return snapshot.turns;
+        }
+        findLiveTurn(id) {
+            const key = this.conversationIndex.resolveId(id);
+            return this.scanLiveTurns().find(t => t.id === key && !!t.element?.isConnected) || null;
+        }
+        navigationRoot() {
+            const source = this.conversation.turns.find(t => t.element?.isConnected)?.element;
+            return source ? JP.conversationScrollRoot(source) :
+                (this.conversationScrollRootRef?.isConnected ? this.conversationScrollRootRef : document.scrollingElement);
+        }
+        restoreAfterFailedSearch(root, original, extent, reading, readingTop) {
+            if (reading?.isConnected) {
+                const now = reading.getBoundingClientRect().top;
+                root.scrollTo({ top: root.scrollTop + now - readingTop, behavior: 'auto' });
+            }
+            else if (Math.abs(root.scrollHeight - extent) / Math.max(1, extent) < .23) {
+                root.scrollTo({ top: original, behavior: 'auto' });
+            }
+        }
+        /** The target must be verified by stable logical turn ID after mounting. */
+        async locateTurn(id, controller) {
+            const key = this.conversationIndex.resolveId(id);
+            const direct = this.findLiveTurn(key);
+            if (direct)
+                return direct;
+            const record = this.conversation.turns.find(t => t.id === key);
+            const root = this.navigationRoot();
+            if (!root || !record || !record.stableId)
+                return null;
+            return JP.recoverConversationTurn({ root, targetId: key, signal: controller.signal,
+                hint: record.scrollHint, hintExtent: record.scrollExtent,
+                getTurns: () => this.scanLiveTurns() });
+        }
         async jumpToTurn(turn) {
             this.hideTurnPreview();
-            // Always re-resolve the current prompt before navigating: a stale React
-            // wrapper or cached element may have been recycled by the host app.
-            const live = JP.collectConversation().turns.find(t => t.id === turn.id);
-            if (live?.element) {
-                JP.navigateToPrompt(live.element);
-                this.activeTurnId = turn.id;
-                this.schedulePosition();
+            const targetId = this.conversationIndex.resolveId(turn.id);
+            if (!turn.stableId) {
+                const current = this.conversation.turns.find(t => t.id === targetId && t.element?.isConnected);
+                if (current?.element)
+                    JP.navigateToPrompt(current.element);
+                else
+                    this.toast('这一轮尚未加载');
                 return;
             }
-            if (!turn.stableId || !Number.isFinite(turn.scrollHint)) {
-                this.toast('该轮原文尚未加载，继续滚动网页后重试');
-                return;
-            }
-            const source = this.conversation.turns.find(t => t.element?.isConnected)?.element;
-            const root = source ? JP.conversationScrollRoot(source) :
-                (this.conversationScrollRootRef?.isConnected ? this.conversationScrollRootRef : document.scrollingElement);
-            if (!root) {
-                this.toast('无法确定会话滚动区域');
-                return;
-            }
-            const hint = turn.scrollHint;
-            const directions = [0, -0.7, 0.7, -1.4, 1.4];
-            for (const delta of directions) {
-                root.scrollTo({ top: Math.max(0, hint + delta * root.clientHeight), behavior: 'auto' });
-                await new Promise(resolve => window.setTimeout(resolve, 180));
-                if (!this.visible || !this.conversationNavigation)
+            const root = this.navigationRoot();
+            const start = root?.scrollTop ?? 0, extent = root?.scrollHeight ?? 0;
+            const original = this.conversation.turns.filter(t => t.element?.isConnected)
+                .sort((a, b) => Math.abs((a.element?.getBoundingClientRect().top || 0) - 130) -
+                Math.abs((b.element?.getBoundingClientRect().top || 0) - 130))[0]?.element || null;
+            const top = original?.getBoundingClientRect().top ?? 0;
+            const job = this.beginNavigation();
+            let reached = false;
+            try {
+                const found = await this.locateTurn(targetId, job.controller);
+                if (!found?.element || job.controller.signal.aborted || job.page !== this.page)
                     return;
-                const match = JP.collectConversation().turns.find(t => t.id === turn.id);
-                if (match?.element) {
-                    JP.navigateToPrompt(match.element);
-                    this.refreshConversation();
-                    this.schedulePosition();
-                    return;
+                JP.navigateToPrompt(found.element);
+                // The prompt can unmount immediately after the first scroll. Validate
+                // the identity and visible position, not only a completed scrollTo().
+                await JP.navigationPause(110, job.controller.signal);
+                const verified = this.findLiveTurn(targetId);
+                const bounding = verified?.element?.getBoundingClientRect();
+                const rootBox = verified?.element ? JP.conversationScrollRoot(verified.element).getBoundingClientRect() : null;
+                const topBound = root === document.scrollingElement ? 0 : (rootBox?.top ?? 0);
+                reached = !!bounding && bounding.bottom >= topBound && bounding.top < topBound + (root?.clientHeight || innerHeight);
+            }
+            finally {
+                if (this.navController === job.controller && !job.controller.signal.aborted) {
+                    if (!reached && root)
+                        this.restoreAfterFailedSearch(root, start, extent, original, top);
+                    this.finishNavigation(job, reached ? undefined : '暂时无法定位这一轮');
                 }
             }
-            this.toast('这一轮未能重新加载，已停止跳转；可手动滚动到附近再试');
-            this.refreshConversation();
         }
         updateActiveTurn() {
             if (!this.conversationNavigation || this.conversation.nativeRailPresent)
@@ -1529,10 +1838,6 @@ var JP;
             toggle.textContent = showTurns ? '≡' : String(this.notes.length);
             toggle.title = showTurns ? `已发现 ${turns.length} 轮 · ${this.notes.length} 张便签` : `本页 ${this.notes.length} 张便签`;
             const track = this.$('#jp-rail-track');
-            this.hideTurnPreview();
-            track.replaceChildren();
-            this.railGroups = [];
-            this.railLayoutBase = null;
             const live = turns.filter(turn => turn.element?.isConnected);
             const byTurn = new Map();
             const unassigned = [];
@@ -1550,6 +1855,29 @@ var JP;
                 else
                     unassigned.push(note);
             }
+            // The streaming assistant can mutate hundreds of text nodes without
+            // adding a single question. Do not destroy/recreate the entire rail for
+            // each MutationObserver callback: it causes focus loss and visible jitter.
+            const signature = JSON.stringify({ page: this.page, showTurns,
+                native: this.conversation.nativeRailPresent,
+                turnIds: showTurns ? turns.map(t => t.id) : [],
+                notes: this.notes.map(n => [n.id, !!n.anchor, JP.appearance(n).color, n.conversationTurnId]),
+                groups: [...byTurn].map(([id, ns]) => [id, ns.map(n => n.id)]),
+                trackHeight: track.clientHeight });
+            if (this.navigationBusy && this.railSignature) {
+                // In-flight navigation owns the scroll; defer structural repaint.
+                this.syncRailMetadata();
+                return;
+            }
+            if (signature === this.railSignature) {
+                this.syncRailMetadata();
+                return;
+            }
+            this.railSignature = signature;
+            this.hideTurnPreview();
+            track.replaceChildren();
+            this.railGroups = [];
+            this.railLayoutBase = null;
             if (showTurns) {
                 for (const turn of turns) {
                     const notes = (byTurn.get(turn.id) || []).sort((a, b) => (a.spatial?.withinTurnProgress ?? 1) - (b.spatial?.withinTurnProgress ?? 1) || a.createdAt - b.createdAt);
@@ -1561,10 +1889,10 @@ var JP;
                     bar.dataset.turnId = turn.id;
                     bar.dataset.railKey = `turn:${turn.id}`;
                     bar.setAttribute('aria-label', `第 ${turn.order + 1} 轮：${turn.preview}`);
-                    bar.addEventListener('click', () => void this.jumpToTurn(turn));
-                    bar.addEventListener('pointerenter', () => this.showTurnPreview(turn, bar));
+                    bar.addEventListener('click', () => void this.jumpToTurn(this.conversation.turns.find(t => t.id === turn.id) || turn));
+                    bar.addEventListener('pointerenter', () => this.showTurnPreview(this.conversation.turns.find(t => t.id === turn.id) || turn, bar));
                     bar.addEventListener('pointerleave', () => this.hideTurnPreview());
-                    bar.addEventListener('focus', () => this.showTurnPreview(turn, bar));
+                    bar.addEventListener('focus', () => this.showTurnPreview(this.conversation.turns.find(t => t.id === turn.id) || turn, bar));
                     bar.addEventListener('blur', () => this.hideTurnPreview());
                     track.appendChild(bar);
                     for (const note of notes)
@@ -1594,6 +1922,38 @@ var JP;
             this.activeTurnId = null;
             this.updateActiveTurn();
             this.renderList();
+        }
+        syncRailMetadata() {
+            for (const button of this.shadow.querySelectorAll('.rail-turn')) {
+                const turn = this.conversation.turns.find(t => t.id === button.dataset.turnId);
+                if (turn)
+                    button.setAttribute('aria-label', `第 ${turn.order + 1} 轮：${turn.preview}`);
+            }
+            for (const button of this.shadow.querySelectorAll('.rail-pin')) {
+                const note = this.notes.find(n => n.id === button.dataset.noteId);
+                if (!note)
+                    continue;
+                button.classList.toggle('missing', !!note.anchor && !this.liveMatch(note));
+                const description = note.text.trim().slice(0, 90) || note.anchor?.exact.slice(0, 70) || '空白便签';
+                button.setAttribute('aria-label', `跳转便签：${description}`);
+            }
+            this.updateActiveTurn();
+            // Unlike the tiny rail, an open navigation list contains user-visible
+            // text. Update its labels in-place instead of replacing focused buttons.
+            if (this.listOpen) {
+                for (const entry of this.shadow.querySelectorAll('.turn-entry[data-turn-id]')) {
+                    const turn = this.conversation.turns.find(t => t.id === entry.dataset.turnId);
+                    const label = entry.querySelector('span:last-child');
+                    if (turn && label)
+                        label.textContent = turn.preview;
+                }
+                for (const entry of this.shadow.querySelectorAll('.note-entry[data-note-id]')) {
+                    const note = this.notes.find(n => n.id === entry.dataset.noteId);
+                    const label = entry.querySelector('.note-name');
+                    if (note && label)
+                        label.textContent = note.text.trim().split('\n')[0] || note.anchor?.exact.slice(0, 65) || '空白便签';
+                }
+            }
         }
         addRailNote(track, note) {
             const button = el('button', `rail-pin${note.anchor && !this.liveMatch(note) ? ' missing' : ''}`);
@@ -1661,12 +2021,13 @@ var JP;
                 for (const turn of turns) {
                     const button = el('button', 'entry turn-entry');
                     button.type = 'button';
+                    button.dataset.turnId = turn.id;
                     const number = el('span', 'turn-order');
                     number.textContent = String(turn.order + 1);
                     const label = el('span');
                     label.textContent = turn.preview;
                     button.append(number, label);
-                    button.addEventListener('click', () => { this.listOpen = false; this.renderList(); void this.jumpToTurn(turn); });
+                    button.addEventListener('click', () => { this.listOpen = false; this.renderList(); void this.jumpToTurn(this.conversation.turns.find(t => t.id === turn.id) || turn); });
                     list.appendChild(button);
                     for (const note of this.sortedNotes()) {
                         if (!note.anchor)
@@ -1695,6 +2056,7 @@ var JP;
         addListNote(list, note, nested) {
             const button = el('button', `entry note-entry${nested ? ' nested' : ''}`);
             button.type = 'button';
+            button.dataset.noteId = note.id;
             const dot = el('span', 'dot');
             dot.style.background = COLOR_HEX[JP.appearance(note).color];
             const label = el('span', 'note-name');
@@ -1753,7 +2115,7 @@ var JP;
             if (!match)
                 return null;
             const { range } = match;
-            if (!range.startContainer.isConnected || !range.endContainer.isConnected)
+            if (!range.startContainer.isConnected || !range.endContainer.isConnected || range.toString() !== note.anchor.exact)
                 return null;
             // Fast identity check for the common case: the whole quote is in one
             // text node. React sometimes rewrites an existing Text node in place.
@@ -1777,23 +2139,148 @@ var JP;
                 marker.style.top = `${clamp(rect.top, 5, innerHeight - 24)}px`;
             }
         }
+        trustedNoteMatch(note, index) {
+            if (!note.anchor)
+                return null;
+            const turns = this.conversation.turns.filter(t => t.element?.isConnected);
+            const targetId = note.conversationTurnId ?
+                this.conversationIndex.resolveId(note.conversationTurnId) : null;
+            // Do not interpret a matching sentence in ANOTHER round as success.
+            if (targetId && JP.conversationSite()) {
+                if (!turns.some(t => t.id === targetId))
+                    return null;
+                const accept = (range) => JP.turnForRange(range, turns)?.id === targetId;
+                const cached = this.liveMatch(note);
+                if (cached && accept(cached.range))
+                    return cached;
+                return JP.resolveAnchor(note.anchor, index || JP.buildTextIndex(), accept);
+            }
+            return this.liveMatch(note) || JP.resolveAnchor(note.anchor, index || JP.buildTextIndex());
+        }
+        navigateToNoteRange(match) {
+            const node = match.range.startContainer;
+            const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+            if (!element?.isConnected)
+                return false;
+            const root = JP.conversationScrollRoot(element);
+            const rect = match.range.getBoundingClientRect();
+            const rootTop = root === document.scrollingElement ? 0 : root.getBoundingClientRect().top;
+            root.scrollTo({ top: root.scrollTop + rect.top - rootTop - 140, behavior: 'auto' });
+            this.schedulePosition();
+            return true;
+        }
+        /** Restore an anchored note in two phases: (1) its known question; (2)
+         *  the EXACT quotation within that round. Never jump to a similar phrase
+         *  in a different conversation turn. */
+        async recoverNote(noteId, show) {
+            const note = this.notes.find(n => n.id === noteId);
+            if (!note?.anchor)
+                return;
+            this.hideTurnPreview();
+            const job = this.beginNavigation();
+            const root = this.navigationRoot();
+            const start = root?.scrollTop ?? 0, extent = root?.scrollHeight ?? 0;
+            const reading = this.conversation.turns.find(t => t.element?.isConnected)?.element || null;
+            const oldTop = reading?.getBoundingClientRect().top ?? 0;
+            let outcome = 'failed';
+            try {
+                let matched = this.trustedNoteMatch(note);
+                if (!matched && note.conversationTurnId) {
+                    const turn = await this.locateTurn(note.conversationTurnId, job.controller);
+                    if (!turn?.element || job.controller.signal.aborted)
+                        return;
+                    this.scanLiveTurns();
+                    // A virtualized answer may load only after its prompt is approached.
+                    JP.navigateToPrompt(turn.element);
+                    const progress = note.spatial?.withinTurnProgress;
+                    const rootForTurn = JP.conversationScrollRoot(turn.element);
+                    const next = this.conversation.turns[turn.order + 1];
+                    if (progress !== undefined && next?.element?.isConnected) {
+                        const currentY = JP.conversationScrollHint(turn.element);
+                        const nextY = JP.conversationScrollHint(next.element);
+                        if (nextY > currentY)
+                            rootForTurn.scrollTo({ top: currentY + progress * (nextY - currentY) - 125, behavior: 'auto' });
+                    }
+                    // Verify on each step. Never accept a global text match outside
+                    // the saved logical round, even if it has identical wording.
+                    for (let i = 0; i < 17 && !job.controller.signal.aborted; i++) {
+                        await JP.navigationPause(i === 0 ? 190 : 150, job.controller.signal);
+                        this.scanLiveTurns();
+                        matched = this.trustedNoteMatch(note);
+                        if (matched)
+                            break;
+                        const active = this.conversation.turns.find(t => t.id === this.conversationIndex.resolveId(note.conversationTurnId));
+                        if (!active?.element?.isConnected)
+                            break;
+                        const amount = Math.max(100, (rootForTurn.clientHeight || innerHeight) * .53);
+                        rootForTurn.scrollTo({ top: rootForTurn.scrollTop + amount, behavior: 'auto' });
+                    }
+                    if (!matched)
+                        outcome = 'partial';
+                }
+                if (matched && !job.controller.signal.aborted) {
+                    // Scrolling may recycle the original Text node immediately. Rebuild
+                    // a verified Range AFTER movement before claiming arrival.
+                    for (let verify = 0; verify < 3 && !job.controller.signal.aborted; verify++) {
+                        if (!this.navigateToNoteRange(matched))
+                            break;
+                        if (!await JP.navigationPause(130, job.controller.signal))
+                            break;
+                        this.scanLiveTurns();
+                        matched = this.trustedNoteMatch(note, JP.buildTextIndex());
+                        if (!matched)
+                            break;
+                        const rangeBox = matched.range.getBoundingClientRect();
+                        const node = matched.range.startContainer;
+                        const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+                        const parent = element ? JP.conversationScrollRoot(element) : null;
+                        const viewport = parent === document.scrollingElement ?
+                            { top: 0, bottom: innerHeight } : parent?.getBoundingClientRect();
+                        if (viewport && rangeBox.bottom > viewport.top && rangeBox.top < viewport.bottom) {
+                            outcome = 'arrived';
+                            this.matches.set(note.id, matched);
+                            break;
+                        }
+                    }
+                    if (outcome === 'arrived' && show)
+                        this.showCard(note.id);
+                }
+            }
+            finally {
+                if (this.navController === job.controller && !job.controller.signal.aborted) {
+                    if (outcome === 'failed' && root)
+                        this.restoreAfterFailedSearch(root, start, extent, reading, oldTop);
+                    this.finishNavigation(job, outcome === 'arrived' ? undefined :
+                        outcome === 'partial' ? '已到达所属对话，但尚未找到这段原文' : '暂时无法定位原文');
+                    if (outcome === 'failed' && show)
+                        this.showCard(note.id, false, true);
+                }
+            }
+        }
         goTo(noteId, show = true) {
             const note = this.notes.find(n => n.id === noteId);
             if (!note)
                 return;
-            const match = this.liveMatch(note);
-            if (match) {
-                const node = match.range.startContainer;
-                const target = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
-                target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                this.schedulePosition();
+            if (!note.anchor) {
+                if (show)
+                    this.showCard(noteId);
+                return;
             }
-            else if (note.anchor)
-                this.toast('原文暂时未找到，便签仍已保存');
-            // An explicit Dock/list click is allowed to open an orphaned note for
-            // editing. Passive DOM mutations and scrolls are NEVER allowed to do so.
+            const match = this.trustedNoteMatch(note);
+            if (match) {
+                this.cancelNavigation(false);
+                this.navigateToNoteRange(match);
+                if (show)
+                    this.showCard(note.id);
+                return;
+            }
+            if (note.conversationTurnId) {
+                void this.recoverNote(noteId, show);
+                return;
+            }
+            this.toast('原文尚未加载，可从导航列表找回便签');
             if (show)
-                this.showCard(noteId, false, !!note.anchor && !match);
+                this.showCard(note.id, false, true);
         }
         showCard(noteId, focus = false, openDetached = false) {
             const note = this.notes.find(n => n.id === noteId);
@@ -2344,6 +2831,7 @@ var JP;
         hideToast() { this.$('#jp-toast').hidden = true; }
         toast(message, undo = false, duration = 3000) {
             clearTimeout(this.toastTimer);
+            this.$('#jp-cancel-nav').hidden = true;
             const toast = this.$('#jp-toast');
             this.$('#jp-toast-text').textContent = message;
             this.$('#jp-undo').hidden = !undo;

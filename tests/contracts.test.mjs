@@ -113,7 +113,7 @@ test('v0.1.13 has headerless preview and direct click on both note and question'
   const app=readFileSync('src/content/app.ts','utf8');
   const css=readFileSync('src/content/paper-styles.ts','utf8');
   assert.ok(!/fisheyePositions|fisheyeCoordinate|resetRailFisheye/.test(app));
-  assert.ok(app.includes("bar.addEventListener('click',()=>void this.jumpToTurn(turn))"));
+  assert.ok(app.includes("bar.addEventListener('click',()=>void this.jumpToTurn("));
   assert.ok(app.includes("button.addEventListener('click',()=>this.goTo(note.id))"));
   assert.ok(app.includes("preview.textContent=content"));
   assert.ok(!app.includes('已发现第 ${turn.order + 1} /'));
@@ -146,4 +146,27 @@ test('v0.1.14 branding assets and color preferences are complete', () => {
   assert.ok(app.includes('this.pickDefaultColor()'));
   assert.ok(app.includes('COLOR_ORDER.filter(color => color !== this.lastAutoColor)'));
   assert.equal(manifest.host_permissions, undefined);
+});
+
+
+test('v0.1.14 navigation bugfix keeps stable bars and bounded user-initiated recovery',()=>{
+  const app=readFileSync('src/content/app.ts','utf8');
+  const recovery=readFileSync('src/content/navigation-recovery.ts','utf8');
+  const index=readFileSync('src/content/conversation-index.ts','utf8');
+  assert.equal(manifest.version,'0.1.14');
+  for(const name of ['navController','navigationBusy','railSignature','recoverNote','locateTurn','trustedNoteMatch',
+                     'jp-cancel-nav','syncRailMetadata'])assert.ok(app.includes(name),name);
+  for(const name of ['AbortSignal','maxSteps','deadline','navigationPause','targetId'])assert.ok(recovery.includes(name),name);
+  assert.ok(index.includes('WeakMap<Element, string>'));
+  assert.ok(!app.includes('const directions = [0, -0.7, 0.7, -1.4, 1.4]'));
+  assert.ok(!recovery.includes('Math.max(0, root.scrollTop'));
+});
+
+test('v0.1.14 note recovery filters matches to the recorded conversation round',()=>{
+  const anchor=readFileSync('src/content/anchor.ts','utf8');
+  const app=readFileSync('src/content/app.ts','utf8');
+  assert.match(anchor,/allowedRange\?: \(range: Range\)=>boolean/);
+  assert.ok(app.includes('turnForRange(range,turns)?.id===targetId'));
+  assert.ok(app.includes('conversationTurnId:linked?.stableId'));
+  assert.ok(app.includes("if(document.hidden)userInterrupt()"));
 });
