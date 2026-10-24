@@ -3,6 +3,7 @@ namespace JP {
   const PREFERENCES_KEY = 'jotpatch:preferences:v1';
   const COLORS: readonly NoteColor[] = ['yellow', 'pink', 'green', 'blue', 'purple', 'gray'];
   const DEFAULTS: NoteAppearance = { color: 'yellow', fontSize: 'md', width: 256, height: 202, offsetX: 0, offsetY: 0 };
+  const DEFAULT_COLOR_MODE: DefaultNoteColorMode = 'yellow';
 
   export function appearance(note: Note): NoteAppearance {
     const style = note.appearance || {};
@@ -62,7 +63,8 @@ namespace JP {
       const prefs = saved && typeof saved === 'object' ? saved as Partial<Preferences> : {};
       return {
         selectionTrigger: prefs.selectionTrigger === 'alt' || prefs.selectionTrigger === 'off' ? prefs.selectionTrigger : 'always',
-        conversationNavigation: prefs.conversationNavigation !== false
+        conversationNavigation: prefs.conversationNavigation !== false,
+        defaultNoteColorMode: prefs.defaultNoteColorMode === 'random' ? 'random' : DEFAULT_COLOR_MODE
       };
     }
 

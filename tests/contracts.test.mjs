@@ -71,7 +71,7 @@ test('stage 1.8 WYSIWYG editor and passive navigation stay local-first', () => {
 
 
 test('0.1.7 rejects missing or stale anchored ranges before showing papers', () => {
-  assert.equal(manifest.version, '0.1.13');
+  assert.equal(manifest.version, '0.1.14');
   const app = readFileSync('src/content/app.ts', 'utf8');
   assert.ok(app.includes('private liveMatch(note:Note):Match|null'));
   assert.ok(app.includes('if(!match||!rect)'));
@@ -118,5 +118,32 @@ test('v0.1.13 has headerless preview and direct click on both note and question'
   assert.ok(app.includes("preview.textContent=content"));
   assert.ok(!app.includes('已发现第 ${turn.order + 1} /'));
   assert.ok(!css.includes('transition:top'));
-  assert.equal(manifest.version,'0.1.13');
+  assert.equal(manifest.version,'0.1.14');
+});
+
+
+test('v0.1.14 branding assets and color preferences are complete', () => {
+  assert.equal(manifest.version, '0.1.14');
+  assert.equal(manifest.description, 'JotPatch · 随地大小贴。');
+  for (const size of [16, 32, 48, 128]) {
+    const filename = `icons/icon${size}.png`;
+    assert.equal(manifest.icons[String(size)], filename);
+    const png = readFileSync(filename);
+    assert.ok(png.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])));
+    assert.equal(png.readUInt32BE(16), size);
+    assert.equal(png.readUInt32BE(20), size);
+  }
+  assert.equal(manifest.action.default_icon['16'], 'icons/icon16.png');
+  const options = readFileSync('options.html', 'utf8');
+  const js = readFileSync('options.js', 'utf8');
+  const app = readFileSync('src/content/app.ts', 'utf8');
+  const repo = readFileSync('src/content/repository.ts', 'utf8');
+  assert.ok(options.includes('随地大小贴') && options.includes('Powered by Housz'));
+  assert.ok(!app.includes('按对话顺序排列 · 不自动滚动扫描历史'));
+  assert.match(options, /name="defaultNoteColorMode" value="random"/);
+  assert.ok(js.includes('updatePreferences({ defaultNoteColorMode: radio.value })'));
+  assert.ok(repo.includes("prefs.defaultNoteColorMode === 'random'"));
+  assert.ok(app.includes('this.pickDefaultColor()'));
+  assert.ok(app.includes('COLOR_ORDER.filter(color => color !== this.lastAutoColor)'));
+  assert.equal(manifest.host_permissions, undefined);
 });
