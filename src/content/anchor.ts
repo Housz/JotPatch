@@ -99,7 +99,8 @@ namespace JP {
   }
 
   /** Prefer verified quote + context; never trust the old character offset alone. */
-  export function resolveAnchor(anchor: TextAnchor, index: TextIndex): Match | null {
+  export function resolveAnchor(anchor: TextAnchor, index: TextIndex,
+    allowedRange?: (range: Range)=>boolean): Match | null {
     if (!anchor.exact || anchor.exact.length > MAX_QUOTE) return null;
     const candidates: Array<{ start: number; score: number; context: number }> = [];
     let from = 0;
@@ -112,6 +113,10 @@ namespace JP {
       const after = index.text.slice(end, end + anchor.suffix.length);
       const context = commonSuffix(before, anchor.prefix) + commonPrefix(after, anchor.suffix);
       const distance = Math.abs(start - anchor.start);
+      if(allowedRange){
+        const probe=makeRange(index,start,end);
+        if(!probe || !allowedRange(probe)){from=start+1;continue;}
+      }
       candidates.push({ start, context, score: context * 4 - Math.min(12, distance / 1000) });
       from = start + 1;
     }

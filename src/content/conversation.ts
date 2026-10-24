@@ -11,6 +11,8 @@ namespace JP {
     stableId?: string;
     /** Approximate document scroll position captured while mounted, not a guaranteed locator. */
     scrollHint?: number;
+    /** Scroll span when the hint was captured; prevents using stale coordinates. */
+    scrollExtent?: number;
   }
   export interface ConversationSnapshot {
     site: ConversationSite | null;
@@ -103,7 +105,8 @@ namespace JP {
     const top = element.getBoundingClientRect().top;
     const rootTop = root === document.scrollingElement ? 0 : root.getBoundingClientRect().top;
     // Align the precise user message bubble near the TOP, not the answer midpoint.
-    const desired = Math.max(0, root.scrollTop + top - rootTop - 86);
+    // Negative scrollTop is valid for reverse-direction scroll containers.
+    const desired = root.scrollTop + top - rootTop - 86;
     root.scrollTo({ top: desired, behavior: 'auto' });
   }
 
@@ -112,17 +115,35 @@ namespace JP {
     if (!site || !document.body) return { site, turns: [], nativeRailPresent: false };
     const adapter = site === 'chatgpt' ? CHATGPT : GEMINI;
     const seen = new Set<Element>();
+    const seenPrompts = new Set<Element>();
+    const sameText = new Map<string, ConversationTurn[]>();
     const turns: ConversationTurn[] = [];
     for (const candidate of Array.from(document.querySelectorAll(adapter.selectors))) {
       const wrapper = adapter.canonical(candidate);
       if (seen.has(wrapper)) continue;
       const prompt = adapter.prompt(candidate, wrapper);
       if (!usable(prompt)) continue;
-      seen.add(wrapper);
+      // Nested or overlapping wrappers can expose the same user bubble through
+      // multiple selectors. Count the real prompt once, not each React shell.
+      if(seenPrompts.has(prompt))continue;
+      const text=compactText(prompt);
+      const rect=prompt.getBoundingClientRect();
+      // During a React transition, two different shells can briefly paint the
+      // SAME question at the SAME visual coordinates. This is not two turns.
+      // Equal text at distinct positions is NOT de-duplicated.
+      if((sameText.get(text)||[]).some(turn=>turn.element && (()=>{
+        const old=turn.element.getBoundingClientRect();
+        return Math.abs(old.top-rect.top)<4 && Math.abs(old.left-rect.left)<12;
+      })()))continue;
+      seen.add(wrapper);seenPrompts.add(prompt);
       const stableId = sourceId(wrapper) || sourceId(candidate) || sourceId(prompt) || undefined;
-      turns.push({ id: stableId || `ordinal:${turns.length}`, order: turns.length,
-        preview: compactText(prompt) || '非文本提问', element: prompt, stableId,
-        scrollHint: conversationScrollHint(prompt) });
+      const turn={ id: stableId || `ordinal:${turns.length}`, order: turns.length,
+        preview: text || '非文本提问', element: prompt, stableId,
+        scrollHint: conversationScrollHint(prompt),
+        scrollExtent: conversationScrollRoot(prompt).scrollHeight };
+      turns.push(turn);
+      if(!sameText.has(text))sameText.set(text,[]);
+      sameText.get(text)!.push(turn);
       if (turns.length >= 1200) break;
     }
     const used = new Set<string>();

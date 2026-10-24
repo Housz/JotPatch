@@ -136,3 +136,8 @@ See [Stage 1.5.1 reliability / UX investigation](STAGE1_6_FIXES.md) for virtuali
 当前轨道仍保留 `layoutConversationRail` 的固定纵向坐标、PAVA 有序间距与用户阅读时自然积累的轮次索引。`railNoteLanes` 对中心距不足 7px 的相邻便签，在最多三个水平窄通道内错开鼠标命中区域，**不改变原文位置、保存字段或纵向坐标**；仍极度重叠时使用主动展开目录或键盘访问。不要重新引入自动聚合、悬停弹出的选择器、隐式邻近目标猜测或移动式鱼眼放大。
 
 回归见 `tests/stable_rail_e2e.py`：鼠标按像素分别点击 100 轮、60 张便签中的三张相邻笔记及一个灰色轮次横条；还检查无标题摘要、无弹窗 DOM、没有 JS 错误、布局坐标稳定，以及原有浏览器集成回归。
+
+
+## v0.1.14 Navigation recovery bugfix
+
+新增 `src/content/navigation-recovery.ts` 有界、可取消的用户点击导航状态机。`ConversationIndex` 增加同一物理 Prompt ID 的别名机制与同位置 DOM 过渡去重；`app.ts` 使用稳定结构签名来避免流式回答期间全轨 DOM 替换。便签恢复只在原 `conversationTurnId` 对应的轮次内匹配文本 Range，并在滚动后重新验证。见 [NAVIGATION_BUGFIX_0_1_14.md](NAVIGATION_BUGFIX_0_1_14.md)。
