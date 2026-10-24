@@ -46,12 +46,12 @@ namespace JP {
       background:#fffefaf7;border:1px solid #eae5da;border-radius:9px;box-shadow:0 8px 26px #0002;padding:6px}
     .list-header{display:flex;justify-content:space-between;align-items:center;padding:7px 7px 10px;font-weight:600}
     .list-header button{background:transparent;color:#777;margin:0 3px;font-size:16px}
-    .list-caption{padding:3px 7px 8px;font-size:10px;color:#99938b}
-    .entry{width:100%;background:transparent;padding:7px 7px;display:flex;align-items:center;gap:8px;
+        .entry{width:100%;background:transparent;padding:7px 7px;display:flex;align-items:center;gap:8px;
       border-top:1px solid #ece9e0;color:#34312e;text-align:left}
     .entry:hover{background:#f7f2e8}
     .entry .dot{width:9px;height:9px;flex:0 0 9px;border-radius:50%;margin:0 1px}
     .list-section{font-size:11px;color:#827d74;letter-spacing:.025em;padding:8px 8px 3px}
+    .list-footer{padding:10px 8px 6px;font-size:11px;color:#9a9387;text-align:right}
     .turn-entry{gap:8px;font-size:12px;font-weight:520}
     .turn-entry span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .turn-order{color:#8e928f;flex:0 0 21px;font-variant-numeric:tabular-nums;text-align:right}

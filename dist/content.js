@@ -656,6 +656,7 @@ var JP;
     const PREFERENCES_KEY = 'jotpatch:preferences:v1';
     const COLORS = ['yellow', 'pink', 'green', 'blue', 'purple', 'gray'];
     const DEFAULTS = { color: 'yellow', fontSize: 'md', width: 256, height: 202, offsetX: 0, offsetY: 0 };
+    const DEFAULT_COLOR_MODE = 'yellow';
     function appearance(note) {
         const style = note.appearance || {};
         return {
@@ -710,7 +711,8 @@ var JP;
             const prefs = saved && typeof saved === 'object' ? saved : {};
             return {
                 selectionTrigger: prefs.selectionTrigger === 'alt' || prefs.selectionTrigger === 'off' ? prefs.selectionTrigger : 'always',
-                conversationNavigation: prefs.conversationNavigation !== false
+                conversationNavigation: prefs.conversationNavigation !== false,
+                defaultNoteColorMode: prefs.defaultNoteColorMode === 'random' ? 'random' : DEFAULT_COLOR_MODE
             };
         }
         isNote(value) {
@@ -773,12 +775,12 @@ var JP;
       background:#fffefaf7;border:1px solid #eae5da;border-radius:9px;box-shadow:0 8px 26px #0002;padding:6px}
     .list-header{display:flex;justify-content:space-between;align-items:center;padding:7px 7px 10px;font-weight:600}
     .list-header button{background:transparent;color:#777;margin:0 3px;font-size:16px}
-    .list-caption{padding:3px 7px 8px;font-size:10px;color:#99938b}
-    .entry{width:100%;background:transparent;padding:7px 7px;display:flex;align-items:center;gap:8px;
+        .entry{width:100%;background:transparent;padding:7px 7px;display:flex;align-items:center;gap:8px;
       border-top:1px solid #ece9e0;color:#34312e;text-align:left}
     .entry:hover{background:#f7f2e8}
     .entry .dot{width:9px;height:9px;flex:0 0 9px;border-radius:50%;margin:0 1px}
     .list-section{font-size:11px;color:#827d74;letter-spacing:.025em;padding:8px 8px 3px}
+    .list-footer{padding:10px 8px 6px;font-size:11px;color:#9a9387;text-align:right}
     .turn-entry{gap:8px;font-size:12px;font-weight:520}
     .turn-entry span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .turn-order{color:#8e928f;flex:0 0 21px;font-variant-numeric:tabular-nums;text-align:right}
@@ -857,6 +859,7 @@ var JP;
     };
     const COLOR_ORDER = ['yellow', 'pink', 'green', 'blue', 'purple', 'gray'];
     const PREFERENCE_KEY = 'jotpatch:preferences:v1';
+    const BRAND_LINE = 'Powered by Housz';
     function el(tag, className) {
         const item = document.createElement(tag);
         if (className)
@@ -899,6 +902,8 @@ var JP;
         listOpen = false;
         selectionTrigger = 'always';
         conversationNavigation = true;
+        defaultNoteColorMode = 'yellow';
+        lastAutoColor = null;
         conversation = { site: null, turns: [], nativeRailPresent: false };
         conversationTimer = 0;
         conversationIndex = new JP.ConversationIndex();
@@ -1105,6 +1110,7 @@ var JP;
                     const trigger = preferences?.selectionTrigger;
                     this.selectionTrigger = trigger === 'alt' || trigger === 'off' ? trigger : 'always';
                     this.conversationNavigation = preferences?.conversationNavigation !== false;
+                    this.defaultNoteColorMode = preferences?.defaultNoteColorMode === 'random' ? 'random' : 'yellow';
                     this.$('#jp-bubble').hidden = true;
                     this.refreshConversation();
                 }
@@ -1120,10 +1126,12 @@ var JP;
                 const prefs = await this.repo.preferences();
                 this.selectionTrigger = prefs.selectionTrigger;
                 this.conversationNavigation = prefs.conversationNavigation;
+                this.defaultNoteColorMode = prefs.defaultNoteColorMode;
             }
             catch {
                 this.selectionTrigger = 'always';
                 this.conversationNavigation = true;
+                this.defaultNoteColorMode = 'yellow';
             }
         }
         openSettings() {
@@ -1237,7 +1245,7 @@ var JP;
             const note = {
                 schemaVersion: 1, id: id(), pageKey: this.page, sourceUrl: location.href,
                 sourceTitle: document.title, anchor, text: '',
-                appearance: { color: 'yellow', width: 256, height: 202, offsetX: 0, offsetY: 0 },
+                appearance: { color: this.pickDefaultColor(), width: 256, height: 202, offsetX: 0, offsetY: 0 },
                 createdAt: now, updatedAt: now, revision: 0
             };
             try {
@@ -1262,6 +1270,14 @@ var JP;
             finally {
                 this.ownWrites.delete(note.id);
             }
+        }
+        pickDefaultColor() {
+            if (this.defaultNoteColorMode !== 'random')
+                return 'yellow';
+            const pool = COLOR_ORDER.filter(color => color !== this.lastAutoColor);
+            const color = pool[Math.floor(Math.random() * pool.length)] || 'yellow';
+            this.lastAutoColor = color;
+            return color;
         }
         refreshAnchors() {
             if (!document.body)
@@ -1630,8 +1646,7 @@ var JP;
             list.replaceChildren();
             const head = el('div', 'list-header');
             const title = el('span');
-            title.textContent = turns.length >= 3
-                ? `已发现 ${turns.length} 轮 · ${this.notes.length} 张便签` : `本页便签 · ${this.notes.length}`;
+            title.textContent = 'JotPatch';
             const close = el('button');
             close.type = 'button';
             close.textContent = '×';
@@ -1643,9 +1658,6 @@ var JP;
             const live = turns.filter(t => t.element?.isConnected);
             const mapped = new Set();
             if (hasTurns) {
-                const heading = el('div', 'list-caption');
-                heading.textContent = '按对话顺序排列 · 不自动滚动扫描历史';
-                list.appendChild(heading);
                 for (const turn of turns) {
                     const button = el('button', 'entry turn-entry');
                     button.type = 'button';
@@ -1671,11 +1683,14 @@ var JP;
             const others = this.sortedNotes().filter(note => !mapped.has(note.id));
             if (others.length) {
                 const heading = el('div', 'list-section');
-                heading.textContent = hasTurns ? '本页悬浮 / 待定位便签' : '本页便签';
+                heading.textContent = hasTurns ? '悬浮便签' : '本页便签';
                 list.appendChild(heading);
                 for (const note of others)
                     this.addListNote(list, note, false);
             }
+            const footer = el('div', 'list-footer');
+            footer.textContent = BRAND_LINE;
+            list.appendChild(footer);
         }
         addListNote(list, note, nested) {
             const button = el('button', `entry note-entry${nested ? ' nested' : ''}`);

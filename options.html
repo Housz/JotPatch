@@ -12,12 +12,18 @@
     .choice small{display:block;color:#716c62}label[for=origin]{display:block;font-weight:600;margin-bottom:6px}
     #origin{width:100%;padding:10px 12px;border:1px solid #d0c9bb;border-radius:7px;font:inherit;background:white}
     button{font:inherit;color:#403626;border:0;background:#efe9d9;border-radius:7px;padding:9px 14px;cursor:pointer;margin-top:12px}
-    button:disabled{opacity:.5;cursor:default}#status{min-height:24px;color:#605944}footer{color:#777165;font-size:12px;margin:22px 0}
+    button:disabled{opacity:.5;cursor:default}#status{min-height:24px;color:#605944}footer{color:#777165;font-size:12px;margin:22px 0}.brand{display:flex;align-items:center;gap:12px;margin-bottom:18px}.brand img{width:32px;height:32px;border-radius:7px}.brand-copy p{margin:2px 0 0}.micro{font-size:12px;color:#857d70}.inline-choice{display:flex;gap:14px;flex-wrap:wrap}
   </style>
 </head>
 <body>
-  <h1>JotPatch <span aria-hidden="true">📌</span></h1>
-  <p>轻轻记，留在原文旁边。</p>
+  <div class="brand">
+    <img src="icons/icon32.png" alt="JotPatch">
+    <div class="brand-copy">
+      <h1>JotPatch</h1>
+      <p>随地大小贴</p>
+      <div class="micro">Powered by Housz</div>
+    </div>
+  </div>
   <section>
     <h2>选中文字后的快捷图钉</h2>
     <fieldset aria-label="选区快捷图钉显示方式">
@@ -28,6 +34,18 @@
     <p id="preference-status" role="status" aria-live="polite"></p>
     <p>右键菜单中的「📌 添加 JotPatch 便签」始终可用。图钉只会出现在普通网页选区，不会干扰文本输入框。</p>
   </section>
+
+  <section>
+    <h2>默认便签颜色</h2>
+    <fieldset aria-label="默认便签颜色">
+      <div class="inline-choice">
+        <label class="choice"><input type="radio" name="defaultNoteColorMode" value="yellow"><span>固定黄色<small>每次新建便签默认使用黄色。</small></span></label>
+        <label class="choice"><input type="radio" name="defaultNoteColorMode" value="random"><span>随机颜色<small>每次新建便签自动换一种颜色，并避免连续重复。</small></span></label>
+      </div>
+    </fieldset>
+    <p id="color-status" role="status" aria-live="polite"></p>
+  </section>
+
   <section>
     <h2>AI 会话导航</h2>
     <label class="choice"><input type="checkbox" id="conversation-navigation" checked><span>显示对话轮次导航
@@ -43,7 +61,7 @@
     <button type="button" id="grant">允许该网站自动恢复</button>
     <p id="status" role="status" aria-live="polite"></p>
   </section>
-  <footer>笔记存储在本地 Chrome 扩展数据中。暂不支持 chrome:// 页面及跨域 iframe 内选区。</footer>
+  <footer>所有设置和便签都保存在本地浏览器中。<br>Powered by Housz</footer>
   <script src="options.js"></script>
 </body>
 </html>

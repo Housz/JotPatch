@@ -6,6 +6,7 @@ const preferenceStatus = document.querySelector('#preference-status');
 const prefKey = 'jotpatch:preferences:v1';
 const conversationToggle = document.querySelector('#conversation-navigation');
 const conversationStatus = document.querySelector('#conversation-status');
+const colorStatus = document.querySelector('#color-status');
 let preferenceWrite = Promise.resolve();
 function updatePreferences(patch) {
   // Serialize rapidly toggled options so read/modify/write updates do not race.
@@ -24,6 +25,8 @@ chrome.storage.local.get(prefKey).then((stored) => {
   const mode = modes.has(setting) ? setting : 'always';
   document.querySelector(`input[name="selectionTrigger"][value="${mode}"]`).checked = true;
   conversationToggle.checked = stored[prefKey]?.conversationNavigation !== false;
+  const colorMode = stored[prefKey]?.defaultNoteColorMode === 'random' ? 'random' : 'yellow';
+  document.querySelector(`input[name="defaultNoteColorMode"][value="${colorMode}"]`).checked = true;
 });
 for (const radio of document.querySelectorAll('input[name="selectionTrigger"]')) {
   radio.addEventListener('change', async () => {
@@ -65,3 +68,15 @@ button.addEventListener('click', async () => {
   } catch (error) { status.textContent = `配置失败：${error.message}`; }
   finally { button.disabled = false; }
 });
+
+for (const radio of document.querySelectorAll('input[name="defaultNoteColorMode"]')) {
+  radio.addEventListener('change', async () => {
+    if (!radio.checked) return;
+    try {
+      await updatePreferences({ defaultNoteColorMode: radio.value });
+      colorStatus.textContent = '已保存，新的便签会按此颜色创建。';
+    } catch {
+      colorStatus.textContent = '保存失败，请重试。';
+    }
+  });
+}

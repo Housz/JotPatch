@@ -6,6 +6,7 @@ namespace JP {
   };
   const COLOR_ORDER: NoteColor[] = ['yellow', 'pink', 'green', 'blue', 'purple', 'gray'];
   const PREFERENCE_KEY = 'jotpatch:preferences:v1';
+  const BRAND_LINE = 'Powered by Housz';
 
   function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string): HTMLElementTagNameMap[K] {
     const item = document.createElement(tag);
@@ -46,6 +47,8 @@ namespace JP {
     private listOpen = false;
     private selectionTrigger: SelectionTrigger = 'always';
     private conversationNavigation = true;
+    private defaultNoteColorMode: DefaultNoteColorMode = 'yellow';
+    private lastAutoColor: NoteColor | null = null;
     private conversation: ConversationSnapshot = { site: null, turns: [], nativeRailPresent: false };
     private conversationTimer = 0;
     private conversationIndex = new ConversationIndex();
@@ -209,6 +212,7 @@ namespace JP {
           const trigger = preferences?.selectionTrigger;
           this.selectionTrigger = trigger === 'alt' || trigger === 'off' ? trigger : 'always';
           this.conversationNavigation = preferences?.conversationNavigation !== false;
+          this.defaultNoteColorMode = preferences?.defaultNoteColorMode === 'random' ? 'random' : 'yellow';
           this.$<HTMLElement>('#jp-bubble').hidden = true;
           this.refreshConversation();
         }
@@ -224,7 +228,8 @@ namespace JP {
         const prefs = await this.repo.preferences();
         this.selectionTrigger = prefs.selectionTrigger;
         this.conversationNavigation = prefs.conversationNavigation;
-      } catch { this.selectionTrigger = 'always'; this.conversationNavigation = true; }
+        this.defaultNoteColorMode = prefs.defaultNoteColorMode;
+      } catch { this.selectionTrigger = 'always'; this.conversationNavigation = true; this.defaultNoteColorMode = 'yellow'; }
     }
     private openSettings(): void {
       void chrome.runtime.sendMessage({ type: 'JP_OPEN_SITE_SETUP' }).catch(() => this.toast('请从扩展管理页打开 JotPatch 设置。'));
@@ -310,7 +315,7 @@ namespace JP {
       const note: Note = {
         schemaVersion: 1, id: id(), pageKey: this.page, sourceUrl: location.href,
         sourceTitle: document.title, anchor, text: '',
-        appearance: {color:'yellow', width:256, height:202, offsetX:0, offsetY:0},
+        appearance: {color:this.pickDefaultColor(), width:256, height:202, offsetX:0, offsetY:0},
         createdAt: now, updatedAt: now, revision: 0
       };
       try {
@@ -326,6 +331,14 @@ namespace JP {
         return true;
       } catch (error) { console.warn('JotPatch creation failed', error); this.toast('保存失败，未创建便签'); return false; }
       finally { this.ownWrites.delete(note.id); }
+    }
+
+    private pickDefaultColor(): NoteColor {
+      if (this.defaultNoteColorMode !== 'random') return 'yellow';
+      const pool = COLOR_ORDER.filter(color => color !== this.lastAutoColor);
+      const color = pool[Math.floor(Math.random() * pool.length)] || 'yellow';
+      this.lastAutoColor = color;
+      return color;
     }
 
     private refreshAnchors(): void {
@@ -647,8 +660,7 @@ namespace JP {
       if(list.hidden)return;
       list.replaceChildren();
       const head=el('div','list-header');
-      const title=el('span');title.textContent=turns.length>=3
-        ?`已发现 ${turns.length} 轮 · ${this.notes.length} 张便签`:`本页便签 · ${this.notes.length}`;
+      const title=el('span');title.textContent='JotPatch';
       const close=el('button');close.type='button';close.textContent='×';close.title='关闭列表';
       close.addEventListener('click',()=>{this.listOpen=false;this.renderList();});
       head.append(title,close);list.appendChild(head);
@@ -656,7 +668,6 @@ namespace JP {
       const live=turns.filter(t=>t.element?.isConnected);
       const mapped=new Set<string>();
       if(hasTurns){
-        const heading=el('div','list-caption');heading.textContent='按对话顺序排列 · 不自动滚动扫描历史';list.appendChild(heading);
         for(const turn of turns){
           const button=el('button','entry turn-entry');button.type='button';
           const number=el('span','turn-order');number.textContent=String(turn.order+1);
@@ -676,9 +687,10 @@ namespace JP {
       }
       const others=this.sortedNotes().filter(note=>!mapped.has(note.id));
       if(others.length){
-        const heading=el('div','list-section');heading.textContent=hasTurns?'本页悬浮 / 待定位便签':'本页便签';list.appendChild(heading);
+        const heading=el('div','list-section');heading.textContent=hasTurns?'悬浮便签':'本页便签';list.appendChild(heading);
         for(const note of others)this.addListNote(list,note,false);
       }
+      const footer=el('div','list-footer');footer.textContent=BRAND_LINE;list.appendChild(footer);
     }
 
     private addListNote(list:HTMLElement,note:Note,nested:boolean):void {
