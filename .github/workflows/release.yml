@@ -1,11 +1,22 @@
 name: Publish release
+
+# A release PR changes config/version.json to channel=release and is merged
+# to main with a merge commit. This job then creates the annotated tag AND
+# GitHub Release in the same run. Tags pushed with GITHUB_TOKEN do not trigger
+# new workflow runs, so do not depend on a tag-push workflow for publishing.
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v[0-9]*.[0-9]*.[0-9]*'
 
 permissions:
   contents: write
+
+concurrency:
+  group: jotpatch-publish-release
+  cancel-in-progress: false
 
 jobs:
   publish:
@@ -17,17 +28,57 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Confirm tag is included in main
+      - name: Verify this is an approved release commit on main
         run: |
-          git fetch origin main
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          set -euo pipefail
+          git fetch origin main --tags
+          git merge-base --is-ancestor HEAD origin/main
+          node --input-type=module -e '
+            import {readFileSync} from "node:fs";
+            import {loadVersionConfig,verifySourceVersions} from "./scripts/versioning.mjs";
+            const c=loadVersionConfig();
+            if(c.channel!=="release") throw Error("Only release-channel commits may publish");
+            verifySourceVersions(".",c);
+            if(process.env.GITHUB_REF_TYPE==="tag" && process.env.GITHUB_REF_NAME!==`v${c.nextRelease}`)
+              throw Error("Tag does not match release version");
+          '
       - run: npm install --no-audit --no-fund
       - run: npm run check
-      - name: Validate tag matches release config
-        run: |
-          node -e 'const c=require("./config/version.json"); if(process.env.GITHUB_REF_NAME!==`v${c.nextRelease}`)process.exit(1);'
       - run: npm run package:release
-      - name: Publish GitHub Release with verified Chromium ZIP
+      - name: Validate final distributable
+        run: node scripts/verify-release-package.mjs
+      - name: Tag main commit and publish verified Chromium ZIP
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$GITHUB_REF_NAME" artifacts/JotPatch-*-chromium.zip --verify-tag --generate-notes
+        run: |
+          set -euo pipefail
+          version=$(node -p 'JSON.parse(require("node:fs").readFileSync("config/version.json", "utf8")).nextRelease')
+          tag="v${version}"
+          zip="artifacts/JotPatch-${tag}-chromium.zip"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            target=$(git rev-list -n 1 "$tag")
+            if [ "$target" != "$(git rev-parse HEAD)" ]; then
+              if gh release view "$tag" >/dev/null 2>&1; then
+                echo "Release $tag already exists for its original tagged commit; no new publication."
+                exit 0
+              fi
+              echo "Refusing to publish: $tag points to a different commit ($target)" >&2
+              exit 1
+            fi
+          else
+            if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+              echo "The triggering tag is unexpectedly missing" >&2
+              exit 1
+            fi
+            git -c user.name='github-actions[bot]' \
+                -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+                tag -a "$tag" -m "JotPatch $tag release" "$(git rev-parse HEAD)"
+            git push origin "refs/tags/$tag"
+          fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "GitHub Release $tag already exists; nothing to overwrite."
+            exit 0
+          fi
+          gh release create "$tag" "$zip" \
+            --verify-tag --title "JotPatch $tag" \
+            --notes-file docs/RELEASE_NOTES_0_1_16.md --latest
