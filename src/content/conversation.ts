@@ -1,64 +1,4 @@
 namespace JP {
-  export type ConversationSite = 'chatgpt' | 'gemini';
-
-  /** The scroll target MUST be the user prompt, never an article containing the AI reply. */
-  export interface ConversationTurn {
-    id: string;
-    order: number;
-    preview: string;
-    element: Element | null;
-    /** Only turns with a site-provided stable identity are safe to cache across unmounts. */
-    stableId?: string;
-    /** Approximate document scroll position captured while mounted, not a guaranteed locator. */
-    scrollHint?: number;
-    /** Scroll span when the hint was captured; prevents using stale coordinates. */
-    scrollExtent?: number;
-  }
-  export interface ConversationSnapshot {
-    site: ConversationSite | null;
-    turns: ConversationTurn[];
-    nativeRailPresent: boolean;
-  }
-  interface ConversationAdapter {
-    site: ConversationSite;
-    selectors: string;
-    canonical(node: Element): Element;
-    prompt(node: Element, wrapper: Element): Element;
-  }
-  const CHATGPT: ConversationAdapter = {
-    site: 'chatgpt',
-    selectors: [
-      'article[data-turn="user"]', '[data-turn="user"]',
-      '[data-message-author-role="user"]', '[data-user-message-bubble]',
-      '[data-testid="user-message"]'
-    ].join(','),
-    canonical(node) {
-      return node.closest('article[data-turn="user"], article[data-testid^="conversation-turn-"], [data-turn-key]') || node;
-    },
-    prompt(node, wrapper) {
-      // The wrapper can contain *both* user and assistant content. Scroll to
-      // the prompt bubble itself, not the wrapper midpoint.
-      const bubble = wrapper.querySelector('[data-user-message-bubble], [data-testid="user-message"]');
-      if (bubble && (bubble.contains(node) || node.contains(bubble))) return bubble!;
-      if (node.matches('[data-user-message-bubble], [data-testid="user-message"]')) return node;
-      return node.querySelector('[data-user-message-bubble], .user-message-bubble-color, .whitespace-pre-wrap') || node;
-    }
-  };
-  const GEMINI: ConversationAdapter = {
-    site: 'gemini',
-    selectors: 'user-query, [data-test-id="user-query"], [data-testid="user-query"]',
-    canonical(node) { return node.closest('user-query') || node; },
-    prompt(node, wrapper) {
-      return wrapper.querySelector('.query-text, .user-query-content, .query-content, [data-test-id="query-text"], .query-text-line, .text-query') || node;
-    }
-  };
-
-  export function conversationSite(url: URL = new URL(location.href)): ConversationSite | null {
-    const host = url.hostname.toLowerCase();
-    if (host === 'chatgpt.com' || host === 'chat.openai.com') return 'chatgpt';
-    if (host === 'gemini.google.com') return 'gemini';
-    return null;
-  }
   function compactText(node: Element): string {
     return ((node as HTMLElement).innerText || node.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 110);
   }
@@ -81,10 +21,6 @@ namespace JP {
     if(identifier && identifier.length<=160 && /(?:turn|message|query|conversation)/i.test(identifier))
       return `id:${identifier}`;
     return null;
-  }
-  function nativeRail(): boolean {
-    const node = document.querySelector('[data-testid="conversation-timeline"], [data-testid="conversation-navigation"], [aria-label="Conversation navigation"], [aria-label="对话导航"]');
-    return !!node && node.getClientRects().length > 0;
   }
   export function conversationScrollRoot(element: Element): Element {
     let ancestor: Element | null = element.parentElement;
@@ -111,9 +47,9 @@ namespace JP {
   }
 
   export function collectConversation(url: URL = new URL(location.href)): ConversationSnapshot {
-    const site = conversationSite(url);
-    if (!site || !document.body) return { site, turns: [], nativeRailPresent: false };
-    const adapter = site === 'chatgpt' ? CHATGPT : GEMINI;
+    const adapter = findConversationAdapter(url);
+    const site = adapter?.site || null;
+    if (!adapter || !document.body) return { site, turns: [], nativeRailPresent: false };
     const seen = new Set<Element>();
     const seenPrompts = new Set<Element>();
     const sameText = new Map<string, ConversationTurn[]>();
@@ -151,7 +87,7 @@ namespace JP {
       if (used.has(turn.id)) { turn.stableId = undefined; turn.id = `ordinal:${turn.order}`; }
       used.add(turn.id);
     }
-    return { site, turns, nativeRailPresent: site === 'chatgpt' && nativeRail() };
+    return { site, turns, nativeRailPresent: adapter.nativeRailPresent?.() || false };
   }
 
   export function turnForRange(range: Range, turns: ConversationTurn[]): ConversationTurn | null {

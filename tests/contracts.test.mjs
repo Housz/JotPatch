@@ -5,6 +5,8 @@ import { readFileSync, statSync } from 'node:fs';
 const manifest = JSON.parse(readFileSync('manifest.json', 'utf8'));
 const content = readFileSync('dist/content.js', 'utf8');
 const background = readFileSync('dist/background.js', 'utf8');
+const versionConfig = JSON.parse(readFileSync('config/version.json', 'utf8'));
+const manifestVersion = versionConfig.channel === 'release' ? versionConfig.nextRelease : `${versionConfig.baseline}.${versionConfig.devBuild}`;
 
 test('Manifest V3 grants only gesture-scoped injection and context-menu access', () => {
   assert.equal(manifest.manifest_version, 3);
@@ -30,7 +32,7 @@ test('selection bubble has no label, no quote/title/footer, and no permanent too
   const source = readFileSync('src/content/app.ts', 'utf8');
   assert.match(source, /id="jp-bubble-pin"[^>]*>📌<\/button>/);
   assert.doesNotMatch(source, /class="card-head"|class="card-foot"|id="jp-quote"/);
-  assert.match(readFileSync('src/content/paper-styles.ts', 'utf8'), /\.paper\{--paper/);
+  assert.match(readFileSync('src/ui/paper-styles.ts', 'utf8'), /\.paper\{--paper/);
 });
 
 test('right-click action and selection-trigger preference are included', () => {
@@ -47,11 +49,12 @@ test('stage 1.5 conversation adapters and unified rail compile without wider per
     assert.ok(content.includes(symbol), `${symbol} missing in bundled content script`);
   }
   const source = readFileSync('src/content/conversation.ts', 'utf8');
-  assert.ok(source.includes('data-message-author-role'));
-  assert.ok(source.includes('data-user-message-bubble'));
-  assert.ok(source.includes('user-query'));
-  assert.ok(source.includes('nativeRail'));
-  assert.ok(source.includes('interface ConversationSnapshot'));
+  const adapters = readFileSync('src/adapters/sites/chatgpt.ts', 'utf8') + readFileSync('src/adapters/sites/gemini.ts', 'utf8');
+  assert.ok(adapters.includes('data-message-author-role'));
+  assert.ok(adapters.includes('data-user-message-bubble'));
+  assert.ok(adapters.includes('user-query'));
+  assert.ok(adapters.includes('nativeRailPresent'));
+  assert.ok(readFileSync('src/core/conversation-types.ts', 'utf8').includes('interface ConversationSnapshot'));
   assert.ok(readFileSync('options.html', 'utf8').includes('id="conversation-navigation"'));
   assert.ok(readFileSync('options.js', 'utf8').includes('...current, ...patch'));
 });
@@ -59,7 +62,7 @@ test('stage 1.5 conversation adapters and unified rail compile without wider per
 
 test('stage 1.8 WYSIWYG editor and passive navigation stay local-first', () => {
   const ui = readFileSync('src/content/app.ts', 'utf8');
-  const md = readFileSync('src/content/markdown.ts', 'utf8');
+  const md = readFileSync('src/core/markdown.ts', 'utf8');
   for(const mark of ['contenteditable="true"', 'markdownFromEditor', 'font-size', 'layoutConversationRail', 'paper-pin'])
     assert.ok(ui.includes(mark), mark);
   for(const command of ['insertUnorderedList','insertOrderedList','bold','italic'])
@@ -71,7 +74,7 @@ test('stage 1.8 WYSIWYG editor and passive navigation stay local-first', () => {
 
 
 test('0.1.7 rejects missing or stale anchored ranges before showing papers', () => {
-  assert.equal(manifest.version, '0.1.15');
+  assert.equal(manifest.version, manifestVersion);
   const app = readFileSync('src/content/app.ts', 'utf8');
   assert.ok(app.includes('private liveMatch(note:Note):Match|null'));
   assert.ok(app.includes('if(!match||!rect)'));
@@ -83,8 +86,8 @@ test('0.1.7 rejects missing or stale anchored ranges before showing papers', () 
 
 test('minimal rail keeps independent markers, original spatial hints and one-click actions', () => {
   const app=readFileSync('src/content/app.ts','utf8');
-  const css=readFileSync('src/content/paper-styles.ts','utf8');
-  const layout=readFileSync('src/content/rail-layout.ts','utf8');
+  const css=readFileSync('src/ui/paper-styles.ts','utf8');
+  const layout=readFileSync('src/core/rail-layout.ts','utf8');
   for (const name of ['associateNotesToTurns','spatialProgress','pageProgress',
       'addRailNote','applyRailLayout','showRailPreview','unpinNote','undoLastAction',
       'rail-loose','conversationTurnId','railNoteLanes']) assert.ok(app.includes(name),name);
@@ -101,29 +104,29 @@ test('minimal rail keeps independent markers, original spatial hints and one-cli
 });
 
 test('new spatial hints are optional; old note schema and colors are preserved', () => {
-  const types=readFileSync('src/content/types.ts','utf8');
+  const types=readFileSync('src/core/types.ts','utf8');
   assert.match(types,/spatial\?:\s*\{/);
   assert.match(types,/withinTurnProgress\?: number/);
   assert.ok(content.includes('jotpatch:note:v1:'));
-  assert.match(readFileSync('src/content/paper-styles.ts','utf8'),/\.rail-pin\.missing\{border:1px dashed/);
+  assert.match(readFileSync('src/ui/paper-styles.ts','utf8'),/\.rail-pin\.missing\{border:1px dashed/);
 });
 
 
 test('v0.1.13 has headerless preview and direct click on both note and question',()=>{
   const app=readFileSync('src/content/app.ts','utf8');
-  const css=readFileSync('src/content/paper-styles.ts','utf8');
+  const css=readFileSync('src/ui/paper-styles.ts','utf8');
   assert.ok(!/fisheyePositions|fisheyeCoordinate|resetRailFisheye/.test(app));
   assert.ok(app.includes("bar.addEventListener('click',()=>void this.jumpToTurn("));
   assert.ok(app.includes("button.addEventListener('click',()=>this.goTo(note.id))"));
   assert.ok(app.includes("preview.textContent=content"));
   assert.ok(!app.includes('已发现第 ${turn.order + 1} /'));
   assert.ok(!css.includes('transition:top'));
-  assert.equal(manifest.version,'0.1.15');
+  assert.equal(manifest.version,manifestVersion);
 });
 
 
 test('v0.1.14 branding assets and color preferences are complete', () => {
-  assert.equal(manifest.version, '0.1.15');
+  assert.equal(manifest.version, manifestVersion);
   assert.equal(manifest.description, 'JotPatch · 随地大小贴。');
   for (const size of [16, 32, 48, 128]) {
     const filename = `icons/icon${size}.png`;
@@ -137,7 +140,7 @@ test('v0.1.14 branding assets and color preferences are complete', () => {
   const options = readFileSync('options.html', 'utf8');
   const js = readFileSync('options.js', 'utf8');
   const app = readFileSync('src/content/app.ts', 'utf8');
-  const repo = readFileSync('src/content/repository.ts', 'utf8');
+  const repo = readFileSync('src/core/repository.ts', 'utf8');
   assert.ok(options.includes('随地大小贴') && options.includes('Powered by Housz'));
   assert.ok(!app.includes('按对话顺序排列 · 不自动滚动扫描历史'));
   assert.match(options, /name="defaultNoteColorMode" value="random"/);
@@ -151,9 +154,9 @@ test('v0.1.14 branding assets and color preferences are complete', () => {
 
 test('v0.1.14 navigation bugfix keeps stable bars and bounded user-initiated recovery',()=>{
   const app=readFileSync('src/content/app.ts','utf8');
-  const recovery=readFileSync('src/content/navigation-recovery.ts','utf8');
-  const index=readFileSync('src/content/conversation-index.ts','utf8');
-  assert.equal(manifest.version,'0.1.15');
+  const recovery=readFileSync('src/core/navigation-recovery.ts','utf8');
+  const index=readFileSync('src/core/conversation-index.ts','utf8');
+  assert.equal(manifest.version,manifestVersion);
   for(const name of ['navController','navigationBusy','railSignature','recoverNote','locateTurn','trustedNoteMatch',
                      'jp-cancel-nav','syncRailMetadata'])assert.ok(app.includes(name),name);
   for(const name of ['AbortSignal','maxSteps','deadline','navigationPause','targetId'])assert.ok(recovery.includes(name),name);
@@ -163,7 +166,7 @@ test('v0.1.14 navigation bugfix keeps stable bars and bounded user-initiated rec
 });
 
 test('v0.1.14 note recovery filters matches to the recorded conversation round',()=>{
-  const anchor=readFileSync('src/content/anchor.ts','utf8');
+  const anchor=readFileSync('src/core/anchor.ts','utf8');
   const app=readFileSync('src/content/app.ts','utf8');
   assert.match(anchor,/allowedRange\?: \(range: Range\)=>boolean/);
   assert.ok(app.includes('turnForRange(range,turns)?.id===targetId'));
@@ -175,9 +178,9 @@ test('v0.1.15 lab is opt-in only and does not broaden permissions',()=>{
   const settings=readFileSync('options.html','utf8');
   const optionsJs=readFileSync('options.js','utf8');
   const app=readFileSync('src/content/app.ts','utf8');
-  const repo=readFileSync('src/content/repository.ts','utf8');
-  const lab=readFileSync('src/content/navigation-lab.ts','utf8');
-  assert.equal(manifest.version,'0.1.15');
+  const repo=readFileSync('src/core/repository.ts','utf8');
+  const lab=readFileSync('src/core/navigation-lab.ts','utf8');
+  assert.equal(manifest.version,manifestVersion);
   assert.match(settings,/id="navigation-lab"/);
   assert.match(optionsJs,/updatePreferences\(\{ navigationLab: labToggle.checked \}\)/);
   assert.match(repo,/navigationLab: prefs.navigationLab === true/);
@@ -195,5 +198,5 @@ test('Lab route scoping and reset cannot leak checkpoints across conversations',
   assert.ok(app.includes('this.navigationLabIndex.clear()'));
   assert.ok(app.includes("this.navigationLab && conversationSite()==='chatgpt'"));
   assert.ok(app.includes('const {turn,...metrics}=result'));
-  assert.ok(!app.includes('chrome.storage.local.set({navigationLabIndex'));
+  assert.ok(!app.includes('extensionApi().storage.local.set({navigationLabIndex'));
 });

@@ -1,35 +1,10 @@
 namespace JP {
   // Lightweight paper notes and a passive, shared conversation/notes timeline.
-  const COLOR_HEX: Record<NoteColor, string> = {
-    yellow: '#FFF1B8', pink: '#FBE1E9', green: '#DFF1DD',
-    blue: '#DAECFF', purple: '#EAE2FA', gray: '#F0EFEC'
-  };
-  const COLOR_ORDER: NoteColor[] = ['yellow', 'pink', 'green', 'blue', 'purple', 'gray'];
   const PREFERENCE_KEY = 'jotpatch:preferences:v1';
   const BRAND_LINE = 'Powered by Housz';
 
-  function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string): HTMLElementTagNameMap[K] {
-    const item = document.createElement(tag);
-    if (className) item.className = className;
-    return item;
-  }
-  function visibleRect(range: Range): DOMRect | null {
-    for (const rect of Array.from(range.getClientRects())) if (rect.width > 0 && rect.height > 0) return rect;
-    const rect = range.getBoundingClientRect();
-    return rect.height ? rect : null;
-  }
-  function id(): string {
-    if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
-    const bytes = crypto.getRandomValues(new Uint8Array(16));
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    const hex = Array.from(bytes, x => x.toString(16).padStart(2, '0')).join('');
-    return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
-  }
-  function clamp(x: number, lo: number, hi: number): number { return Math.max(lo, Math.min(Math.max(lo, hi), x)); }
-
   export class JotPatchApp {
-    private repo = new NoteRepository();
+    private repo = new NoteRepository(extensionApi().storage.local);
     private page = pageKey(location.href);
     private notes: Note[] = [];
     private matches = new Map<string, Match>();
@@ -218,7 +193,7 @@ namespace JP {
       window.addEventListener('resize', () => {this.hideTurnPreview();this.schedulePosition();});
       window.addEventListener('hashchange', () => this.checkPageRoute());
       window.addEventListener('popstate', () => this.checkPageRoute());
-      chrome.runtime.onMessage.addListener((message: {type: string; selectionText?: string}, _sender: unknown, respond: (result: unknown) => void) => {
+      extensionApi().runtime.onMessage.addListener((message: {type: string; selectionText?: string}, _sender: unknown, respond: (result: unknown) => void) => {
         if (message.type === 'JP_PING') { respond({ ready: true }); return false; }
         if (message.type === 'JP_TOGGLE_UI') { this.toggle(); respond({ ok: true }); return false; }
         if (message.type === 'JP_OPEN_LAUNCHER') { this.openLauncher(); respond({ ok: true }); return false; }
@@ -231,7 +206,7 @@ namespace JP {
         }
         return false;
       });
-      chrome.storage.onChanged?.addListener((changes: Record<string, {newValue?: unknown; oldValue?: unknown}>, area: string) => {
+      extensionApi().storage.onChanged?.addListener((changes: Record<string, {newValue?: unknown; oldValue?: unknown}>, area: string) => {
         if (area !== 'local') return;
         if (changes[PREFERENCE_KEY]) {
           const preferences = changes[PREFERENCE_KEY].newValue as Partial<Preferences> | undefined;
@@ -262,7 +237,7 @@ namespace JP {
       } catch { this.selectionTrigger = 'always'; this.conversationNavigation = true; this.defaultNoteColorMode = 'yellow'; this.navigationLab=false; }
     }
     private openSettings(): void {
-      void chrome.runtime.sendMessage({ type: 'JP_OPEN_SITE_SETUP' }).catch(() => this.toast('请从扩展管理页打开 JotPatch 设置。'));
+      void extensionApi().runtime.sendMessage({ type: 'JP_OPEN_SITE_SETUP' }).catch(() => this.toast('请从扩展管理页打开 JotPatch 设置。'));
     }
     private renderLauncher(): void { this.$<HTMLElement>('#jp-launcher').hidden = !this.launcherOpen; }
 

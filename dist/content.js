@@ -1,6 +1,78 @@
 "use strict";
 var JP;
 (function (JP) {
+    /** Minimal WebExtension runtime gateway. No browser-specific code in core. */
+    function extensionApi() {
+        const environment = globalThis;
+        const api = environment.browser?.runtime && environment.browser?.storage
+            ? environment.browser : environment.chrome;
+        if (!api?.runtime || !api?.storage)
+            throw new Error('JotPatch requires a WebExtension runtime');
+        return api;
+    }
+    JP.extensionApi = extensionApi;
+})(JP || (JP = {}));
+var JP;
+(function (JP) {
+    const conversationAdapters = [];
+    function registerConversationAdapter(adapter) {
+        if (!adapter.site || !adapter.selectors || conversationAdapters.some(item => item.site === adapter.site))
+            throw new Error(`Duplicate or invalid conversation adapter: ${adapter.site}`);
+        conversationAdapters.push(adapter);
+    }
+    JP.registerConversationAdapter = registerConversationAdapter;
+    function findConversationAdapter(url = new URL(location.href)) {
+        return conversationAdapters.find(adapter => adapter.matches(url)) || null;
+    }
+    JP.findConversationAdapter = findConversationAdapter;
+    function conversationSite(url = new URL(location.href)) {
+        return findConversationAdapter(url)?.site || null;
+    }
+    JP.conversationSite = conversationSite;
+})(JP || (JP = {}));
+var JP;
+(function (JP) {
+    JP.registerConversationAdapter({
+        matches(url) { return url.hostname.toLowerCase() === 'chatgpt.com' || url.hostname.toLowerCase() === 'chat.openai.com'; },
+        site: 'chatgpt',
+        selectors: [
+            'article[data-turn="user"]', '[data-turn="user"]',
+            '[data-message-author-role="user"]', '[data-user-message-bubble]',
+            '[data-testid="user-message"]'
+        ].join(','),
+        canonical(node) {
+            return node.closest('article[data-turn="user"], article[data-testid^="conversation-turn-"], [data-turn-key]') || node;
+        },
+        prompt(node, wrapper) {
+            // The wrapper can contain *both* user and assistant content. Scroll to
+            // the prompt bubble itself, not the wrapper midpoint.
+            const bubble = wrapper.querySelector('[data-user-message-bubble], [data-testid="user-message"]');
+            if (bubble && (bubble.contains(node) || node.contains(bubble)))
+                return bubble;
+            if (node.matches('[data-user-message-bubble], [data-testid="user-message"]'))
+                return node;
+            return node.querySelector('[data-user-message-bubble], .user-message-bubble-color, .whitespace-pre-wrap') || node;
+        },
+        nativeRailPresent() {
+            const node = document.querySelector('[data-testid="conversation-timeline"], [data-testid="conversation-navigation"], [aria-label="Conversation navigation"], [aria-label="对话导航"]');
+            return !!node && node.getClientRects().length > 0;
+        }
+    });
+})(JP || (JP = {}));
+var JP;
+(function (JP) {
+    JP.registerConversationAdapter({
+        matches(url) { return url.hostname.toLowerCase() === 'gemini.google.com'; },
+        site: 'gemini',
+        selectors: 'user-query, [data-test-id="user-query"], [data-testid="user-query"]',
+        canonical(node) { return node.closest('user-query') || node; },
+        prompt(node, wrapper) {
+            return wrapper.querySelector('.query-text, .user-query-content, .query-content, [data-test-id="query-text"], .query-text-line, .text-query') || node;
+        }
+    });
+})(JP || (JP = {}));
+var JP;
+(function (JP) {
     // A precise page URL (including meaningful query parameters) is the Phase 0 scope.
     // Fragment-only navigations are not distinguished unless they contain a hash route.
     function pageKey(href) {
@@ -206,44 +278,6 @@ var JP;
 })(JP || (JP = {}));
 var JP;
 (function (JP) {
-    const CHATGPT = {
-        site: 'chatgpt',
-        selectors: [
-            'article[data-turn="user"]', '[data-turn="user"]',
-            '[data-message-author-role="user"]', '[data-user-message-bubble]',
-            '[data-testid="user-message"]'
-        ].join(','),
-        canonical(node) {
-            return node.closest('article[data-turn="user"], article[data-testid^="conversation-turn-"], [data-turn-key]') || node;
-        },
-        prompt(node, wrapper) {
-            // The wrapper can contain *both* user and assistant content. Scroll to
-            // the prompt bubble itself, not the wrapper midpoint.
-            const bubble = wrapper.querySelector('[data-user-message-bubble], [data-testid="user-message"]');
-            if (bubble && (bubble.contains(node) || node.contains(bubble)))
-                return bubble;
-            if (node.matches('[data-user-message-bubble], [data-testid="user-message"]'))
-                return node;
-            return node.querySelector('[data-user-message-bubble], .user-message-bubble-color, .whitespace-pre-wrap') || node;
-        }
-    };
-    const GEMINI = {
-        site: 'gemini',
-        selectors: 'user-query, [data-test-id="user-query"], [data-testid="user-query"]',
-        canonical(node) { return node.closest('user-query') || node; },
-        prompt(node, wrapper) {
-            return wrapper.querySelector('.query-text, .user-query-content, .query-content, [data-test-id="query-text"], .query-text-line, .text-query') || node;
-        }
-    };
-    function conversationSite(url = new URL(location.href)) {
-        const host = url.hostname.toLowerCase();
-        if (host === 'chatgpt.com' || host === 'chat.openai.com')
-            return 'chatgpt';
-        if (host === 'gemini.google.com')
-            return 'gemini';
-        return null;
-    }
-    JP.conversationSite = conversationSite;
     function compactText(node) {
         return (node.innerText || node.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 110);
     }
@@ -268,10 +302,6 @@ var JP;
         if (identifier && identifier.length <= 160 && /(?:turn|message|query|conversation)/i.test(identifier))
             return `id:${identifier}`;
         return null;
-    }
-    function nativeRail() {
-        const node = document.querySelector('[data-testid="conversation-timeline"], [data-testid="conversation-navigation"], [aria-label="Conversation navigation"], [aria-label="对话导航"]');
-        return !!node && node.getClientRects().length > 0;
     }
     function conversationScrollRoot(element) {
         let ancestor = element.parentElement;
@@ -302,10 +332,10 @@ var JP;
     }
     JP.navigateToPrompt = navigateToPrompt;
     function collectConversation(url = new URL(location.href)) {
-        const site = conversationSite(url);
-        if (!site || !document.body)
+        const adapter = JP.findConversationAdapter(url);
+        const site = adapter?.site || null;
+        if (!adapter || !document.body)
             return { site, turns: [], nativeRailPresent: false };
-        const adapter = site === 'chatgpt' ? CHATGPT : GEMINI;
         const seen = new Set();
         const seenPrompts = new Set();
         const sameText = new Map();
@@ -353,7 +383,7 @@ var JP;
             }
             used.add(turn.id);
         }
-        return { site, turns, nativeRailPresent: site === 'chatgpt' && nativeRail() };
+        return { site, turns, nativeRailPresent: adapter.nativeRailPresent?.() || false };
     }
     JP.collectConversation = collectConversation;
     function turnForRange(range, turns) {
@@ -1023,9 +1053,13 @@ var JP;
     }
     JP.appearance = appearance;
     class NoteRepository {
+        storage;
+        constructor(storage) {
+            this.storage = storage;
+        }
         static key(id) { return PREFIX + id; }
         async list(page) {
-            const stored = await chrome.storage.local.get(null);
+            const stored = await this.storage.get(null);
             const output = [];
             const staleDeletes = [];
             for (const [key, value] of Object.entries(stored)) {
@@ -1040,27 +1074,27 @@ var JP;
             }
             // A tombstone protects against stale page instances resurrecting a deletion.
             if (staleDeletes.length)
-                void chrome.storage.local.remove(staleDeletes).catch(() => undefined);
+                void this.storage.remove(staleDeletes).catch(() => undefined);
             return output.sort((a, b) => a.createdAt - b.createdAt);
         }
         async get(id) {
-            const value = (await chrome.storage.local.get(NoteRepository.key(id)))[NoteRepository.key(id)];
+            const value = (await this.storage.get(NoteRepository.key(id)))[NoteRepository.key(id)];
             return this.isNote(value) ? value : null;
         }
         async put(note) {
-            await chrome.storage.local.set({ [NoteRepository.key(note.id)]: note });
+            await this.storage.set({ [NoteRepository.key(note.id)]: note });
         }
         async markDeleted(note) {
             await this.put({ ...note, deletedAt: Date.now(), updatedAt: Date.now(), revision: (note.revision || 0) + 1 });
         }
         async remove(id) {
-            await chrome.storage.local.remove(NoteRepository.key(id));
+            await this.storage.remove(NoteRepository.key(id));
         }
         noteFromChange(key, newValue) {
             return key.startsWith(PREFIX) && this.isNote(newValue) ? newValue : null;
         }
         async preferences() {
-            const saved = (await chrome.storage.local.get(PREFERENCES_KEY))[PREFERENCES_KEY];
+            const saved = (await this.storage.get(PREFERENCES_KEY))[PREFERENCES_KEY];
             const prefs = saved && typeof saved === 'object' ? saved : {};
             return {
                 selectionTrigger: prefs.selectionTrigger === 'alt' || prefs.selectionTrigger === 'off' ? prefs.selectionTrigger : 'always',
@@ -1079,6 +1113,46 @@ var JP;
         }
     }
     JP.NoteRepository = NoteRepository;
+})(JP || (JP = {}));
+var JP;
+(function (JP) {
+    /** Shared note palette; both paper and Dock use the same persisted NoteColor IDs. */
+    JP.COLOR_HEX = {
+        yellow: '#FFF1B8', pink: '#FBE1E9', green: '#DFF1DD',
+        blue: '#DAECFF', purple: '#EAE2FA', gray: '#F0EFEC'
+    };
+    JP.COLOR_ORDER = ['yellow', 'pink', 'green', 'blue', 'purple', 'gray'];
+})(JP || (JP = {}));
+var JP;
+(function (JP) {
+    /** Small Shadow-DOM element helper and anchored-range rectangle lookup. */
+    function el(tag, className) {
+        const item = document.createElement(tag);
+        if (className)
+            item.className = className;
+        return item;
+    }
+    JP.el = el;
+    function visibleRect(range) {
+        for (const rect of Array.from(range.getClientRects()))
+            if (rect.width > 0 && rect.height > 0)
+                return rect;
+        const rect = range.getBoundingClientRect();
+        return rect.height ? rect : null;
+    }
+    JP.visibleRect = visibleRect;
+    function id() {
+        if (typeof crypto.randomUUID === 'function')
+            return crypto.randomUUID();
+        const bytes = crypto.getRandomValues(new Uint8Array(16));
+        bytes[6] = (bytes[6] & 0x0f) | 0x40;
+        bytes[8] = (bytes[8] & 0x3f) | 0x80;
+        const hex = Array.from(bytes, x => x.toString(16).padStart(2, '0')).join('');
+        return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    }
+    JP.id = id;
+    function clamp(x, lo, hi) { return Math.max(lo, Math.min(Math.max(lo, hi), x)); }
+    JP.clamp = clamp;
 })(JP || (JP = {}));
 var JP;
 (function (JP) {
@@ -1207,38 +1281,10 @@ var JP;
 var JP;
 (function (JP) {
     // Lightweight paper notes and a passive, shared conversation/notes timeline.
-    const COLOR_HEX = {
-        yellow: '#FFF1B8', pink: '#FBE1E9', green: '#DFF1DD',
-        blue: '#DAECFF', purple: '#EAE2FA', gray: '#F0EFEC'
-    };
-    const COLOR_ORDER = ['yellow', 'pink', 'green', 'blue', 'purple', 'gray'];
     const PREFERENCE_KEY = 'jotpatch:preferences:v1';
     const BRAND_LINE = 'Powered by Housz';
-    function el(tag, className) {
-        const item = document.createElement(tag);
-        if (className)
-            item.className = className;
-        return item;
-    }
-    function visibleRect(range) {
-        for (const rect of Array.from(range.getClientRects()))
-            if (rect.width > 0 && rect.height > 0)
-                return rect;
-        const rect = range.getBoundingClientRect();
-        return rect.height ? rect : null;
-    }
-    function id() {
-        if (typeof crypto.randomUUID === 'function')
-            return crypto.randomUUID();
-        const bytes = crypto.getRandomValues(new Uint8Array(16));
-        bytes[6] = (bytes[6] & 0x0f) | 0x40;
-        bytes[8] = (bytes[8] & 0x3f) | 0x80;
-        const hex = Array.from(bytes, x => x.toString(16).padStart(2, '0')).join('');
-        return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-    }
-    function clamp(x, lo, hi) { return Math.max(lo, Math.min(Math.max(lo, hi), x)); }
     class JotPatchApp {
-        repo = new JP.NoteRepository();
+        repo = new JP.NoteRepository(JP.extensionApi().storage.local);
         page = JP.pageKey(location.href);
         notes = [];
         matches = new Map();
@@ -1332,7 +1378,7 @@ var JP;
             this.renderLauncher();
         }
         mount() {
-            this.host = el('div');
+            this.host = JP.el('div');
             this.host.id = 'jotpatch-root';
             this.host.setAttribute('data-jotpatch-exclude', '');
             this.host.style.cssText = 'position:fixed;inset:0;z-index:2147483647;pointer-events:none;';
@@ -1420,7 +1466,7 @@ var JP;
                     return;
                 event.preventDefault();
                 const next = event.key === 'Home' ? 0 : event.key === 'End' ? targets.length - 1 :
-                    clamp(at + (event.key === 'ArrowDown' ? 1 : -1), 0, targets.length - 1);
+                    JP.clamp(at + (event.key === 'ArrowDown' ? 1 : -1), 0, targets.length - 1);
                 targets[next]?.focus({ preventScroll: true });
             });
             document.addEventListener('keydown', event => {
@@ -1460,7 +1506,7 @@ var JP;
             window.addEventListener('resize', () => { this.hideTurnPreview(); this.schedulePosition(); });
             window.addEventListener('hashchange', () => this.checkPageRoute());
             window.addEventListener('popstate', () => this.checkPageRoute());
-            chrome.runtime.onMessage.addListener((message, _sender, respond) => {
+            JP.extensionApi().runtime.onMessage.addListener((message, _sender, respond) => {
                 if (message.type === 'JP_PING') {
                     respond({ ready: true });
                     return false;
@@ -1487,7 +1533,7 @@ var JP;
                 }
                 return false;
             });
-            chrome.storage.onChanged?.addListener((changes, area) => {
+            JP.extensionApi().storage.onChanged?.addListener((changes, area) => {
                 if (area !== 'local')
                     return;
                 if (changes[PREFERENCE_KEY]) {
@@ -1528,7 +1574,7 @@ var JP;
             }
         }
         openSettings() {
-            void chrome.runtime.sendMessage({ type: 'JP_OPEN_SITE_SETUP' }).catch(() => this.toast('请从扩展管理页打开 JotPatch 设置。'));
+            void JP.extensionApi().runtime.sendMessage({ type: 'JP_OPEN_SITE_SETUP' }).catch(() => this.toast('请从扩展管理页打开 JotPatch 设置。'));
         }
         renderLauncher() { this.$('#jp-launcher').hidden = !this.launcherOpen; }
         checkPageRoute() {
@@ -1598,12 +1644,12 @@ var JP;
             const range = this.rememberSelection(target);
             if (!range)
                 return;
-            const rect = visibleRect(range);
+            const rect = JP.visibleRect(range);
             if (!rect)
                 return;
             bubble.hidden = false;
-            bubble.style.left = `${clamp(rect.right - 17, 8, window.innerWidth - 40)}px`;
-            bubble.style.top = `${clamp(rect.top - 6, 40, window.innerHeight - 8)}px`;
+            bubble.style.left = `${JP.clamp(rect.right - 17, 8, window.innerWidth - 40)}px`;
+            bubble.style.top = `${JP.clamp(rect.top - 6, 40, window.innerHeight - 8)}px`;
         }
         async createFromContext(selectionText) {
             const current = document.getSelection();
@@ -1640,7 +1686,7 @@ var JP;
             const now = Date.now();
             const linked = anchor && sourceRange ? JP.turnForRange(sourceRange, this.conversation.turns.filter(t => t.element?.isConnected)) : null;
             const note = {
-                schemaVersion: 1, id: id(), pageKey: this.page, sourceUrl: location.href,
+                schemaVersion: 1, id: JP.id(), pageKey: this.page, sourceUrl: location.href,
                 sourceTitle: document.title, anchor, conversationTurnId: linked?.stableId, text: '',
                 appearance: { color: this.pickDefaultColor(), width: 256, height: 202, offsetX: 0, offsetY: 0 },
                 createdAt: now, updatedAt: now, revision: 0
@@ -1671,7 +1717,7 @@ var JP;
         pickDefaultColor() {
             if (this.defaultNoteColorMode !== 'random')
                 return 'yellow';
-            const pool = COLOR_ORDER.filter(color => color !== this.lastAutoColor);
+            const pool = JP.COLOR_ORDER.filter(color => color !== this.lastAutoColor);
             const color = pool[Math.floor(Math.random() * pool.length)] || 'yellow';
             this.lastAutoColor = color;
             return color;
@@ -1756,7 +1802,7 @@ var JP;
             const rect = button.getBoundingClientRect();
             const railRect = this.$('#jp-rail').getBoundingClientRect();
             preview.style.right = `${Math.max(44, innerWidth - railRect.left + 9)}px`;
-            preview.style.top = `${clamp(rect.top - 13, 8, innerHeight - 96)}px`;
+            preview.style.top = `${JP.clamp(rect.top - 13, 8, innerHeight - 96)}px`;
             preview.hidden = false;
         }
         cancelNavigation(explicit) {
@@ -1960,12 +2006,12 @@ var JP;
                 endY = root.scrollTop + rect.bottom - rootRect.top;
             }
             if (endY !== null && endY > startY + 14) {
-                const rangeRect = visibleRect(match.range);
+                const rangeRect = JP.visibleRect(match.range);
                 if (rangeRect) {
                     const rootRect = root === document.scrollingElement ? { top: 0 } : root.getBoundingClientRect();
                     const position = root.scrollTop + rangeRect.top - rootRect.top;
                     if (position >= startY - 10 && position <= endY + 10) {
-                        return { fraction: clamp((position - startY) / (endY - startY), 0, 1), confidence: 'geometry' };
+                        return { fraction: JP.clamp((position - startY) / (endY - startY), 0, 1), confidence: 'geometry' };
                     }
                 }
             }
@@ -1975,18 +2021,18 @@ var JP;
                 const start = findTextStart(turn.element);
                 const end = next?.element?.isConnected ? findTextStart(next.element) : this.index.text.length;
                 if (start !== undefined && end !== undefined && end > start + 20 && match.start >= start && match.start <= end) {
-                    return { fraction: clamp((match.start - start) / (end - start), 0, 1), confidence: 'text' };
+                    return { fraction: JP.clamp((match.start - start) / (end - start), 0, 1), confidence: 'text' };
                 }
             }
             return null;
         }
         pageProgress(match) {
-            const rangeRect = visibleRect(match.range);
+            const rangeRect = JP.visibleRect(match.range);
             if (!rangeRect)
                 return null;
             const root = document.scrollingElement || document.documentElement;
             const height = Math.max(root.scrollHeight, document.documentElement.scrollHeight);
-            return height > 0 ? clamp((root.scrollTop + rangeRect.top) / height, 0, 1) : null;
+            return height > 0 ? JP.clamp((root.scrollTop + rangeRect.top) / height, 0, 1) : null;
         }
         associateNotesToTurns() {
             const turns = this.conversation.turns;
@@ -2079,7 +2125,7 @@ var JP;
                     const fraction = notes.map(note => note.spatial.withinTurnProgress);
                     const weightHint = 1;
                     this.railGroups.push({ turnId: turn.id, noteIds: notes.map(note => note.id), fractions: fraction, weightHint });
-                    const bar = el('button', 'rail-turn');
+                    const bar = JP.el('button', 'rail-turn');
                     bar.type = 'button';
                     bar.dataset.turnId = turn.id;
                     bar.dataset.railKey = `turn:${turn.id}`;
@@ -2151,11 +2197,11 @@ var JP;
             }
         }
         addRailNote(track, note) {
-            const button = el('button', `rail-pin${note.anchor && !this.liveMatch(note) ? ' missing' : ''}`);
+            const button = JP.el('button', `rail-pin${note.anchor && !this.liveMatch(note) ? ' missing' : ''}`);
             button.type = 'button';
             button.dataset.noteId = note.id;
             button.dataset.railKey = `note:${note.id}`;
-            button.style.background = COLOR_HEX[JP.appearance(note).color];
+            button.style.background = JP.COLOR_HEX[JP.appearance(note).color];
             const description = note.text.trim().slice(0, 90) || note.anchor?.exact.slice(0, 70) || '空白便签';
             button.setAttribute('aria-label', `${note.anchor && !this.liveMatch(note) ? '原文暂未加载，' : ''}跳转便签：${description}`);
             button.addEventListener('click', () => this.goTo(note.id));
@@ -2199,10 +2245,10 @@ var JP;
             if (list.hidden)
                 return;
             list.replaceChildren();
-            const head = el('div', 'list-header');
-            const title = el('span');
+            const head = JP.el('div', 'list-header');
+            const title = JP.el('span');
             title.textContent = 'JotPatch';
-            const close = el('button');
+            const close = JP.el('button');
             close.type = 'button';
             close.textContent = '×';
             close.title = '关闭列表';
@@ -2214,12 +2260,12 @@ var JP;
             const mapped = new Set();
             if (hasTurns) {
                 for (const turn of turns) {
-                    const button = el('button', 'entry turn-entry');
+                    const button = JP.el('button', 'entry turn-entry');
                     button.type = 'button';
                     button.dataset.turnId = turn.id;
-                    const number = el('span', 'turn-order');
+                    const number = JP.el('span', 'turn-order');
                     number.textContent = String(turn.order + 1);
-                    const label = el('span');
+                    const label = JP.el('span');
                     label.textContent = turn.preview;
                     button.append(number, label);
                     button.addEventListener('click', () => { this.listOpen = false; this.renderList(); void this.jumpToTurn(this.conversation.turns.find(t => t.id === turn.id) || turn); });
@@ -2238,27 +2284,27 @@ var JP;
             }
             const others = this.sortedNotes().filter(note => !mapped.has(note.id));
             if (others.length) {
-                const heading = el('div', 'list-section');
+                const heading = JP.el('div', 'list-section');
                 heading.textContent = hasTurns ? '悬浮便签' : '本页便签';
                 list.appendChild(heading);
                 for (const note of others)
                     this.addListNote(list, note, false);
             }
-            const footer = el('div', 'list-footer');
+            const footer = JP.el('div', 'list-footer');
             footer.textContent = BRAND_LINE;
             list.appendChild(footer);
         }
         addListNote(list, note, nested) {
-            const button = el('button', `entry note-entry${nested ? ' nested' : ''}`);
+            const button = JP.el('button', `entry note-entry${nested ? ' nested' : ''}`);
             button.type = 'button';
             button.dataset.noteId = note.id;
-            const dot = el('span', 'dot');
-            dot.style.background = COLOR_HEX[JP.appearance(note).color];
-            const label = el('span', 'note-name');
+            const dot = JP.el('span', 'dot');
+            dot.style.background = JP.COLOR_HEX[JP.appearance(note).color];
+            const label = JP.el('span', 'note-name');
             label.textContent = note.text.trim().split('\n')[0] || note.anchor?.exact.slice(0, 65) || '空白便签';
             button.append(dot, label);
             if (note.anchor) {
-                const symbol = el('span', 'entry-pin');
+                const symbol = JP.el('span', 'entry-pin');
                 symbol.textContent = '📌';
                 symbol.title = this.liveMatch(note) ? '已钉在原文' : '原文暂未加载';
                 symbol.classList.toggle('unresolved', !this.liveMatch(note));
@@ -2274,10 +2320,10 @@ var JP;
             for (const note of this.notes) {
                 if (!note.anchor)
                     continue;
-                const button = el('button', 'marker');
+                const button = JP.el('button', 'marker');
                 button.type = 'button';
                 button.dataset.noteId = note.id;
-                button.style.background = COLOR_HEX[JP.appearance(note).color];
+                button.style.background = JP.COLOR_HEX[JP.appearance(note).color];
                 button.textContent = '✎';
                 button.title = note.text.trim().slice(0, 70) || note.anchor.exact.slice(0, 70);
                 button.setAttribute('aria-label', `打开便签：${button.title}`);
@@ -2324,14 +2370,14 @@ var JP;
             for (const marker of Array.from(this.shadow.querySelectorAll('.marker'))) {
                 const note = notesById.get(marker.dataset.noteId || '');
                 const range = note && this.liveMatch(note)?.range;
-                const rect = range && visibleRect(range);
+                const rect = range && JP.visibleRect(range);
                 if (!rect || rect.bottom < 0 || rect.top > innerHeight || rect.right < 0 || rect.left > innerWidth) {
                     marker.hidden = true;
                     continue;
                 }
                 marker.hidden = false;
-                marker.style.left = `${clamp(rect.right + 7, 5, innerWidth - 24)}px`;
-                marker.style.top = `${clamp(rect.top, 5, innerHeight - 24)}px`;
+                marker.style.left = `${JP.clamp(rect.right + 7, 5, innerWidth - 24)}px`;
+                marker.style.top = `${JP.clamp(rect.top, 5, innerHeight - 24)}px`;
             }
         }
         trustedNoteMatch(note, index) {
@@ -2505,11 +2551,11 @@ var JP;
             this.cards.delete(noteId);
         }
         makePaper(note) {
-            const paper = el('section', 'paper');
+            const paper = JP.el('section', 'paper');
             paper.dataset.noteId = note.id;
             paper.setAttribute('aria-label', 'JotPatch 便签');
             const style = JP.appearance(note);
-            paper.style.setProperty('--paper', COLOR_HEX[style.color]);
+            paper.style.setProperty('--paper', JP.COLOR_HEX[style.color]);
             paper.style.setProperty('--jp-font-size', this.fontPixels(style.fontSize));
             paper.style.width = `${style.width}px`;
             paper.style.height = `${style.height}px`;
@@ -2594,7 +2640,7 @@ var JP;
                 const steps = ['sm', 'md', 'lg'];
                 const current = JP.appearance(note).fontSize;
                 const direction = event.deltaY < 0 ? 1 : -1;
-                const next = steps[clamp(steps.indexOf(current) + direction, 0, steps.length - 1)];
+                const next = steps[JP.clamp(steps.indexOf(current) + direction, 0, steps.length - 1)];
                 this.setFontSize(note, paper, next);
             }, { passive: false });
             for (const name of ['bold', 'italic', 'bullet', 'number']) {
@@ -2624,16 +2670,16 @@ var JP;
                 button.addEventListener('click', () => this.setFontSize(note, paper, button.dataset.font));
             }
             const colors = paper.querySelector('.colors');
-            COLOR_ORDER.forEach(color => {
-                const btn = el('button');
+            JP.COLOR_ORDER.forEach(color => {
+                const btn = JP.el('button');
                 btn.type = 'button';
                 btn.title = color;
-                btn.style.background = COLOR_HEX[color];
+                btn.style.background = JP.COLOR_HEX[color];
                 btn.setAttribute('aria-label', `颜色：${color}`);
                 btn.setAttribute('aria-pressed', String(color === style.color));
                 btn.addEventListener('click', () => {
                     note.appearance = { ...JP.appearance(note), color };
-                    paper.style.setProperty('--paper', COLOR_HEX[color]);
+                    paper.style.setProperty('--paper', JP.COLOR_HEX[color]);
                     colors.querySelectorAll('button').forEach(button => button.setAttribute('aria-pressed', String(button === btn)));
                     this.touchNote(note);
                     this.renderDock();
@@ -2687,8 +2733,8 @@ var JP;
                     let updated = mode === 'move'
                         ? { ...initial, offsetX: initial.offsetX + dx, offsetY: initial.offsetY + dy }
                         : { ...initial,
-                            width: clamp(initial.width + dx, 180, Math.min(560, innerWidth - 15 - (startRect?.left || 0))),
-                            height: clamp(initial.height + dy, 132, Math.min(620, innerHeight - 15 - (startRect?.top || 0))) };
+                            width: JP.clamp(initial.width + dx, 180, Math.min(560, innerWidth - 15 - (startRect?.left || 0))),
+                            height: JP.clamp(initial.height + dy, 132, Math.min(620, innerHeight - 15 - (startRect?.top || 0))) };
                     note.appearance = updated;
                     if (paper) {
                         paper.style.width = `${updated.width}px`;
@@ -2734,7 +2780,7 @@ var JP;
                 return;
             const dimensions = JP.appearance(note);
             const match = this.liveMatch(note);
-            const rect = match && visibleRect(match.range);
+            const rect = match && JP.visibleRect(match.range);
             if (note.anchor) {
                 if (!match || !rect) {
                     // A missing DOM anchor is NOT a page-level note. Never use the
@@ -2774,14 +2820,14 @@ var JP;
                     y = rect.top;
                 }
                 else {
-                    x = clamp(rect.right - width / 2, 8, innerWidth - width - 8);
+                    x = JP.clamp(rect.right - width / 2, 8, innerWidth - width - 8);
                     y = blockRect.bottom + 11;
                     if (y + height > innerHeight - 8)
                         y = blockRect.top - height - 11;
                 }
             }
-            x = clamp(x + dimensions.offsetX, 8, innerWidth - width - 8);
-            y = clamp(y + dimensions.offsetY, 8, innerHeight - height - 8);
+            x = JP.clamp(x + dimensions.offsetX, 8, innerWidth - width - 8);
+            y = JP.clamp(y + dimensions.offsetY, 8, innerHeight - height - 8);
             card.style.left = `${x}px`;
             card.style.top = `${y}px`;
         }
@@ -2883,7 +2929,7 @@ var JP;
                     JP.renderMarkdown(editor, fresh.text);
                     editor.dataset.empty = String(!fresh.text.trim());
                 }
-                paper.style.setProperty('--paper', COLOR_HEX[JP.appearance(fresh).color]);
+                paper.style.setProperty('--paper', JP.COLOR_HEX[JP.appearance(fresh).color]);
                 paper.style.setProperty('--jp-font-size', this.fontPixels(JP.appearance(fresh).fontSize));
                 paper.style.width = `${JP.appearance(fresh).width}px`;
                 paper.style.height = `${JP.appearance(fresh).height}px`;
