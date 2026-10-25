@@ -10,7 +10,7 @@
 
 ## 日常 dev 构建
 
-合并到 `dev` 后，GitHub Actions 执行 `npm run check`，然后按 `GITHUB_RUN_NUMBER` 生成 `JotPatch-v0.1.16-dev.N-chromium.zip` 作为测试 Artifact。这个 ZIP 在根目录直接含 `manifest.json`、`dist/` 等必要文件，**不含源码和 Node 环境**。
+合并到 `dev` 后，GitHub Actions 执行 `npm run check`，然后按 `GITHUB_RUN_NUMBER` 生成 `JotPatch-v0.1.17-dev.N-chromium.zip` 作为测试 Artifact。这个 ZIP 在根目录直接含 `manifest.json`、`dist/` 等必要文件，**不含源码和 Node 环境**。
 
 本地：
 
@@ -18,7 +18,7 @@
 npm install
 npm run check
 npm run package:dev
-# 产物：build/chromium/ + artifacts/JotPatch-v0.1.16-dev.1-chromium.zip
+# 产物：build/chromium/ + artifacts/JotPatch-v0.1.17-dev.1-chromium.zip
 ```
 
 Firefox 当前独立于该发行流水线，尚未承诺完成 Firefox 可安装包。等待合作者的分支完成全功能整合和 Firefox 测试后，给 Release 工作流增加 Firefox 打包及签名。
@@ -26,10 +26,10 @@ Firefox 当前独立于该发行流水线，尚未承诺完成 Firefox 可安装
 ## 正式发行前
 
 1. 从最新 `dev` 创建 Release PR，目标 `main`。不要在普通 feature PR 中改稳定版本。
-2. PR 中锁定待发功能，更新 `config/version.json` 为 `"channel":"release"`，并将 `package.json.version`、`manifest.version`、`manifest.version_name` 都改成 `nextRelease`，例如 `0.1.16`。
+2. PR 中锁定待发功能，更新 `config/version.json` 为 `"channel":"release"`，并将 `package.json.version`、`manifest.version`、`manifest.version_name` 都改成 `nextRelease`，例如 `0.1.17`。此外要为该版本准备发行说明，并更新发行工作流里的 `--notes-file` 到对应文件，严禁复用旧版本说明。
 3. 执行 `npm run check`、完整 `npm run test:e2e` 和指定浏览器的人工安装烟测；`npm run package:release` 必须通过。
-4. **Merge commit 合入 `main`**，由维护者创建指向 main 提交的注释 Tag `v0.1.16`，将 Tag 推送。
-5. `.github/workflows/release.yml` 再核对 Tag 属于 `main`，验证版本一致、构建 ZIP，并创建 GitHub Release 附件。不通过检查时不会自动发布。
+4. **Merge commit 合入 `main`**，保留原始提交及作者信息。
+5. `.github/workflows/release.yml` 在 main 更新时验证发行渠道、版本、构建与包内容，然后**在同一个工作流中**创建指向该 main 提交的注释 Tag（例如 `v0.1.17`）和 GitHub Release（附 Chromium ZIP）。GitHub Actions 内使用 GITHUB_TOKEN 推送的 Tag 不会再触发另一个工作流，因此不可把“推送 Tag”与“创建 Release”拆成相互依赖的两个任务。已有同名 Release 时保持幂等，不覆盖历史发行包。也支持对已有 Tag 的单独工作流重试。
 6. 手动完成 Chrome Web Store、Edge Add-ons 的上传审核流程；Firefox 必须以完成 Mozilla 签名的 XPI/AMO 为准，不能把未签名 ZIP 改名成 XPI 后视为正式版。
 7. 把修复和版本状态同步回 `dev`（如有临时 hotfix），随后开启下一轮 `-dev.1`。
 

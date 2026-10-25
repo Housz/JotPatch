@@ -10,7 +10,7 @@ JotPatch 为网页原文添加可编辑的彩色便签，支持 ChatGPT / Gemini
 
 当前可用版本为 **Chrome / Edge（Chromium）扩展**。Firefox 适配正在 `feature/firefox-port` 由 Leezh76 独立开发，尚未合入统一构建，请勿将 Chromium ZIP 当成 Firefox 正式包。
 
-1. 下载已测试的扩展 ZIP，解压，找到包含 `manifest.json` 的目录。
+1. 从 [GitHub Releases](https://github.com/Housz/JotPatch/releases) 下载已测试的 Chromium ZIP，解压，找到包含 `manifest.json` 的目录。
 2. 在 `chrome://extensions` 或 `edge://extensions` 开启开发者模式，**加载已解压的扩展程序**。
 3. 打开网页，点击 JotPatch 扩展图标激活；选中文字后点击 📌，或右键添加便签。
 4. AI 聊天页面右侧的灰色横线用于定位问题、彩色标记用于定位便签。鼠标悬停显示摘要，点击直接导航。
