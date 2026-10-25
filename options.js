@@ -1,4 +1,7 @@
 'use strict';
+// Firefox exposes the promise-based `browser` namespace, Chromium exposes `chrome`.
+// Every call used on this page returns a promise in both, so one handle suffices.
+const api = globalThis.browser?.storage ? globalThis.browser : globalThis.chrome;
 const originField = document.querySelector('#origin');
 const button = document.querySelector('#grant');
 const status = document.querySelector('#status');
@@ -13,8 +16,8 @@ let preferenceWrite = Promise.resolve();
 function updatePreferences(patch) {
   // Serialize rapidly toggled options so read/modify/write updates do not race.
   preferenceWrite = preferenceWrite.catch(() => undefined).then(async () => {
-    const current = (await chrome.storage.local.get(prefKey))[prefKey] || {};
-    await chrome.storage.local.set({[prefKey]: { ...current, ...patch }});
+    const current = (await api.storage.local.get(prefKey))[prefKey] || {};
+    await api.storage.local.set({[prefKey]: { ...current, ...patch }});
   });
   return preferenceWrite;
 }
@@ -22,7 +25,7 @@ const modes = new Set(['always', 'alt', 'off']);
 const providedOrigin = new URLSearchParams(location.search).get('origin');
 if (providedOrigin) originField.value = providedOrigin;
 
-chrome.storage.local.get(prefKey).then((stored) => {
+api.storage.local.get(prefKey).then((stored) => {
   const setting = stored[prefKey]?.selectionTrigger;
   const mode = modes.has(setting) ? setting : 'always';
   document.querySelector(`input[name="selectionTrigger"][value="${mode}"]`).checked = true;
@@ -70,9 +73,9 @@ button.addEventListener('click', async () => {
     const url = new URL(origin);
     const pattern = `${url.protocol}//${url.hostname}/*`;
     // The browser permission prompt must be called during the user gesture.
-    const granted = await chrome.permissions.request({ origins: [pattern] });
+    const granted = await api.permissions.request({ origins: [pattern] });
     if (!granted) { status.textContent = '未授权，仍然可以手动打开插件。'; return; }
-    const response = await chrome.runtime.sendMessage({ type: 'JP_REGISTER_SITE', origin });
+    const response = await api.runtime.sendMessage({ type: 'JP_REGISTER_SITE', origin });
     if (!response?.ok) throw Error(response?.error || '注册失败');
     status.textContent = `已授权 ${origin}，刷新该网页即可自动找回便签。`;
   } catch (error) { status.textContent = `配置失败：${error.message}`; }

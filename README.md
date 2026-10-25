@@ -8,7 +8,7 @@ JotPatch 为网页原文添加可编辑的彩色便签，支持 ChatGPT / Gemini
 
 ## 立即使用
 
-当前可用版本为 **Chrome / Edge（Chromium）扩展**。Firefox 适配正在 `feature/firefox-port` 由 Leezh76 独立开发，尚未合入统一构建，请勿将 Chromium ZIP 当成 Firefox 正式包。
+当前面向用户的正式版本为 **Chrome / Edge（Chromium）扩展**。`dev` 已并入 Firefox 的构建路径（`npm run package:firefox`），但 Firefox 侧尚未完成与当前 `dev` 功能等价的完整回归，**不要把 Firefox ZIP 当成正式发行包**；两侧都由 `src/adapters/browsers/webextension.ts` 的运行时边界驱动。
 
 1. 从 [GitHub Releases](https://github.com/Housz/JotPatch/releases) 下载已测试的 Chromium ZIP，解压，找到包含 `manifest.json` 的目录。
 2. 在 `chrome://extensions` 或 `edge://extensions` 开启开发者模式，**加载已解压的扩展程序**。
@@ -23,11 +23,12 @@ JotPatch 为网页原文添加可编辑的彩色便签，支持 ChatGPT / Gemini
 ```bash
 # Node.js 20+
 npm install
-npm run check        # 构建 + 全部 Node 测试
-npm run package:dev  # 生成可安装的 Chromium 开发 ZIP
+npm run check          # 构建 + 全部 Node 测试
+npm run package:dev    # 生成可安装的 Chromium 开发 ZIP
+npm run package:firefox  # 生成 Firefox（MV3 事件页）开发 ZIP
 ```
 
-构建结果分别在 `dist/`（编译脚本）、`build/chromium/`（可解压安装目录）、`artifacts/`（ZIP）。浏览器集成测试需要 Python、Playwright 和 Chromium，见 [开发指南](docs/DEVELOPMENT.md)。
+构建结果分别在 `dist/`（编译脚本）、`build/chromium/` 或 `build/firefox/`（可解压安装目录）、`artifacts/`（ZIP）。Firefox 包可在 `about:debugging#/runtime/this-firefox` 以临时扩展加载。浏览器集成测试需要 Python、Playwright 和 Chromium，见 [开发指南](docs/DEVELOPMENT.md) 与 [Firefox 移植说明](docs/FIREFOX.md)。
 
 **新功能 / 修复从 `dev` 分支创建任务分支，PR 的目标分支选 `dev`。不要直接提交到 `main`。**
 
@@ -36,10 +37,10 @@ npm run package:dev  # 生成可安装的 Chromium 开发 ZIP
 ```text
 src/core/                  数据类型、便签/锚点/存储、导航引擎（无站点选择器）
 src/adapters/sites/        ChatGPT / Gemini DOM 适配器注册；未来 Claude / DeepSeek
-src/adapters/browsers/     WebExtension 运行时边界；Firefox 适配继续由独立分支整合
+src/adapters/browsers/     WebExtension 运行时边界（Chrome `chrome` / Firefox `browser`）
 src/content/               网页扫描与应用编排、入口
 src/ui/                    便签、Dock 的 UI 样式
-src/background/            Chromium MV3 事件与权限入口
+src/background/            MV3 事件与权限入口（Chromium 服务工作线程 / Firefox 事件页）
 config/version.json        版本/渠道配置
 scripts/                   构建校验、版本与归档打包
 tests/                     合约、架构、浏览器集成测试
@@ -62,7 +63,7 @@ tests/                     合约、架构、浏览器集成测试
 ## 当前支持范围
 
 - **Chromium**：Chrome/Edge，已提供编译和安装包构建路径。
-- **Firefox**：由 Leezh76 在独立分支开发；合入 `dev` 前需完成现有完整功能、Manifest、权限及浏览器回归，且保留原作者提交。
+- **Firefox**：MV3 事件页构建路径已并入 `dev`（`npm run package:firefox` → `build/firefox/`）。Manifest、权限与消息通道已按 Gecko 适配；与当前 `dev` 功能等价的完整浏览器回归仍未完成，因此暂不作为正式发行目标。
 - **AI 适配**：ChatGPT、Gemini 已接入注册表；未来的 Claude、DeepSeek 需要各自新增适配器和测试，不应直接在 `core` 里加选择器。
 - **Navigation Lab**：v0.1.15 的长会话实验功能仍**默认关闭**，用户主动启用才生效，不保证可找回网页从未加载过的全部历史。
 

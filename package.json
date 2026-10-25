@@ -9,6 +9,7 @@
     "test:e2e": "python tests/browser_e2e.py && python tests/conversation_e2e.py && python tests/optimization_e2e.py && python tests/virtualized_notes_e2e.py && python tests/spatial_rail_e2e.py && python tests/stable_rail_e2e.py && python tests/branding_e2e.py && python tests/navigation_recovery_e2e.py && python tests/navigation_recovery_e2e.py unreachable",
     "test:lab": "python tests/navigation_lab_e2e.py",
     "package:dev": "npm run build && node scripts/package.mjs --channel=dev",
+    "package:firefox": "npm run build && node scripts/package.mjs --channel=dev --browser=firefox",
     "package:release": "npm run build && node scripts/package.mjs --channel=release",
     "test:architecture": "node --test tests/architecture.test.mjs tests/versioning.test.mjs"
   },

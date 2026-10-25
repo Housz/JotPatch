@@ -37,9 +37,12 @@ npm run package:dev
 npm run build                # dist/content.js + dist/background.js
 npm run check                # build + Node 契约/布局/适配/版本测试
 npm run package:dev          # 开发 ZIP 可用于 Chromium 解压加载
+npm run package:firefox      # Firefox MV3 事件页 ZIP（build/firefox/）
 npm run test:e2e             # Chromium 集成测试（较慢）
 npm run test:lab             # 慢速历史导航模拟，可指定一个场景
 ```
+
+Firefox 包产物在 `build/firefox/`（可解压安装目录）和 `artifacts/JotPatch-*-firefox.zip`。它由 `scripts/firefox-manifest.mjs` 从 `manifest.json` 派生：`background.service_worker` → `background.scripts`、`options_page` → `options_ui`，并补上 `browser_specific_settings.gecko`。加载方式、已知差异和验证步骤见 [Firefox 移植说明](FIREFOX.md)。
 
 合成网页测试无法证明真实登录 ChatGPT/Gemini 页面完全兼容。若你修复与虚拟化或浏览器权限有关的问题，需要再做真实浏览器人工验证，记录目标是否确实进入视口，而不只是 scrollTop 值改变。
 
