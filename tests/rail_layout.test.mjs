@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 import {createRequire} from 'node:module';
 const ts=createRequire(import.meta.url)('typescript');
-const code=ts.transpileModule(readFileSync('src/content/rail-layout.ts','utf8'), {
+const code=ts.transpileModule(readFileSync('src/core/rail-layout.ts','utf8'), {
   compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.None}
 }).outputText;
 const context=vm.createContext({Math,Map});vm.runInContext(code,context);

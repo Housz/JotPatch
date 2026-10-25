@@ -3,6 +3,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   typecheck-and-contracts:
     runs-on: ubuntu-latest
@@ -13,3 +16,13 @@ jobs:
           node-version: '22'
       - run: npm install --no-audit --no-fund
       - run: npm run check
+      - name: Build dev Chromium package
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+        run: node scripts/package.mjs --channel=dev --build=${{ github.run_number }}
+      - name: Upload dev installable ZIP
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jotpatch-chromium-dev-${{ github.run_number }}
+          path: artifacts/JotPatch-*-chromium.zip
+          if-no-files-found: error

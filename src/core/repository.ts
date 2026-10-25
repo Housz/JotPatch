@@ -1,4 +1,10 @@
 namespace JP {
+  /** Dependency-injected storage boundary shared by Chromium/Firefox adapters and tests. */
+  export interface StoragePort {
+    get(keys: string | string[] | Record<string, unknown> | null): Promise<Record<string, unknown>>;
+    set(items: Record<string, unknown>): Promise<void>;
+    remove(keys: string | string[]): Promise<void>;
+  }
   const PREFIX = 'jotpatch:note:v1:';
   const PREFERENCES_KEY = 'jotpatch:preferences:v1';
   const COLORS: readonly NoteColor[] = ['yellow', 'pink', 'green', 'blue', 'purple', 'gray'];
@@ -18,10 +24,11 @@ namespace JP {
   }
 
   export class NoteRepository {
+    constructor(private readonly storage: StoragePort) {}
     static key(id: string): string { return PREFIX + id; }
 
     async list(page: string): Promise<Note[]> {
-      const stored = await chrome.storage.local.get(null) as Record<string, unknown>;
+      const stored = await this.storage.get(null) as Record<string, unknown>;
       const output: Note[] = [];
       const staleDeletes: string[] = [];
       for (const [key, value] of Object.entries(stored)) {
@@ -33,17 +40,17 @@ namespace JP {
         output.push(value);
       }
       // A tombstone protects against stale page instances resurrecting a deletion.
-      if (staleDeletes.length) void chrome.storage.local.remove(staleDeletes).catch(() => undefined);
+      if (staleDeletes.length) void this.storage.remove(staleDeletes).catch(() => undefined);
       return output.sort((a, b) => a.createdAt - b.createdAt);
     }
 
     async get(id: string): Promise<Note | null> {
-      const value = (await chrome.storage.local.get(NoteRepository.key(id)))[NoteRepository.key(id)];
+      const value = (await this.storage.get(NoteRepository.key(id)))[NoteRepository.key(id)];
       return this.isNote(value) ? value : null;
     }
 
     async put(note: Note): Promise<void> {
-      await chrome.storage.local.set({ [NoteRepository.key(note.id)]: note });
+      await this.storage.set({ [NoteRepository.key(note.id)]: note });
     }
 
     async markDeleted(note: Note): Promise<void> {
@@ -51,7 +58,7 @@ namespace JP {
     }
 
     async remove(id: string): Promise<void> {
-      await chrome.storage.local.remove(NoteRepository.key(id));
+      await this.storage.remove(NoteRepository.key(id));
     }
 
     noteFromChange(key: string, newValue: unknown): Note | null {
@@ -59,7 +66,7 @@ namespace JP {
     }
 
     async preferences(): Promise<Preferences> {
-      const saved = (await chrome.storage.local.get(PREFERENCES_KEY))[PREFERENCES_KEY];
+      const saved = (await this.storage.get(PREFERENCES_KEY))[PREFERENCES_KEY];
       const prefs = saved && typeof saved === 'object' ? saved as Partial<Preferences> : {};
       return {
         selectionTrigger: prefs.selectionTrigger === 'alt' || prefs.selectionTrigger === 'off' ? prefs.selectionTrigger : 'always',

@@ -1,0 +1,33 @@
+name: Publish release
+on:
+  push:
+    tags:
+      - 'v[0-9]*.[0-9]*.[0-9]*'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Confirm tag is included in main
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - run: npm install --no-audit --no-fund
+      - run: npm run check
+      - name: Validate tag matches release config
+        run: |
+          node -e 'const c=require("./config/version.json"); if(process.env.GITHUB_REF_NAME!==`v${c.nextRelease}`)process.exit(1);'
+      - run: npm run package:release
+      - name: Publish GitHub Release with verified Chromium ZIP
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" artifacts/JotPatch-*-chromium.zip --verify-tag --generate-notes

@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 import {createRequire} from 'node:module';
 const ts=createRequire(import.meta.url)('typescript');
-const transpiled=ts.transpileModule(readFileSync('src/content/navigation-lab.ts','utf8'),{
+const transpiled=ts.transpileModule(readFileSync('src/core/navigation-lab.ts','utf8'),{
   compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.None}
 }).outputText;
 const context=vm.createContext({Date,Map,Math,Number});vm.runInContext(transpiled,context);
