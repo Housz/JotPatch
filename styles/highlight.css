@@ -1,0 +1,6 @@
+/* Applied by chrome.scripting.insertCSS and registered content scripts. */
+::highlight(jotpatch-anchored-text) {
+  background-color: rgba(255, 198, 58, 0.34);
+  text-decoration: underline;
+  text-decoration-color: rgba(190, 126, 28, 0.8);
+}
