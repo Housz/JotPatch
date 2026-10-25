@@ -2,24 +2,24 @@
 
 项目使用一个公共发行版本序列：**`vMAJOR.MINOR.PATCH`**（Git Tag / GitHub Release / 稳定应用版本），开发工作则使用 **`MAJOR.MINOR.PATCH-dev.N`**（在 `dev` 上迭代）。Chrome 的 `manifest.version` 只允许最多四段**纯整数**，因此需要额外映射，而不是直接将 `-dev` 写入扩展 `version`。
 
-## 基于 v0.1.15 的下一轮
+## v0.1.16 已发行；当前下一轮开发为 v0.1.17
 
 | 类型 | 具体值 | 在哪里使用 |
 | --- | --- | --- |
-| 开发目标 | `0.1.16-dev.1` | `package.json`、`manifest.version_name`、ZIP 名字 |
-| 开发 Numeric ID | `0.1.15.1` | `manifest.version`，浏览器更新排序 |
-| 第一次正式发布目标 | `0.1.16` | `main`、Git Tag `v0.1.16`、正式包 |
-| CI 第 N 次 dev 构建 | `0.1.16-dev.N` + `0.1.15.N` | GitHub Actions 编号，自动生成测试包 |
+| 开发目标 | `0.1.17-dev.1` | `package.json`、`manifest.version_name`、ZIP 名字 |
+| 开发 Numeric ID | `0.1.16.1` | `manifest.version`，浏览器更新排序 |
+| 下一次正式发布目标 | `0.1.17` | 计划下一版 Tag `v0.1.17`、正式包 |
+| CI 第 N 次 dev 构建 | `0.1.17-dev.N` + `0.1.16.N` | GitHub Actions 编号，自动生成测试包 |
 
-Chrome 按数字逐段比较版本，因此 `0.1.15.N` 严格小于 `0.1.16`，测试版可以升级到同一轮的稳定版。每一段必须在 0–65535，`N` 不得超过 65535。**不要在 `manifest.version` 中写 `0.1.16-dev.1`。**
+Chrome 按数字逐段比较版本，因此 `0.1.16.N` 严格小于 `0.1.17`，测试版可以升级到同一轮的稳定版。每一段必须在 0–65535，`N` 不得超过 65535。**不要在 `manifest.version` 中写 `0.1.17-dev.1`。**
 
 `config/version.json` 是唯一的渠道控制信息：
 
 ```json
-{"schema":1,"channel":"dev","baseline":"0.1.15","nextRelease":"0.1.16","devBuild":1}
+{"schema":1,"channel":"dev","baseline":"0.1.16","nextRelease":"0.1.17","devBuild":1}
 ```
 
-- `baseline`：上一个已认可代码基线版本；本阶段是 v0.1.15 实验代码快照，**不代表该版本已经发布到商店**。
+- `baseline`：上一次完成公开发行的版本，本阶段为 GitHub Release `v0.1.16`；商店审核和上架与 GitHub Release 是独立流程。
 - `nextRelease`：下一次计划发布的稳定版本。
 - `devBuild`：本地构建默认序号；CI 使用 `--build=<GitHub run number>` 自动生成新编号，无需开发者每天改源文件。
 - `channel`：`dev` 或 `release`；发布前必须通过 Release PR 明确改为 `release`。

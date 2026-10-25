@@ -18,8 +18,9 @@ test('development and release versions are compatible with Chrome numeric upgrad
   assert.throws(()=>resolveVersion(config,'dev',65536));
   for(const name of ['1.2.3-beta','1.2.3.4','1.02.3','1.2.65536']) assert.throws(()=>triple(name));
 });
-test('the Chromium release archive contains a root manifest and no source files',()=>{
-  const filename='artifacts/JotPatch-v0.1.16-dev.1-chromium.zip';
+test('the Chromium dev archive contains a root manifest and no source files',()=>{
+  const version=resolveVersion(loadVersionConfig(),'dev');
+  const filename=`artifacts/JotPatch-${version.artifactVersion}-chromium.zip`;
   if(!existsSync(filename))return; // npm run check does not require packaging first.
   const binary=readFileSync(filename);
   const local=[];let offset=0;
@@ -40,8 +41,8 @@ test('the Chromium release archive contains a root manifest and no source files'
   assert.ok(names.includes('icons/icon128.png'));
   assert.ok(!names.some(x=>x.startsWith('src/')||x.includes('node_modules')||x.includes('README.md')));
   const manifest=JSON.parse(local.find(x=>x.name==='manifest.json').data);
-  assert.equal(manifest.version,'0.1.15.1');
-  assert.equal(manifest.version_name,'0.1.16-dev.1');
+  assert.equal(manifest.version,version.manifestVersion);
+  assert.equal(manifest.version_name,version.versionName);
 });
 test('ZIP builder rejects unsafe/duplicate names and produces deterministic bytes',()=>{
   const entries=[{name:'manifest.json',data:Buffer.from('{}')},{name:'icons/icon16.png',data:Buffer.from('a')}];
