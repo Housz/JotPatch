@@ -233,6 +233,7 @@ def main():
             driver.switch_to.new_window('tab')
             driver.get(f'moz-extension://{base}/options.html')
 
+            observed_notes=[]
             def read_note_storage(d):
                 notes=d.execute_async_script('''
                     const done=arguments[arguments.length-1];
@@ -243,9 +244,24 @@ def main():
                       e=>done({error:String(e)}));
                 ''')
                 assert isinstance(notes,list),f'Firefox real storage unavailable: {notes}'
+                observed_notes[:] = notes
                 return next((n for n in notes if n['text']==note_text and not n['deletedAt']),None)
 
-            persisted=WebDriverWait(driver,10).until(read_note_storage)
+            try:
+                persisted=WebDriverWait(driver,8).until(read_note_storage)
+            except TimeoutException:
+                driver.switch_to.window(original_window)
+                editor_state=driver.execute_script('''
+                    const root=document.querySelector("#jotpatch-root");
+                    const editor=root?.shadowRoot?.querySelector(".paper .note-editor");
+                    const paper=editor?.closest(".paper");
+                    return {text:editor?.textContent,html:editor?.innerHTML,
+                        editorEmpty:editor?.dataset.empty,
+                        paperSave:paper?.dataset.save,
+                        root:!!root, paperCount:root?.shadowRoot?.querySelectorAll(".paper").length};
+                ''')
+                print(f'DIAGNOSTIC: Firefox native editor={editor_state!r} persisted={observed_notes!r}',flush=True)
+                raise
             assert persisted['key'].startswith('jotpatch:note:v1:')
             print('PASS: real Firefox note editor autosaved Markdown into browser.storage.local',flush=True)
 
