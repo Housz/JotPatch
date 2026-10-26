@@ -1,4 +1,26 @@
 "use strict";
+var JP;
+(function (JP) {
+    /** Minimal WebExtension runtime gateway. No browser-specific code in core. */
+    function extensionApi() {
+        const environment = globalThis;
+        const api = environment.browser?.runtime && environment.browser?.storage
+            ? environment.browser : environment.chrome;
+        if (!api?.runtime || !api?.storage)
+            throw new Error('JotPatch requires a WebExtension runtime');
+        return api;
+    }
+    JP.extensionApi = extensionApi;
+})(JP || (JP = {}));
+// MV3 background entry shared by the Chromium service worker and the Firefox
+// event page. Every browser-window concern goes through JP.extensionApi(), so
+// this file stays free of bare chrome.*/browser.* references.
+const api = JP.extensionApi();
+// Firefox exposes the promise-based `browser` namespace; Chromium exposes
+// `chrome` and needs sendResponse + `return true` for asynchronous replies.
+// Detecting the namespace keeps both message styles correct instead of assuming
+// one convention works everywhere.
+const promiseReplies = typeof globalThis.browser !== 'undefined';
 const CONTENT_SCRIPT = 'dist/content.js';
 const HIGHLIGHT_CSS = 'styles/highlight.css';
 const SELECTION_MENU = 'jotpatch-pin-selection';
@@ -18,19 +40,19 @@ function registrationId(origin) {
 }
 async function registerSite(origin) {
     const match = matchForOrigin(origin);
-    if (!await chrome.permissions.contains({ origins: [match] }))
+    if (!await api.permissions.contains({ origins: [match] }))
         throw new Error('Site permission not granted');
     const id = registrationId(match);
-    const registered = await chrome.scripting.getRegisteredContentScripts({ ids: [id] });
+    const registered = await api.scripting.getRegisteredContentScripts({ ids: [id] });
     if (!registered.length) {
-        await chrome.scripting.registerContentScripts([{
+        await api.scripting.registerContentScripts([{
                 id, matches: [match], js: [CONTENT_SCRIPT], css: [HIGHLIGHT_CSS],
                 runAt: 'document_idle', persistAcrossSessions: true
             }]);
     }
 }
 async function send(tabId, message) {
-    return chrome.tabs.sendMessage(tabId, message);
+    return api.tabs.sendMessage(tabId, message);
 }
 async function ensureInjected(tabId) {
     try {
@@ -38,11 +60,11 @@ async function ensureInjected(tabId) {
             return;
     }
     catch { /* Not yet injected. */ }
-    await chrome.scripting.insertCSS({ target: { tabId }, files: [HIGHLIGHT_CSS] });
-    await chrome.scripting.executeScript({ target: { tabId }, files: [CONTENT_SCRIPT] });
+    await api.scripting.insertCSS({ target: { tabId }, files: [HIGHLIGHT_CSS] });
+    await api.scripting.executeScript({ target: { tabId }, files: [CONTENT_SCRIPT] });
 }
-chrome.action.onClicked.addListener(async (tab) => {
-    if (typeof tab.id !== 'number')
+api.action.onClicked.addListener(async (tab) => {
+    if (typeof tab?.id !== 'number')
         return;
     try {
         const active = await send(tab.id, { type: 'JP_PING' }).catch(() => false);
@@ -58,14 +80,19 @@ chrome.action.onClicked.addListener(async (tab) => {
         console.warn('JotPatch cannot run on this page:', error);
     }
 });
-function installContextMenu() {
+async function installContextMenu() {
     // Recreate idempotently on install/update; no background-resident state.
-    chrome.contextMenus.removeAll(() => {
-        chrome.contextMenus.create({ id: SELECTION_MENU, title: '📌 添加 JotPatch 便签', contexts: ['selection'] });
-    });
+    // Firefox's namespace is promise-only, Chromium's removeAll takes a callback.
+    if (promiseReplies)
+        await api.contextMenus.removeAll();
+    else
+        await new Promise((resolve) => api.contextMenus.removeAll(() => resolve()));
+    api.contextMenus.create({ id: SELECTION_MENU, title: '📌 添加 JotPatch 便签', contexts: ['selection'] });
 }
-chrome.runtime.onInstalled.addListener(installContextMenu);
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+api.runtime.onInstalled.addListener(() => {
+    void installContextMenu().catch((error) => console.warn('JotPatch context menu setup failed:', error));
+});
+api.contextMenus.onClicked.addListener(async (info, tab) => {
     if (info.menuItemId !== SELECTION_MENU || typeof tab?.id !== 'number')
         return;
     try {
@@ -80,12 +107,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         console.warn('JotPatch context menu failed:', error);
     }
 });
-chrome.runtime.onMessage.addListener((message, sender, respond) => {
+api.runtime.onMessage.addListener((message, sender, respond) => {
     if (message?.type === 'JP_OPEN_SITE_SETUP' && sender.tab?.url) {
+        // Synchronous reply: sendResponse works in both namespaces.
         try {
             const origin = new URL(sender.tab.url).origin;
             matchForOrigin(origin);
-            void chrome.tabs.create({ url: chrome.runtime.getURL(`options.html?origin=${encodeURIComponent(origin)}`) });
+            void api.tabs.create({ url: api.runtime.getURL(`options.html?origin=${encodeURIComponent(origin)}`) });
             respond({ ok: true });
         }
         catch {
@@ -93,20 +121,25 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         }
         return false;
     }
-    if (message?.type === 'JP_REGISTER_SITE' && sender.url?.startsWith(chrome.runtime.getURL(''))) {
-        void registerSite(message.origin).then(() => respond({ ok: true }), (error) => respond({ ok: false, error: error.message }));
+    if (message?.type === 'JP_REGISTER_SITE' && sender.url?.startsWith(api.runtime.getURL(''))) {
+        const pending = registerSite(message.origin).then(() => ({ ok: true }), (error) => ({ ok: false, error: error.message }));
+        // Firefox resolves the sender's promise from the listener's own promise;
+        // Chromium needs the explicit async-reply sentinel.
+        if (promiseReplies)
+            return pending;
+        void pending.then(respond);
         return true;
     }
     return false;
 });
-chrome.permissions.onRemoved.addListener(async () => {
-    const scripts = await chrome.scripting.getRegisteredContentScripts();
+api.permissions.onRemoved.addListener(async () => {
+    const scripts = await api.scripting.getRegisteredContentScripts();
     for (const script of scripts) {
         if (!script.id.startsWith('jotpatch_site_'))
             continue;
         const origins = script.matches || [];
-        if (!await chrome.permissions.contains({ origins })) {
-            await chrome.scripting.unregisterContentScripts({ ids: [script.id] });
+        if (!await api.permissions.contains({ origins })) {
+            await api.scripting.unregisterContentScripts({ ids: [script.id] });
         }
     }
 });

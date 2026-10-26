@@ -36,8 +36,11 @@ test('selection bubble has no label, no quote/title/footer, and no permanent too
 });
 
 test('right-click action and selection-trigger preference are included', () => {
-  assert.ok(background.includes('chrome.contextMenus.onClicked.addListener'));
-  assert.ok(background.includes('chrome.contextMenus.create'));
+  // The background resolves the runtime through JP.extensionApi(), so the contract
+  // checks the capability instead of a Chrome-specific namespace prefix.
+  assert.ok(background.includes('JP.extensionApi()'));
+  assert.ok(background.includes('contextMenus.onClicked.addListener'));
+  assert.ok(background.includes('contextMenus.create'));
   assert.ok(content.includes("selectionTrigger === 'off'"));
   assert.ok(content.includes("selectionTrigger === 'alt'"));
   assert.ok(readFileSync('options.html', 'utf8').includes('value="alt"'));
