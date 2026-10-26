@@ -49,8 +49,8 @@ jobs:
         uses: browser-actions/setup-firefox@v1
         with:
           firefox-version: latest
-      - name: Package Firefox development add-on
-        run: node scripts/package.mjs --channel=dev --browser=firefox
+      - name: Package Firefox add-on for the source channel
+        run: node scripts/package.mjs --channel=$(node -p 'JSON.parse(require("node:fs").readFileSync("config/version.json","utf8")).channel') --browser=firefox
       - name: Validate Firefox package with Mozilla tooling
         run: npx --yes web-ext lint --source-dir build/firefox --self-hosted
       - name: Chromium real-DOM regression
