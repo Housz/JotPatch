@@ -153,7 +153,29 @@ def main():
                                     target:{tabId:tab.id},func:()=>document.readyState});
                                 injection=result?.[0]?.result||"empty result";
                             }catch(e){injection=String(e);}
-                            info.push({id:tab.id,url:tab.url,ping,injection});
+                            let css="not attempted",content="not attempted",postPing=null,initState=null;
+                            try {
+                                await browser.scripting.insertCSS({
+                                    target:{tabId:tab.id},files:["styles/highlight.css"]});
+                                css="ok";
+                            }catch(e){css=String(e);}
+                            try {
+                                await browser.scripting.executeScript({
+                                    target:{tabId:tab.id},files:["dist/content.js"]});
+                                content="ok";
+                            }catch(e){content=String(e);}
+                            try{postPing=await browser.tabs.sendMessage(tab.id,{type:"JP_PING"});}
+                            catch(e){postPing=String(e);}
+                            try {
+                                initState=(await browser.scripting.executeScript({
+                                  target:{tabId:tab.id},func:()=>({
+                                      root:!!document.querySelector("#jotpatch-root"),
+                                      state:document.readyState,
+                                      jpGlobal:typeof JP,
+                                      app:!!globalThis.__jotpatchStage0
+                                  })}))[0].result;
+                            }catch(e){initState=String(e);}
+                            info.push({id:tab.id,url:tab.url,ping,injection,css,content,postPing,initState});
                         }
                         return {tabs:info};
                     })().then(done,e=>done({error:String(e)}));
