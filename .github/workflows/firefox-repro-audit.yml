@@ -1,0 +1,20 @@
+name: Firefox v0.1.17 source snapshot
+on:
+  push:
+    branches: [fix/0.1.17-firefox-activation-security]
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bundle source tree with provenance
+        run: |
+          echo "${GITHUB_SHA}" > AUDIT_SOURCE_SHA.txt
+          tar --exclude=.git --exclude=node_modules --exclude=dist --exclude=build --exclude=artifacts -czf "$RUNNER_TEMP/jotpatch-0.1.17-fix-source.tar.gz" .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jotpatch-firefox-fix-source
+          path: ${{ runner.temp }}/jotpatch-0.1.17-fix-source.tar.gz
+          retention-days: 7
