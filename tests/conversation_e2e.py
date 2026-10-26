@@ -4,6 +4,7 @@ This is NOT a claim to have tested authenticated, live production websites;
 selectors are tested against multiple representative DOM generations.
 """
 from __future__ import annotations
+from browser_e2e import launch_browser
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
 from browser_e2e import STORAGE_SHIM
@@ -77,7 +78,7 @@ def select_text(page, css, phrase):
 
 def run():
     with sync_playwright() as p:
-        browser=p.chromium.launch(headless=True,executable_path='/usr/bin/chromium',args=['--no-sandbox'])
+        browser=launch_browser(p)
         context=browser.new_context(viewport={'width':1200,'height':800})
         errors=[]
 

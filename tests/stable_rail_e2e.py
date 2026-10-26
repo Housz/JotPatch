@@ -5,6 +5,7 @@ stationary hit targets, local-only trigger, accurate click resolution, fixed
 picker transit, sparse one-click, keyboard and no passive scroll interception.
 """
 from __future__ import annotations
+from browser_e2e import launch_browser
 import os
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
@@ -46,7 +47,7 @@ def rail_preview(page):
 
 def run():
     with sync_playwright() as p:
-        browser=p.chromium.launch(headless=True,executable_path='/usr/bin/chromium',args=['--no-sandbox'])
+        browser=launch_browser(p)
         errors=[]
         for height in (640,850):
             context=browser.new_context(viewport={'width':1200,'height':height})

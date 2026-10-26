@@ -5,9 +5,25 @@ A genuine installed MV3 extension manual check is still required for permissions
 """
 from __future__ import annotations
 from pathlib import Path
+import os
 from playwright.sync_api import sync_playwright, expect
 
 ROOT = Path(__file__).resolve().parents[1]
+
+def launch_browser(playwright):
+    """Run existing real-DOM suites against Chromium or Firefox/Gecko.
+
+    Firefox uses Playwright's own Firefox binary; not an installed extension.
+    Actual extension permission/background testing lives in firefox_addon_smoke.py.
+    """
+    name = os.environ.get('JP_E2E_BROWSER', 'chromium').lower()
+    if name == 'firefox':
+        return playwright.firefox.launch(headless=True)
+    if name == 'chromium':
+        executable = os.environ.get('JP_CHROMIUM_BIN', '/usr/bin/chromium')
+        options = {} if executable == 'playwright' else {'executable_path': executable}
+        return playwright.chromium.launch(headless=True, args=['--no-sandbox'], **options)
+    raise ValueError(f'Unsupported JP_E2E_BROWSER={name}')
 STORAGE_SHIM = r"""
 (() => {
   const STORE = globalThis.__jotpatchFakeStore || (globalThis.__jotpatchFakeStore = {});
@@ -84,7 +100,7 @@ def select(page, css='#anchor-target', alt=False):
 def run():
     fixture=(ROOT/'fixtures/long-page.html').read_text(encoding='utf-8')
     with sync_playwright() as p:
-        browser=p.chromium.launch(headless=True,executable_path='/usr/bin/chromium',args=['--no-sandbox'])
+        browser=launch_browser(p)
         context=browser.new_context(viewport={'width':1200,'height':800})
         page=new_page(context,fixture)
         errors=[]

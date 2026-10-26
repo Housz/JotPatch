@@ -2,6 +2,7 @@
 Synthetic DOM + fake storage; tests real pointer coordinates and visual captures.
 """
 from __future__ import annotations
+from browser_e2e import launch_browser
 import os
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
@@ -48,7 +49,7 @@ def snapshot(page,filename):
 
 def run():
     with sync_playwright() as p:
-        browser=p.chromium.launch(headless=True,executable_path='/usr/bin/chromium',args=['--no-sandbox'])
+        browser=launch_browser(p)
         errors=[]
         for viewport_h in (640,850,1080):
             context=browser.new_context(viewport={'width':1200,'height':viewport_h})
