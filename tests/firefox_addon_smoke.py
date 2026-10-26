@@ -10,6 +10,9 @@ Mozilla/AMO signing before it can be installed normally in release Firefox.
 from __future__ import annotations
 import json
 import os
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from threading import Thread
 from pathlib import Path
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -33,7 +36,7 @@ def main():
         version=driver.capabilities.get('browserVersion','0')
         assert int(version.split('.')[0]) >= 142, f'Firefox version {version} is below the manifest floor'
         addon_id=driver.install_addon(str(ROOT/'build/firefox'),temporary=True)
-        assert addon_id == 'jotpatch@housz.dev',addon_id
+        assert addon_id == '{8801fba0-08ef-481b-a4b6-870a061b2878}',addon_id
         print(f'PASS: temporary Firefox {version} MV3 add-on installed: {addon_id}',flush=True)
 
         # Marionette's chrome context can inspect the locally assigned UUID.
@@ -41,7 +44,7 @@ def main():
         with driver.context(driver.CONTEXT_CHROME):
             base=driver.execute_script('''
                 const mapping=JSON.parse(Services.prefs.getStringPref('extensions.webextensions.uuids', '{}'));
-                return mapping['jotpatch@housz.dev'] || null;
+                return mapping['{8801fba0-08ef-481b-a4b6-870a061b2878}'] || null;
             ''')
         assert base, 'Firefox did not register the extension origin UUID'
         driver.get(f'moz-extension://{base}/options.html')
@@ -73,6 +76,51 @@ def main():
         driver.refresh()
         WebDriverWait(driver,12).until(lambda d:d.find_element(By.CSS_SELECTOR,'input[name="defaultNoteColorMode"][value="random"]').is_selected())
         print('PASS: Firefox options reloaded and remembered the saved colour preference',flush=True)
+
+        # Real WebExtension action: a successful options page alone does not
+        # prove that a user's toolbar click actually activates the on-page UI.
+        server=ThreadingHTTPServer(('127.0.0.1',0),partial(SimpleHTTPRequestHandler,directory=str(ROOT)))
+        Thread(target=server.serve_forever,daemon=True).start()
+        try:
+            driver.get(f'http://127.0.0.1:{server.server_port}/fixtures/long-page.html')
+            WebDriverWait(driver,12).until(lambda d:d.execute_script('return document.readyState==="complete"'))
+
+            def trigger():
+                with driver.context(driver.CONTEXT_CHROME):
+                    return driver.execute_script('''
+                        const id=arguments[0];
+                        const win=Services.wm.getMostRecentWindow("navigator:browser");
+                        const widgetId=id.toLowerCase().replace(/[^a-z0-9_-]/g,"_")+"-browser-action";
+                        const custom=win.CustomizableUI;
+                        const widget=custom.getWidget(widgetId);
+                        if(!widget)return {ok:false,error:"missing widget",widgetId};
+                        custom.addWidgetToArea(widgetId,custom.AREA_NAVBAR);
+                        const node=widget.forWindow(win)?.node||win.document.getElementById(widgetId);
+                        if(!node)return {ok:false,error:"missing toolbar node",widgetId};
+                        if(typeof node.doCommand==="function")node.doCommand();
+                        else node.click();
+                        return {ok:true,widgetId};
+                    ''',addon_id)
+            r=trigger()
+            assert r.get('ok'),f'Firefox native toolbar action unavailable: {r}'
+            WebDriverWait(driver,15).until(lambda d:d.execute_script('''
+                const root=document.querySelector("#jotpatch-root");
+                return !!(root && !root.hidden && root.shadowRoot &&
+                  !root.shadowRoot.querySelector("#jp-launcher").hidden);
+            '''))
+            print('PASS: Firefox native toolbar action injects and displays real launcher',flush=True)
+            r=trigger()
+            assert r.get('ok'),r
+            WebDriverWait(driver,12).until(lambda d:d.execute_script('''
+                const root=document.querySelector("#jotpatch-root");
+                return !!(root && root.shadowRoot &&
+                  root.shadowRoot.querySelector("#jp-launcher").hidden);
+            '''))
+            assert driver.execute_script('return document.querySelectorAll("#jotpatch-root").length')==1
+            print('PASS: second real toolbar click toggles launcher, no duplicate root',flush=True)
+        finally:
+            server.shutdown()
+            server.server_close()
     finally:
         driver.quit()
 

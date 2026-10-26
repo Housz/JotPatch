@@ -93,8 +93,11 @@ namespace JP {
       this.host.setAttribute('data-jotpatch-exclude', '');
       this.host.style.cssText = 'position:fixed;inset:0;z-index:2147483647;pointer-events:none;';
       this.shadow = this.host.attachShadow({ mode: 'open' });
-      this.shadow.innerHTML = `
-        <style>${PAPER_STYLES}</style>
+      // Trusted static UI. Never interpolate untrusted data into HTML sinks.
+      const styles=document.createElement('style');
+      styles.textContent=PAPER_STYLES;
+      this.shadow.appendChild(styles);
+      const markup=`
         <div class="launcher" id="jp-launcher" hidden aria-label="JotPatch 快捷操作">
           <button id="jp-new" aria-label="新建本页便签" title="新建本页便签" type="button">+</button>
           <button id="jp-settings" aria-label="设置" title="设置" type="button">⚙</button>
@@ -111,6 +114,7 @@ namespace JP {
         <div id="jp-markers"></div>
         <div id="jp-cards"></div>
         <div id="jp-toast" class="toast" role="status" aria-live="polite" hidden><span id="jp-toast-text"></span><button id="jp-cancel-nav" type="button" hidden>取消</button><button id="jp-undo" type="button" hidden>撤销</button></div>`;
+      this.shadow.appendChild(document.createRange().createContextualFragment(markup));
       (document.body || document.documentElement).appendChild(this.host);
     }
 
@@ -1068,9 +1072,10 @@ namespace JP {
       paper.style.setProperty('--jp-font-size',this.fontPixels(style.fontSize));
       paper.style.width=`${style.width}px`;paper.style.height=`${style.height}px`;
       // Fixed header and footer take actual layout space; no controls overlap text.
-      paper.innerHTML=`
+      // The paper template is static; note state is assigned through DOM properties.
+      const paperMarkup=`
         <header class="paper-head drag-region" title="拖动整条顶栏移动便签" aria-label="拖动便签位置">
-          <button class="paper-pin" type="button" aria-label="解除原文锚定" title="已钉在原文 · 点击解除锚定" ${note.anchor?'':'hidden'}>
+          <button class="paper-pin" type="button" aria-label="解除原文锚定" title="已钉在原文 · 点击解除锚定" hidden>
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-4 1-3 4v3l-3 2-2-6-6-2 2-3h3l4-3z"/><path d="m9 15-6 6"/></svg>
           </button>
           <span class="paper-grab" aria-hidden="true"></span>
@@ -1092,7 +1097,7 @@ namespace JP {
           <span class="save-indicator" aria-live="polite"></span>
         </footer>
         <div class="note-menu" hidden>
-          <div class="note-mode">${note.anchor?'📌 贴在原文':'◌ 本页悬浮'}</div>
+          <div class="note-mode"></div>
           <div class="colors" role="group" aria-label="便签颜色"></div>
           <div class="font-label">字号</div>
           <div class="font-choices" role="group" aria-label="字号">
@@ -1103,6 +1108,9 @@ namespace JP {
           <button class="menu-action delete-menu danger" type="button">删除便签</button>
         </div>
         <div class="resize-handle" role="separator" aria-label="拖动调整便签大小" title="拖动调整便签大小"></div>`;
+      paper.appendChild(document.createRange().createContextualFragment(paperMarkup));
+      paper.querySelector<HTMLElement>('.paper-pin')!.hidden = !note.anchor;
+      paper.querySelector<HTMLElement>('.note-mode')!.textContent = note.anchor ? '📌 贴在原文' : '◌ 本页悬浮';
       const editor=paper.querySelector<HTMLElement>('.note-editor')!;
       renderMarkdown(editor,note.text);
       const changed=()=>{

@@ -62,28 +62,47 @@ async function reconcileSiteScripts(): Promise<void> {
   }
   for (const match of allowed) await registerMatch(match);
 }
-async function send(tabId: number, message: unknown): Promise<unknown> {
+async function send(tabId: number, message: unknown): Promise<any> {
   return api.tabs.sendMessage(tabId, message);
 }
-async function ensureInjected(tabId: number): Promise<void> {
-  try {
-    if (await send(tabId, { type: 'JP_PING' })) return;
-  } catch { /* Not yet injected. */ }
-  await api.scripting.insertCSS({ target: { tabId }, files: [HIGHLIGHT_CSS] });
-  await api.scripting.executeScript({ target: { tabId }, files: [CONTENT_SCRIPT] });
+async function contentReady(tabId: number): Promise<boolean> {
+  try { return (await send(tabId, {type:'JP_PING'}))?.ready === true; }
+  catch { return false; }
 }
-
-api.action.onClicked.addListener(async (tab: any) => {
-  if (typeof tab?.id !== 'number') return;
-  try {
-    const active = await send(tab.id, { type: 'JP_PING' }).catch(() => false);
-    if (!active) {
-      await ensureInjected(tab.id);
-      await send(tab.id, { type: 'JP_OPEN_LAUNCHER' });
-    } else {
-      await send(tab.id, { type: 'JP_TOGGLE_LAUNCHER' });
-    }
-  } catch (error) { console.warn('JotPatch cannot run on this page:', error); }
+async function waitUntilReady(tabId: number): Promise<void> {
+  for(let n=0;n<5;n++) {
+    if(await contentReady(tabId))return;
+    if(n<4)await new Promise<void>(resolve=>setTimeout(resolve,100));
+  }
+  throw new Error('Content script did not become ready after injection');
+}
+async function ensureInjected(tabId: number): Promise<void> {
+  if(await contentReady(tabId))return;
+  await api.scripting.insertCSS({target:{tabId},files:[HIGHLIGHT_CSS]});
+  await api.scripting.executeScript({target:{tabId},files:[CONTENT_SCRIPT]});
+  await waitUntilReady(tabId);
+}
+async function showActivationHelp(reason:'restricted'|'failed'): Promise<void> {
+  try { await api.tabs.create({url:api.runtime.getURL(`options.html?help=${reason}`)}); }
+  catch(error){console.warn('JotPatch could not show setup help:',error);}
+}
+function supportedPage(url:string|undefined):boolean {
+  if(!url)return true;
+  try{return ['http:','https:'].includes(new URL(url).protocol);}
+  catch{return false;}
+}
+api.action.onClicked.addListener(async(tab:any)=>{
+  if(typeof tab?.id!=='number'){await showActivationHelp('restricted');return;}
+  if(!supportedPage(tab.url)){await showActivationHelp('restricted');return;}
+  try{
+    const ready=await contentReady(tab.id);
+    if(!ready)await ensureInjected(tab.id);
+    const response=await send(tab.id,{type:ready?'JP_TOGGLE_LAUNCHER':'JP_OPEN_LAUNCHER'});
+    if(response?.ok!==true)throw new Error('Content script did not acknowledge launcher');
+  }catch(error){
+    console.warn('JotPatch could not activate on this page:',error);
+    await showActivationHelp('failed');
+  }
 });
 
 async function installContextMenu(): Promise<void> {

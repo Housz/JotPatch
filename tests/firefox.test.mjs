@@ -22,7 +22,7 @@ test('Firefox manifest swaps the service worker for an event page and keeps the 
 
 test('Firefox metadata pins a stable add-on id, the gecko floor and the no-data declaration', () => {
   const gecko = buildFirefoxManifest(base, '0.1.17').browser_specific_settings.gecko;
-  assert.equal(gecko.id, 'jotpatch@housz.dev');
+  assert.equal(gecko.id, '{8801fba0-08ef-481b-a4b6-870a061b2878}');
   assert.equal(gecko.strict_min_version, FIREFOX_MIN_VERSION);
   assert.ok(Number.parseInt(gecko.strict_min_version, 10) >= 142, gecko.strict_min_version);
   assert.deepEqual(gecko.data_collection_permissions, {required: ['none']});
@@ -55,4 +55,11 @@ test('Chromium packaging still ships its own manifest untouched', () => {
   assert.equal(base.background.service_worker, 'dist/background.js');
   assert.equal(base.minimum_chrome_version, '116');
   assert.equal(base.options_page, 'options.html');
+});
+
+test('Firefox AMO warnings: do not construct notes with innerHTML assignments',()=>{
+  const app=readFileSync('src/content/app.ts','utf8');
+  assert.doesNotMatch(app,/\.innerHTML\s*=/);
+  assert.match(app,/createContextualFragment\(markup\)/);
+  assert.match(app,/createContextualFragment\(paperMarkup\)/);
 });
