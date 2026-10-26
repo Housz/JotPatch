@@ -22,6 +22,8 @@ def main():
     firefox_path=os.environ.get('FIREFOX_BIN')
     options=Options()
     options.add_argument('-headless')
+    # Firefox 138+ requires explicit opt-in for privileged Marionette context.
+    options.add_argument('-remote-allow-system-access')
     if firefox_path:
         options.binary_location=firefox_path
     driver=webdriver.Firefox(options=options)
