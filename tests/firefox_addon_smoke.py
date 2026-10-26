@@ -86,21 +86,25 @@ def main():
             WebDriverWait(driver,12).until(lambda d:d.execute_script('return document.readyState==="complete"'))
 
             def trigger():
+                # WebDriver's native element click (not JS .click) supplies an
+                # actual user-activation gesture for MV3 activeTab.
                 with driver.context(driver.CONTEXT_CHROME):
-                    return driver.execute_script('''
-                        const id=arguments[0];
-                        const win=Services.wm.getMostRecentWindow("navigator:browser");
+                    info=driver.execute_script('''
+                        const id=arguments[0],win=Services.wm.getMostRecentWindow("navigator:browser");
                         const widgetId=id.toLowerCase().replace(/[^a-z0-9_-]/g,"_")+"-browser-action";
-                        const custom=win.CustomizableUI;
-                        const widget=custom.getWidget(widgetId);
+                        const ui=win.CustomizableUI,widget=ui.getWidget(widgetId);
                         if(!widget)return {ok:false,error:"missing widget",widgetId};
-                        custom.addWidgetToArea(widgetId,custom.AREA_NAVBAR);
+                        ui.addWidgetToArea(widgetId,ui.AREA_NAVBAR);
                         const node=widget.forWindow(win)?.node||win.document.getElementById(widgetId);
                         if(!node)return {ok:false,error:"missing toolbar node",widgetId};
-                        if(typeof node.doCommand==="function")node.doCommand();
-                        else node.click();
-                        return {ok:true,widgetId};
+                        return {ok:true,widgetId,nodeName:node.tagName,
+                           childAction:!!node.querySelector(".unified-extensions-item-action-button")};
                     ''',addon_id)
+                    assert info.get('ok'),f'Firefox toolbar button unavailable: {info}'
+                    outer=driver.find_element(By.ID,info['widgetId'])
+                    child=outer.find_elements(By.CSS_SELECTOR,'.unified-extensions-item-action-button')
+                    (child[0] if child else outer).click()
+                    return info
             r=trigger()
             assert r.get('ok'),f'Firefox native toolbar action unavailable: {r}'
             WebDriverWait(driver,15).until(lambda d:d.execute_script('''

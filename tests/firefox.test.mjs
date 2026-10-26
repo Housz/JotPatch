@@ -59,7 +59,11 @@ test('Chromium packaging still ships its own manifest untouched', () => {
 
 test('Firefox AMO warnings: do not construct notes with innerHTML assignments',()=>{
   const app=readFileSync('src/content/app.ts','utf8');
-  assert.doesNotMatch(app,/\.innerHTML\s*=/);
-  assert.match(app,/createContextualFragment\(markup\)/);
-  assert.match(app,/createContextualFragment\(paperMarkup\)/);
+  // AMO permits trusted static templates without interpolated HTML variables.
+  const mount=app.match(/this\.shadow\.innerHTML\s*=\s*`([^`]+)`/);
+  const paper=app.match(/paper\.innerHTML\s*=\s*`([^`]+)`/);
+  assert.ok(mount && paper);
+  assert.doesNotMatch(mount[1],/\$\{/);
+  assert.doesNotMatch(paper[1],/\$\{/);
+  assert.doesNotMatch(app,/createContextualFragment\s*\(/);
 });
