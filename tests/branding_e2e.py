@@ -3,13 +3,14 @@
 Uses Chromium with fake chrome.storage APIs; does not imply a store-signed MV3 install.
 """
 from pathlib import Path
+from browser_e2e import launch_browser
 from playwright.sync_api import sync_playwright, expect
 from browser_e2e import ROOT, STORAGE_SHIM, new_page
 
 
 def run():
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, executable_path='/usr/bin/chromium', args=['--no-sandbox'])
+        browser = launch_browser(p)
         errors = []
         context = browser.new_context(viewport={'width':1200,'height':800})
         opts = context.new_page()

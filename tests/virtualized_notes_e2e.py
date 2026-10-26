@@ -3,6 +3,7 @@
 Synthetic DOM-only Playwright scenario; does not access authenticated ChatGPT.
 """
 from __future__ import annotations
+from browser_e2e import launch_browser
 from playwright.sync_api import sync_playwright, expect
 from browser_e2e import new_page
 from conversation_e2e import select_text
@@ -10,7 +11,7 @@ from conversation_e2e import select_text
 
 def run():
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, executable_path='/usr/bin/chromium', args=['--no-sandbox'])
+        browser = launch_browser(p)
         context = browser.new_context(viewport={'width': 1200, 'height': 800})
         markup = '''<html><body><main id="conversation">
           <section id="recent">

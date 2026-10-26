@@ -1,6 +1,6 @@
 // MV3 background entry shared by the Chromium service worker and the Firefox
-// event page. Every browser-window concern goes through JP.extensionApi(), so
-// this file stays free of bare chrome.*/browser.* references.
+// event page. Browser-facing calls go through JP.extensionApi() rather than
+// depending on a specific vendor namespace.
 const api = JP.extensionApi();
 
 // Firefox exposes the promise-based `browser` namespace; Chromium exposes
@@ -23,17 +23,44 @@ function registrationId(origin: string): string {
   for (const char of origin) { hash ^= char.charCodeAt(0); hash = Math.imul(hash, 16777619); }
   return `jotpatch_site_${(hash >>> 0).toString(16)}`;
 }
-async function registerSite(origin: string): Promise<void> {
-  const match = matchForOrigin(origin);
-  if (!await api.permissions.contains({ origins: [match] })) throw new Error('Site permission not granted');
+/** Firefox can discard dynamic registrations on an add-on update even when
+ * host permissions persist. Reconcile registrations on install/startup and on
+ * permission changes, using only explicitly granted HTTPS/HTTP sites. */
+function supportedGrant(pattern: string): boolean {
+  return /^https?:\/\/[a-zA-Z0-9.-]+\/\*$/.test(pattern) && !pattern.includes('..');
+}
+async function registerMatch(match: string): Promise<void> {
   const id = registrationId(match);
   const registered = await api.scripting.getRegisteredContentScripts({ ids: [id] });
-  if (!registered.length) {
+  if (registered.length) return;
+  try {
     await api.scripting.registerContentScripts([{
       id, matches: [match], js: [CONTENT_SCRIPT], css: [HIGHLIGHT_CSS],
       runAt: 'document_idle', persistAcrossSessions: true
     }]);
+  } catch (error) {
+    // The permission event and the settings request can run concurrently.
+    const now = await api.scripting.getRegisteredContentScripts({ ids: [id] });
+    if (!now.length) throw error;
   }
+}
+async function registerSite(origin: string): Promise<void> {
+  const match = matchForOrigin(origin);
+  if (!await api.permissions.contains({ origins: [match] })) throw new Error('Site permission not granted');
+  await registerMatch(match);
+}
+async function reconcileSiteScripts(): Promise<void> {
+  const granted: string[] = (await api.permissions.getAll()).origins || [];
+  const allowed = new Set(granted.filter(supportedGrant));
+  const registered = await api.scripting.getRegisteredContentScripts();
+  for (const script of registered as Array<{ id: string; matches?: string[] }>) {
+    if (!script.id.startsWith('jotpatch_site_')) continue;
+    const match = script.matches?.[0];
+    if (!match || !allowed.has(match)) {
+      await api.scripting.unregisterContentScripts({ ids: [script.id] });
+    }
+  }
+  for (const match of allowed) await registerMatch(match);
 }
 async function send(tabId: number, message: unknown): Promise<unknown> {
   return api.tabs.sendMessage(tabId, message);
@@ -66,8 +93,13 @@ async function installContextMenu(): Promise<void> {
   else await new Promise<void>((resolve) => api.contextMenus.removeAll(() => resolve()));
   api.contextMenus.create({ id: SELECTION_MENU, title: '📌 添加 JotPatch 便签', contexts: ['selection'] });
 }
-api.runtime.onInstalled.addListener(() => {
+function initializeExtension(): void {
   void installContextMenu().catch((error: Error) => console.warn('JotPatch context menu setup failed:', error));
+  void reconcileSiteScripts().catch((error: Error) => console.warn('JotPatch site restore failed:', error));
+}
+api.runtime.onInstalled.addListener(initializeExtension);
+api.runtime.onStartup.addListener(() => {
+  void reconcileSiteScripts().catch((error: Error) => console.warn('JotPatch site restore failed:', error));
 });
 api.contextMenus.onClicked.addListener(async (info: any, tab: any) => {
   if (info.menuItemId !== SELECTION_MENU || typeof tab?.id !== 'number') return;
@@ -105,13 +137,9 @@ api.runtime.onMessage.addListener((message: any, sender: any, respond: (value: u
   return false;
 });
 
-api.permissions.onRemoved.addListener(async () => {
-  const scripts = await api.scripting.getRegisteredContentScripts();
-  for (const script of scripts as Array<{ id: string; matches?: string[] }>) {
-    if (!script.id.startsWith('jotpatch_site_')) continue;
-    const origins = script.matches || [];
-    if (!await api.permissions.contains({ origins })) {
-      await api.scripting.unregisterContentScripts({ ids: [script.id] });
-    }
-  }
+api.permissions.onAdded.addListener(() => {
+  void reconcileSiteScripts().catch((error: Error) => console.warn('JotPatch site restore failed:', error));
+});
+api.permissions.onRemoved.addListener(() => {
+  void reconcileSiteScripts().catch((error: Error) => console.warn('JotPatch permission cleanup failed:', error));
 });

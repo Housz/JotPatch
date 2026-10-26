@@ -26,3 +26,52 @@ jobs:
           name: jotpatch-chromium-dev-${{ github.run_number }}
           path: artifacts/JotPatch-*-chromium.zip
           if-no-files-found: error
+
+  cross-browser-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm install --no-audit --no-fund
+      - run: npm run check
+      - name: Install Python browser testing dependencies
+        run: python -m pip install playwright selenium
+      - name: Install Playwright Chromium and Firefox
+        run: python -m playwright install --with-deps chromium firefox
+      - name: Install system Firefox for real add-on smoke
+        id: system-firefox
+        uses: browser-actions/setup-firefox@v1
+        with:
+          firefox-version: latest
+      - name: Package Firefox development add-on
+        run: node scripts/package.mjs --channel=dev --browser=firefox
+      - name: Validate Firefox package with Mozilla tooling
+        run: npx --yes web-ext lint --source-dir build/firefox --self-hosted
+      - name: Chromium real-DOM regression
+        env:
+          JP_CHROMIUM_BIN: playwright
+        run: |
+          python tests/browser_e2e.py
+          python tests/conversation_e2e.py
+          python tests/virtualized_notes_e2e.py
+          python tests/branding_e2e.py
+          python tests/navigation_recovery_e2e.py
+      - name: Firefox real-DOM regression
+        env:
+          JP_E2E_BROWSER: firefox
+        run: |
+          python tests/browser_e2e.py
+          python tests/conversation_e2e.py
+          python tests/virtualized_notes_e2e.py
+          python tests/branding_e2e.py
+          python tests/navigation_recovery_e2e.py
+      - name: Firefox actual installed MV3 event-page smoke
+        env:
+          FIREFOX_BIN: ${{ steps.system-firefox.outputs.firefox-path }}
+        run: python tests/firefox_addon_smoke.py

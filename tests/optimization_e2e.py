@@ -2,6 +2,7 @@
 Synthetic DOM, not an authenticated ChatGPT/Gemini integration test.
 """
 from __future__ import annotations
+from browser_e2e import launch_browser
 from playwright.sync_api import sync_playwright, expect
 from conversation_e2e import new_site, select_text
 from browser_e2e import STORAGE_SHIM, ROOT
@@ -55,7 +56,7 @@ def virtualized_page(context):
 
 def run():
     with sync_playwright() as p:
-        browser=p.chromium.launch(headless=True,executable_path='/usr/bin/chromium',args=['--no-sandbox'])
+        browser=launch_browser(p)
         context=browser.new_context(viewport={'width':1200,'height':800})
         errors=[]
         page=new_site(context,'https://chatgpt.com/c/user-bubble-target',bundled_answer_page())
