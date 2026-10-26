@@ -14,6 +14,14 @@ namespace JP {
   }
 
   export function renderMarkdown(editor: HTMLElement, markdown: string): void {
+    // An empty contenteditable must start truly empty, especially in Firefox.
+    // Pre-inserting <p><br></p> leaves a phantom first line when the focused
+    // editor receives text at the root; serializing then adds a leading '\\n'.
+    // The placeholder is already rendered with data-empty CSS.
+    if (markdown.length === 0) {
+      editor.replaceChildren();
+      return;
+    }
     const fragment = document.createDocumentFragment();
     let list: HTMLOListElement | HTMLUListElement | null = null;
     let kind = '';

@@ -37,3 +37,7 @@
 - 下载并解压 GitHub Actions 的 Artifact 包，取出 **`JotPatch-v0.1.17-amofix-firefox.zip`**（不要把 Action 包裹 ZIP 本身提交 AMO）。压缩包内部根目录直接是 `manifest.json`，清单数字版本依然是 **`0.1.17`**。提供 SHA-256 校验文件供核对。
 - 在 Mozilla AMO Developer Hub 选择 **On your own / Unlisted** 上传该修订 ZIP。只有 Mozilla 真正受理并签名，才可以称为正常长期安装 XPI；新的 GUID 是否未被 AMO 占用以这次服务器提交结果为准。
 - 从 Mozilla 下载正式签名的 XPI 后，使用清晰命名 `JotPatch-v0.1.17-amofix-firefox-signed.xpi`，再**作为新附件**加入已有 `v0.1.17` GitHub Release。绝不重写原 Tag、原始 ZIP 或冒用同名旧附件。
+
+### Firefox 空便签精确持久化
+
+真实 Firefox 158.0.1 安装烟测进一步发现，初始空编辑器若由 `renderMarkdown('')` 插入 `<p><br></p>`，自动聚焦后 WebDriver 模拟真实键入时，新文字可能被插入该空段落之外，造成 Markdown 存储中多余的前导换行。现改为直接清空编辑容器，仍由 CSS `data-empty` 展示占位符。另将测试失焦改为显式 `blur()`，不再向正文错误插入制表符。真实测试要求存储字符串与输入正文**完全一致**，并在页面刷新后找回相同便签。
