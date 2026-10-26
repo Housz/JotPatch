@@ -172,6 +172,21 @@ def main():
                                       root:!!document.querySelector("#jotpatch-root"),
                                       state:document.readyState,
                                       jpGlobal:typeof JP,
+                                      jpExports:typeof JP==="object"?Object.keys(JP):[],
+                                      browserAvailable:typeof globalThis.browser,
+                                      browserRuntime:!!globalThis.browser?.runtime,
+                                      browserStorage:!!globalThis.browser?.storage,
+                                      chromeAvailable:typeof globalThis.chrome,
+                                      chromeRuntime:!!globalThis.chrome?.runtime,
+                                      chromeStorage:!!globalThis.chrome?.storage,
+                                      apiCheck:(()=>{
+                                          try{return !!JP.extensionApi()?.storage?.local;}
+                                          catch(e){return String(e);}
+                                      })(),
+                                      ctorCheck:(()=>{
+                                          try{return {ok:!!new JP.JotPatchApp()};}
+                                          catch(e){return {error:String(e),stack:String(e?.stack).slice(0,850)};}
+                                      })(),
                                       app:!!globalThis.__jotpatchStage0
                                   })}))[0].result;
                             }catch(e){initState=String(e);}
