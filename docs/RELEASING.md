@@ -10,7 +10,7 @@
 
 ## 日常 dev 构建
 
-合并到 `dev` 后，GitHub Actions 执行 `npm run check`，然后按 `GITHUB_RUN_NUMBER` 生成 `JotPatch-v0.1.17-dev.N-chromium.zip` 作为测试 Artifact。这个 ZIP 在根目录直接含 `manifest.json`、`dist/` 等必要文件，**不含源码和 Node 环境**。
+合并到 `dev` 后，GitHub Actions 执行 `npm run check`，然后按 `GITHUB_RUN_NUMBER` 生成 `JotPatch-v0.1.18-dev.N-chromium.zip` 作为测试 Artifact。这个 ZIP 在根目录直接含 `manifest.json`、`dist/` 等必要文件，**不含源码和 Node 环境**。
 
 本地：
 
@@ -18,7 +18,7 @@
 npm install
 npm run check
 npm run package:dev
-# 产物：build/chromium/ + artifacts/JotPatch-v0.1.17-dev.1-chromium.zip
+# 产物：build/chromium/ + artifacts/JotPatch-v0.1.18-dev.1-chromium.zip
 ```
 
 Firefox 开发 ZIP 可通过 `npm run package:firefox` 构建，并在 `about:debugging#/runtime/this-firefox` 中临时加载。GitHub CI 使用 Firefox/Chromium 两个真实浏览器运行回归，Firefox 还通过 Selenium 临时安装和事件页测试。**没有签名的 Firefox ZIP 不等于可持续安装的正式 XPI**。
@@ -26,10 +26,10 @@ Firefox 开发 ZIP 可通过 `npm run package:firefox` 构建，并在 `about:de
 ## 正式发行前
 
 1. 从最新 `dev` 创建 Release PR，目标 `main`。不要在普通 feature PR 中改稳定版本。
-2. PR 中锁定待发功能，更新 `config/version.json` 为 `"channel":"release"`，并将 `package.json.version`、`manifest.version`、`manifest.version_name` 都改成 `nextRelease`，例如 `0.1.17`。此外要为该版本准备发行说明，并更新发行工作流里的 `--notes-file` 到对应文件，严禁复用旧版本说明。
+2. PR 中锁定待发功能，更新 `config/version.json` 为 `"channel":"release"`，并将 `package.json.version`、`manifest.version`、`manifest.version_name` 都改成 `nextRelease`，例如 `0.1.18`。此外要为该版本准备发行说明，并更新发行工作流里的 `--notes-file` 到对应文件，严禁复用旧版本说明。
 3. 执行 `npm run check`、完整 `npm run test:e2e` 和指定浏览器的人工安装烟测；`npm run package:release` 必须通过。
 4. 合并前必须确保 `cross-browser-acceptance` 和 `typecheck-and-contracts` 两项 CI 均成功；Firefox Selenium 安装/事件页烟测不能被静态测试代替。真实登录 ChatGPT/Gemini 和商店权限提示若未实测须在发行说明披露。**Merge commit 合入 `main`**，保留原始提交及作者信息。
-5. `.github/workflows/release.yml` 在 main 更新时验证发行渠道、版本、构建与包内容，然后**在同一个工作流中**创建指向该 main 提交的注释 Tag（例如 `v0.1.17`）和 GitHub Release（附 Chromium ZIP 与 Firefox 临时开发 ZIP）。如维护者设置 AMO_JWT_ISSUER / AMO_JWT_SECRET，自动通过 Mozilla AMO 签名并额外附上 Firefox signed XPI；签名步骤失败时整体发行失败。无签名凭据则必须在发行说明中明确 Firefox 仅供临时加载测试。GitHub Actions 内使用 GITHUB_TOKEN 推送的 Tag 不会再触发另一个工作流，因此不可把“推送 Tag”与“创建 Release”拆成相互依赖的两个任务。已有同名 Release 时保持幂等，不覆盖历史发行包。也支持对已有 Tag 的单独工作流重试。
+5. `.github/workflows/release.yml` 在 main 更新时验证发行渠道、版本、构建与包内容，然后**在同一个工作流中**创建指向该 main 提交的注释 Tag（例如 `v0.1.18`）和 GitHub Release（附 Chromium ZIP 与 Firefox 临时开发 ZIP）。如维护者设置 AMO_JWT_ISSUER / AMO_JWT_SECRET，自动通过 Mozilla AMO 签名并额外附上 Firefox signed XPI；签名步骤失败时整体发行失败。无签名凭据则必须在发行说明中明确 Firefox 仅供临时加载测试。GitHub Actions 内使用 GITHUB_TOKEN 推送的 Tag 不会再触发另一个工作流，因此不可把“推送 Tag”与“创建 Release”拆成相互依赖的两个任务。已有同名 Release 时保持幂等，不覆盖历史发行包。也支持对已有 Tag 的单独工作流重试。
 6. 手动完成 Chrome Web Store、Edge Add-ons 的上传审核流程；Firefox 必须以完成 Mozilla 签名的 XPI/AMO 为准，不能把未签名 ZIP 改名成 XPI 后视为正式版。
 7. 把修复和版本状态同步回 `dev`（如有临时 hotfix），随后开启下一轮 `-dev.1`。
 

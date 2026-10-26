@@ -36,7 +36,7 @@ git push -u origin feature/claude-adapter
 
 ## 作者归属与 Leezh76 Firefox 开发
 
-Firefox 工作现存于 `feature/firefox-port`（Leezh76）。其独立开发分支**尚未整合到当前 `dev`**。整合者应从原始分支以 **Merge commit** 或保留作者身份的 Cherry-pick 合入，不要把源码复制成 Housz 自己的提交。解决冲突的整合修改则由实际作者独立提交。对确实共同开发的改动使用双方认可的 `Co-authored-by`。
+Firefox MV3 兼容性和双浏览器打包已通过 PR #21/#22 进入主线，但 Leezh76 的早期 `feature/firefox-port` 仍有独立提交需要核对与保留。整合者应从原始分支以 **Merge commit** 或保留作者身份的 Cherry-pick 合入，不要把源码复制成 Housz 自己的提交。解决冲突的整合修改则由实际作者独立提交。对确实共同开发的改动使用双方认可的 `Co-authored-by`。
 
 `dev → main` 的发行合并**统一采用 Merge commit**，不要 squash 掉多人提交历史。GitHub Contributors 通常根据默认分支的非合并提交作者统计；贡献进入 `dev` 但未进入 `main` 前可能暂不显示在默认统计。
 

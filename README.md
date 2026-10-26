@@ -63,7 +63,7 @@ tests/                     合约、架构、浏览器集成测试
 ## 当前支持范围
 
 - **Chromium**：Chrome/Edge，已提供编译和安装包构建路径。
-- **Firefox**：MV3 事件页构建路径已并入 `dev`（`npm run package:firefox` → `build/firefox/`）。Manifest、权限与消息通道已按 Gecko 适配；与当前 `dev` 功能等价的完整浏览器回归仍未完成，因此暂不作为正式发行目标。
+- **Firefox**：v0.1.17 已发布 MV3 临时测试 ZIP，CI 已验证 Firefox 158 安装、事件页通信、设置存储及合成 DOM 核心回归；Firefox ZIP **不能长期安装**，正式用户需要 Mozilla 签名的 XPI / AMO 上架版本。真实登录的 ChatGPT/Gemini 与所有网站权限路径仍需人工验收。
 - **AI 适配**：ChatGPT、Gemini 已接入注册表；未来的 Claude、DeepSeek 需要各自新增适配器和测试，不应直接在 `core` 里加选择器。
 - **Navigation Lab**：v0.1.15 的长会话实验功能仍**默认关闭**，用户主动启用才生效，不保证可找回网页从未加载过的全部历史。
 

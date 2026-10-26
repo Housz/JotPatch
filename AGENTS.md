@@ -11,8 +11,8 @@
 5. Do not change paper behavior, direct-click rail navigation, or default-off Navigation Lab without specific requirements and tests.
 6. Add site-specific selectors only to `src/adapters/sites/`. Generic anchoring/storage/nav algorithms belong to `src/core/`. No `chrome.*`/`browser.*` in `src/core/`; use dependency injection.
 7. `tsconfig.content.json` is an **ordered classic-script TypeScript namespace bundle**, not ESM. Site registrations must follow the registry and precede the collector; the app entry must remain last.
-8. **Only Chromium ships from this branch today.** Firefox work is on an independent branch; do not present its build as ready or erase its original commits.
-9. Do not invent test results. Run `npm run check`; for user-facing changes, run relevant Chromium tests and document any environment block. Always add/adjust tests with behavior changes.
+8. **Chromium and Firefox ZIPs ship from one source revision.** The Firefox ZIP is only for temporary debugging unless Mozilla signs an XPI; preserve Leezh76's original Firefox work and do not imply real-site/manual testing was performed when only CI fixtures were tested.
+9. Do not invent test results. Run `npm run check`; for user-facing changes, run relevant Chromium and Firefox tests, including browser-specific installed-extension smoke when permissions or lifecycle change. Document environment blocks. Always add/adjust tests with behavior changes.
 10. Version source is `config/version.json`; `package.json` supports `-dev.N` but `manifest.version` is numeric. Consult `docs/VERSIONING.md`; no spontaneous public version tags.
 
 ## Done means
