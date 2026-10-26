@@ -10,6 +10,28 @@ Firefox ZIP is a **temporary developer/test installation package**. A release
 Firefox XPI must first be signed by Mozilla/AMO before it can be installed
 normally. Presence of a ZIP on GitHub Releases is not equivalent to AMO signing.
 
+## Firefox v0.1.17 AMO revision (same version)
+
+The original `JotPatch-v0.1.17-firefox.zip` on the v0.1.17 Release was
+reported to AMO as having a duplicate add-on ID, and its real toolbar
+activation was found to fail in Firefox because of a non-iterable
+`URLSearchParams.keys()` in the content-script Xray environment.
+
+The corrective `hotfix/0.1.17-firefox-amofix` branch keeps
+`manifest.version=0.1.17`, uses a new fixed Gecko GUID, replaces the unsafe
+dynamic `innerHTML` interpolations with static markup and DOM property
+updates, and fixes page-key generation using `URLSearchParams.forEach()`.
+Native Firefox toolbar activation, toggling, note persistence and reload
+recovery are acceptance criteria, not inferred from simulated DOM tests.
+
+For the verified Firefox ZIP, use the `jotpatch-v0.1.17-amofix-firefox-*`
+artifact from the successful hotfix branch push workflow, then extract
+`JotPatch-v0.1.17-amofix-firefox.zip`. This is an **unsigned** AMO submission
+candidate; after Mozilla Unlisted signing, install the resulting **signed
+XPI** normally. Do not upload the original release's Firefox ZIP or
+claim an AMO-signed XPI exists until Mozilla returns one. See
+[Firefox AMO 0.1.17 hotfix](FIREFOX_AMO_HOTFIX_0_1_17.md).
+
 ## Build, package, load
 
 ```bash

@@ -53,6 +53,10 @@ jobs:
         run: node scripts/package.mjs --channel=$(node -p 'JSON.parse(require("node:fs").readFileSync("config/version.json","utf8")).channel') --browser=firefox
       - name: Validate Firefox package with Mozilla tooling
         run: npx --yes web-ext lint --source-dir build/firefox --self-hosted
+      - name: Firefox actual installed MV3 event-page smoke
+        env:
+          FIREFOX_BIN: ${{ steps.system-firefox.outputs.firefox-path }}
+        run: python tests/firefox_addon_smoke.py
       - name: Chromium real-DOM regression
         env:
           JP_CHROMIUM_BIN: playwright
@@ -71,7 +75,22 @@ jobs:
           python tests/virtualized_notes_e2e.py
           python tests/branding_e2e.py
           python tests/navigation_recovery_e2e.py
-      - name: Firefox actual installed MV3 event-page smoke
-        env:
-          FIREFOX_BIN: ${{ steps.system-firefox.outputs.firefox-path }}
-        run: python tests/firefox_addon_smoke.py
+
+      # Artifact for Mozilla AMO upload. Keep the original v0.1.17 tag and
+      # release attachment immutable, and never label an unsigned ZIP an XPI.
+      - name: Verify same-version Firefox AMO hotfix archive
+        if: github.event_name == 'push' && github.ref == 'refs/heads/hotfix/0.1.17-firefox-amofix'
+        run: |
+          node scripts/package.mjs --channel=release --browser=chromium
+          node scripts/verify-release-package.mjs
+          cp artifacts/JotPatch-v0.1.17-firefox.zip artifacts/JotPatch-v0.1.17-amofix-firefox.zip
+          sha256sum artifacts/JotPatch-v0.1.17-amofix-firefox.zip > artifacts/JotPatch-v0.1.17-amofix-firefox.zip.sha256
+      - name: Upload tested Firefox 0.1.17 AMO candidate
+        if: github.event_name == 'push' && github.ref == 'refs/heads/hotfix/0.1.17-firefox-amofix'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jotpatch-v0.1.17-amofix-firefox-${{ github.sha }}
+          path: |
+            artifacts/JotPatch-v0.1.17-amofix-firefox.zip
+            artifacts/JotPatch-v0.1.17-amofix-firefox.zip.sha256
+          if-no-files-found: error

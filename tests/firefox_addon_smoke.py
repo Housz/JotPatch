@@ -207,6 +207,61 @@ def main():
             '''))
             assert driver.execute_script('return document.querySelectorAll("#jotpatch-root").length')==1
             print('PASS: second real toolbar click toggles launcher, no duplicate root',flush=True)
+
+            # The real installed extension must create a note, serialize the
+            # editor text, and restore it from Firefox storage after reload.
+            # Synthetic DOM tests alone cannot establish that this works.
+            trigger()
+            WebDriverWait(driver,8).until(lambda d:d.execute_script('''
+                const root=document.querySelector("#jotpatch-root");
+                return root && !root.shadowRoot.querySelector("#jp-launcher").hidden;
+            '''))
+            new_button=driver.execute_script('''
+                return document.querySelector("#jotpatch-root").shadowRoot.querySelector("#jp-new");
+            ''')
+            new_button.click()
+            editor=WebDriverWait(driver,8).until(lambda d:d.execute_script('''
+                return document.querySelector("#jotpatch-root").shadowRoot.querySelector(".paper .note-editor");
+            '''))
+            note_text='Firefox native note storage verification 0.1.17'
+            editor.send_keys(note_text)
+            WebDriverWait(driver,6).until(lambda d:note_text in d.execute_script('''
+                return document.querySelector("#jotpatch-root").shadowRoot.querySelector(".paper .note-editor").textContent;
+            '''))
+            editor.send_keys('\t')
+            original_window=driver.current_window_handle
+            driver.switch_to.new_window('tab')
+            driver.get(f'moz-extension://{base}/options.html')
+
+            def read_note_storage(d):
+                notes=d.execute_async_script('''
+                    const done=arguments[arguments.length-1];
+                    browser.storage.local.get(null).then(
+                      data=>done(Object.entries(data)
+                        .filter(([key,value])=>key.startsWith("jotpatch:note:v1:") && value?.schemaVersion===1)
+                        .map(([key,value])=>({key,text:value.text,deletedAt:value.deletedAt||null}))),
+                      e=>done({error:String(e)}));
+                ''')
+                assert isinstance(notes,list),f'Firefox real storage unavailable: {notes}'
+                return next((n for n in notes if n['text']==note_text and not n['deletedAt']),None)
+
+            persisted=WebDriverWait(driver,10).until(read_note_storage)
+            assert persisted['key'].startswith('jotpatch:note:v1:')
+            print('PASS: real Firefox note editor autosaved Markdown into browser.storage.local',flush=True)
+
+            driver.switch_to.window(original_window)
+            driver.refresh()
+            WebDriverWait(driver,12).until(lambda d:d.execute_script('return document.readyState==="complete"'))
+            trigger()
+            WebDriverWait(driver,10).until(lambda d:d.execute_script('''
+                const root=document.querySelector("#jotpatch-root");
+                if(!root || root.hidden || !root.shadowRoot)return false;
+                const rail=root.shadowRoot.querySelector("#jp-rail");
+                const list=root.shadowRoot.querySelector("#jp-list-toggle");
+                return !!rail && !rail.hidden && !!list && Number(list.textContent)>=1;
+            '''))
+            assert driver.execute_script('return document.querySelectorAll("#jotpatch-root").length')==1
+            print('PASS: real Firefox stored note restored after page reload and action click',flush=True)
         finally:
             server.shutdown()
             server.server_close()

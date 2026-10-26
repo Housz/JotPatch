@@ -23,3 +23,17 @@
 
 ## Git 历史与兼容
 原始 `v0.1.17` Tag 及先前文件的 SHA-256 保留不变；这次修订在独立修复提交下生成安装包，附到既有 Release 时必须采用不同附件名称并注明修订提交 SHA。便签存储键、权限、应用功能及 `manifest.version` 未改变。
+
+## 已证实的 Firefox 原生启动故障与修复
+
+- **根因（Firefox 158.0.1 实装测试重现）：** `src/core/page-key.ts` 在内容脚本 Xray 上执行 `[...url.searchParams.keys()]`，抛出 `TypeError: url.searchParams.keys() is not iterable`。发生在 `new JotPatchApp()` 的字段初始化期间，导致界面未挂载、`JP_PING` 无接收器；此前的 Playwright 模拟 API 不能重现这个浏览器特性。
+- **修复：** 使用 `URLSearchParams.forEach()` 先收集跟踪参数名，再删除并排序。没有改变旧 pageKey 结果、存储键或扩展权限。`tests/page_key.test.mjs` 在 Node 中模拟该 Firefox 非可迭代行为。
+- **已通过的基准 CI：** `e1bd0d748322163a8ea27720a50a966e5086a337`，GitHub Actions `40351818691`：类型/Node、Chromium/Firefox 合成页面、Firefox 158.0.1 真实临时安装、原生工具栏首次激活与再次切换，以及 Mozilla `web-ext lint` **0 errors / 0 warnings**。后续修改需要以最新 CI 再验收。
+- 真实 Firefox 烟测还覆盖便签编辑器自动保存、浏览器本地数据和刷新后重新启用时的便签恢复。正式用户长期安装仍需要 Mozilla 实际签名的 XPI；尚未验证真实登录 ChatGPT/Gemini。
+
+## 获取供 AMO 提交的修订 ZIP
+
+- 热修复分支 `hotfix/0.1.17-firefox-amofix` 的 **push** CI 两项检查都通过后，`Build and validate` 工作流上传 `jotpatch-v0.1.17-amofix-firefox-<commit>` Artifact。
+- 下载并解压 GitHub Actions 的 Artifact 包，取出 **`JotPatch-v0.1.17-amofix-firefox.zip`**（不要把 Action 包裹 ZIP 本身提交 AMO）。压缩包内部根目录直接是 `manifest.json`，清单数字版本依然是 **`0.1.17`**。提供 SHA-256 校验文件供核对。
+- 在 Mozilla AMO Developer Hub 选择 **On your own / Unlisted** 上传该修订 ZIP。只有 Mozilla 真正受理并签名，才可以称为正常长期安装 XPI；新的 GUID 是否未被 AMO 占用以这次服务器提交结果为准。
+- 从 Mozilla 下载正式签名的 XPI 后，使用清晰命名 `JotPatch-v0.1.17-amofix-firefox-signed.xpi`，再**作为新附件**加入已有 `v0.1.17` GitHub Release。绝不重写原 Tag、原始 ZIP 或冒用同名旧附件。
