@@ -45,16 +45,44 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npm run check
       - run: npm run package:release
-      - name: Validate final distributable
+      - name: Package Firefox from the same source commit
+        run: node scripts/package.mjs --channel=release --browser=firefox
+      - name: Validate both distributables and shared runtime identity
         run: node scripts/verify-release-package.mjs
-      - name: Tag main commit and publish verified Chromium ZIP
+      - name: Mozilla validation of Firefox distributable
+        run: npx --yes web-ext lint --source-dir build/firefox --self-hosted
+      - name: Optionally sign a normal-installable Firefox XPI via AMO
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$AMO_JWT_ISSUER" ] && [ -n "$AMO_JWT_SECRET" ]; then
+            mkdir -p artifacts/signed
+            npx --yes web-ext sign --source-dir build/firefox --artifacts-dir artifacts/signed \
+              --channel=unlisted --api-key="$AMO_JWT_ISSUER" --api-secret="$AMO_JWT_SECRET" --no-input
+            signed=$(find artifacts/signed -maxdepth 1 -name '*.xpi' -type f | head -1)
+            test -n "$signed"
+            version=$(node -p 'JSON.parse(require("node:fs").readFileSync("config/version.json", "utf8")).nextRelease')
+            cp "$signed" "artifacts/JotPatch-v${version}-firefox-signed.xpi"
+          else
+            echo "AMO signing credentials unavailable; only temporary-install Firefox ZIP will be published." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Tag main commit and publish both verified browser ZIPs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           version=$(node -p 'JSON.parse(require("node:fs").readFileSync("config/version.json", "utf8")).nextRelease')
           tag="v${version}"
-          zip="artifacts/JotPatch-${tag}-chromium.zip"
+          chromium_zip="artifacts/JotPatch-${tag}-chromium.zip"
+          firefox_zip="artifacts/JotPatch-${tag}-firefox.zip"
+          assets=("$chromium_zip" "$firefox_zip")
+          signed="artifacts/JotPatch-${tag}-firefox-signed.xpi"
+          if [ -f "$signed" ]; then assets+=("$signed"); fi
+          notes="docs/RELEASE_NOTES_${version//./_}.md"
+          test -f "$notes"
           if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
             target=$(git rev-list -n 1 "$tag")
             if [ "$target" != "$(git rev-parse HEAD)" ]; then
@@ -79,6 +107,6 @@ jobs:
             echo "GitHub Release $tag already exists; nothing to overwrite."
             exit 0
           fi
-          gh release create "$tag" "$zip" \
+          gh release create "$tag" "${assets[@]}" \
             --verify-tag --title "JotPatch $tag" \
-            --notes-file docs/RELEASE_NOTES_0_1_16.md --latest
+            --notes-file "$notes" --latest
