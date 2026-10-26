@@ -15,6 +15,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from pathlib import Path
 from selenium import webdriver
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.firefox.options import Options
@@ -107,11 +108,58 @@ def main():
                     return info
             r=trigger()
             assert r.get('ok'),f'Firefox native toolbar action unavailable: {r}'
-            WebDriverWait(driver,15).until(lambda d:d.execute_script('''
-                const root=document.querySelector("#jotpatch-root");
-                return !!(root && !root.hidden && root.shadowRoot &&
-                  !root.shadowRoot.querySelector("#jp-launcher").hidden);
-            '''))
+            print(f'DIAGNOSTIC: clicked Firefox native action: {r}',flush=True)
+            original_window=driver.current_window_handle
+            try:
+                WebDriverWait(driver,10).until(lambda d:d.execute_script('''
+                    const root=document.querySelector("#jotpatch-root");
+                    return !!(root && !root.hidden && root.shadowRoot &&
+                      !root.shadowRoot.querySelector("#jp-launcher").hidden);
+                '''))
+            except TimeoutException as original_error:
+                # A failed action may open an options/help tab; the driver
+                # remains attached to the original window so inspect all tabs.
+                tab_states=[]
+                for handle in driver.window_handles:
+                    driver.switch_to.window(handle)
+                    try:
+                        tab_states.append(driver.execute_script('''
+                            const root=document.querySelector("#jotpatch-root");
+                            return {url:location.href,title:document.title,hasRoot:!!root,
+                              rootHidden:root?.hidden,hasShadow:!!root?.shadowRoot,
+                              launcherHidden:root?.shadowRoot?.querySelector("#jp-launcher")?.hidden,
+                              help:document.querySelector("#activation-help-detail")?.textContent};
+                        '''))
+                    except Exception as error:
+                        tab_states.append({'inspectError':str(error)})
+                driver.switch_to.window(original_window)
+                # Diagnose whether the extension can address the original tab.
+                # Run only after a failure; do not change permission state in
+                # successful tests or fake the native toolbar gesture.
+                driver.switch_to.new_window('tab')
+                driver.get(f'moz-extension://{base}/options.html')
+                ext_state=driver.execute_async_script('''
+                    const done=arguments[arguments.length-1];
+                    (async()=>{
+                        const tabs=await browser.tabs.query({});
+                        const info=[];
+                        for(const tab of tabs){
+                            if(!tab.url?.startsWith("http://127.0.0.1:"))continue;
+                            let ping=null, injection=null;
+                            try{ping=await browser.tabs.sendMessage(tab.id,{type:"JP_PING"});}
+                            catch(e){ping=String(e);}
+                            try {
+                                const result=await browser.scripting.executeScript({
+                                    target:{tabId:tab.id},func:()=>document.readyState});
+                                injection=result?.[0]?.result||"empty result";
+                            }catch(e){injection=String(e);}
+                            info.push({id:tab.id,url:tab.url,ping,injection});
+                        }
+                        return {tabs:info};
+                    })().then(done,e=>done({error:String(e)}));
+                ''')
+                print(f'DIAGNOSTIC: Firefox action failure tabs={tab_states!r} extension={ext_state!r}',flush=True)
+                raise AssertionError('Native Firefox toolbar click did not activate launcher; see diagnostic tabs / injection result') from original_error
             print('PASS: Firefox native toolbar action injects and displays real launcher',flush=True)
             r=trigger()
             assert r.get('ok'),r
