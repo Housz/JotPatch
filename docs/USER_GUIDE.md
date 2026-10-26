@@ -51,3 +51,13 @@ Firefox 正式发行包尚未完成合并和签名；不要尝试直接安装 Ch
 ## 获取帮助
 
 如发现无法跳转、重复灰条或便签位置异常，请提交 GitHub Issue，附上 JotPatch 版本名、浏览器版本、网站、重现步骤及可公开的控制台日志。**请先删去聊天正文、登录令牌、账号信息和其他私人数据。**
+
+
+## Firefox 测试版安装
+
+1. 从 GitHub Releases 下载 `JotPatch-v0.1.17-firefox.zip` 并解压。
+2. 在 Firefox 142 或更新版本打开 `about:debugging#/runtime/this-firefox`，选择 **Load Temporary Add-on**，打开解压文件夹中的 `manifest.json`。
+3. 浏览器重启后临时安装将被移除，扩展本地存储可能不能继续访问。若 Release 附有 **Mozilla 签名**的 `JotPatch-v0.1.17-firefox-signed.xpi`，应优先使用签名版正常安装。
+4. Chrome/Edge 和 Firefox 的便签数据保存在各自浏览器中，**不会自动同步**。不要先卸载旧插件，避免数据丢失。
+
+若 Release 只提供 Firefox ZIP 而未提供已签名的 XPI，则该 Firefox 包仅面向测试，不应当成普通用户可永久安装的插件。

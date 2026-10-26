@@ -4,6 +4,7 @@ Synthetic Chromium fixtures reproduce mounted/unmounted behavior, not a real
 authenticated ChatGPT session. The fixture's #scroll is a real scroll container.
 """
 from __future__ import annotations
+from browser_e2e import launch_browser
 from playwright.sync_api import sync_playwright, expect
 from conversation_e2e import new_site, select_text, chatgpt_body
 
@@ -195,7 +196,7 @@ def test_note_recovery(ctx,errors):
 
 def run():
     with sync_playwright() as p:
-        browser=p.chromium.launch(headless=True,executable_path='/usr/bin/chromium',args=['--no-sandbox'])
+        browser=launch_browser(p)
         errors=[]
         for test in (test_identity_and_streaming,test_old_turn_and_cancellation,test_note_recovery):
             # A separate context prevents stale streaming fixtures from
@@ -221,7 +222,7 @@ def run():
 
 def run_unreachable():
     with sync_playwright() as p:
-        browser=p.chromium.launch(headless=True,executable_path='/usr/bin/chromium',args=['--no-sandbox'])
+        browser=launch_browser(p)
         ctx=browser.new_context(viewport={'width':1200,'height':800})
         errors=[]
         test_unreachable_target_restores_reading(ctx,errors)
