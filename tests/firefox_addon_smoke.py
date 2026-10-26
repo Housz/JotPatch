@@ -228,7 +228,8 @@ def main():
             WebDriverWait(driver,6).until(lambda d:note_text in d.execute_script('''
                 return document.querySelector("#jotpatch-root").shadowRoot.querySelector(".paper .note-editor").textContent;
             '''))
-            # Blur explicitly; a literal tab sent into contenteditable inserts a tab.\n            driver.execute_script('arguments[0].blur()', editor)
+            # Blur explicitly; a literal tab sent into contenteditable inserts a tab.
+            driver.execute_script('arguments[0].blur()', editor)
             original_window=driver.current_window_handle
             driver.switch_to.new_window('tab')
             driver.get(f'moz-extension://{base}/options.html')
