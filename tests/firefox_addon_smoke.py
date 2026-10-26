@@ -15,6 +15,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.firefox.service import Service
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -22,11 +23,10 @@ def main():
     firefox_path=os.environ.get('FIREFOX_BIN')
     options=Options()
     options.add_argument('-headless')
-    # Firefox 138+ requires explicit opt-in for privileged Marionette context.
-    options.add_argument('-remote-allow-system-access')
     if firefox_path:
         options.binary_location=firefox_path
-    driver=webdriver.Firefox(options=options)
+    # Firefox 138+: system access belongs to geckodriver's SERVICE, not browser capabilities.
+    driver=webdriver.Firefox(options=options, service=Service(service_args=['--allow-system-access']))
     try:
         driver.set_page_load_timeout(25)
         driver.set_script_timeout(20)
