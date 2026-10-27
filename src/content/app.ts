@@ -68,7 +68,7 @@ namespace JP {
         if (external.some(record => record.type === 'childList' || record.type === 'attributes')) this.scheduleConversationScan();
       });
       this.observer.observe(document.body, { subtree: true, childList: true, characterData: true,
-        attributes: true, attributeFilter: ['data-turn-key','data-turn-id','data-message-id','data-turn','data-message-author-role'] });
+        attributes: true, attributeFilter: ['data-turn-key','data-turn-id','data-message-id','data-turn','data-message-author-role','data-tex','data-latex','alttext'] });
       // SPA navigation without injecting into page-owned history functions.
       window.setInterval(() => this.checkPageRoute(), 1400);
     }

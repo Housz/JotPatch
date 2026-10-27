@@ -82,6 +82,19 @@ def run():
         assert svg['anchor']['exact']==r'\(\int_0^1 x^2 dx\)',svg
         print('PASS: formula with SVG glyphs and data-tex remains anchorable')
 
+        # Partial glyph selection must map to the entire meaningful formula.
+        select(page,'#mixed .katex','visible')
+        partial=add_note(page)
+        assert partial['anchor']['exact']==r'\(E=mc^2\)',partial
+        print('PASS: selecting a subset of displayed glyphs safely anchors the whole formula')
+
+        # Plain SVG with no accessible math source must not create a false note.
+        before_count=len(anchor_notes(page))
+        select(page,'#unreadable svg')
+        expect(page.locator('#jotpatch-root #jp-bubble')).to_be_hidden()
+        assert len(anchor_notes(page))==before_count
+        print('PASS: unsupported SVG without a readable formula remains safely unanchored')
+
         select(page,'#duplicate-a .katex')
         first=add_note(page)
         assert first['anchor']['exact']==r'\(x^2+y^2=z^2\)'
@@ -98,11 +111,26 @@ def run():
         assert not errors,errors
         print('PASS: re-rendered formula reattaches to the correct passage and has no page errors')
 
+        # Changing the actual TeX must invalidate the original note, even if
+        # a matching equation appears elsewhere in the document.
+        page.evaluate("""() => {
+          const el=document.querySelector('#duplicate-a .katex');
+          el.dataset.tex='x^3+y^3=z^3';
+        }""")
+        page.wait_for_timeout(860)
+        expect(page.locator('#jotpatch-root .rail-pin.missing')).to_have_count(1)
+        page.evaluate("""() => {
+          document.querySelector('#duplicate-a .katex').dataset.tex='x^2+y^2=z^2';
+        }""")
+        page.wait_for_timeout(860)
+        expect(page.locator('#jotpatch-root .rail-pin.missing')).to_have_count(0)
+        print('PASS: changed TeX invalidates rather than relinks a saved formula anchor')
+
         snapshot=page.evaluate('() => structuredClone(globalThis.__jotpatchFakeStore)')
         page.close()
         page=new_page(context,fixture,seed=snapshot)
         expect(page.locator('#jotpatch-root .rail-pin.missing')).to_have_count(0)
-        assert len(anchor_notes(page))==5
+        assert len(anchor_notes(page))==6
         print('PASS: stored LaTeX anchors restore after reload without a schema migration')
         page.close()
         context.close()
