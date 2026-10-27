@@ -66,25 +66,10 @@ jobs:
       - name: Mozilla validation of Firefox distributable
         if: steps.release-gate.outputs.publish == 'true'
         run: npx --yes web-ext lint --source-dir build/firefox --self-hosted
-      - name: Optionally sign a normal-installable Firefox XPI via AMO
+      - name: Prepare manual Mozilla signing handoff
         if: steps.release-gate.outputs.publish == 'true'
-        env:
-          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
-          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
-        shell: bash
         run: |
-          set -euo pipefail
-          if [ -n "$AMO_JWT_ISSUER" ] && [ -n "$AMO_JWT_SECRET" ]; then
-            mkdir -p artifacts/signed
-            npx --yes web-ext sign --source-dir build/firefox --artifacts-dir artifacts/signed \
-              --channel=unlisted --api-key="$AMO_JWT_ISSUER" --api-secret="$AMO_JWT_SECRET" --no-input
-            signed=$(find artifacts/signed -maxdepth 1 -name '*.xpi' -type f | head -1)
-            test -n "$signed"
-            version=$(node -p 'JSON.parse(require("node:fs").readFileSync("config/version.json", "utf8")).nextRelease')
-            cp "$signed" "artifacts/JotPatch-v${version}-firefox-signed.xpi"
-          else
-            echo "AMO signing credentials unavailable; only temporary-install Firefox ZIP will be published." >> "$GITHUB_STEP_SUMMARY"
-          fi
+          echo "Firefox ZIP is unsigned. Upload it to the existing JotPatch Mozilla AMO Unlisted listing, then attach the signed XPI separately after checking its ID, version and contents." >> "$GITHUB_STEP_SUMMARY"
       - name: Tag main commit and publish both verified browser ZIPs
         if: steps.release-gate.outputs.publish == 'true'
         env:
@@ -96,8 +81,6 @@ jobs:
           chromium_zip="artifacts/JotPatch-${tag}-chromium.zip"
           firefox_zip="artifacts/JotPatch-${tag}-firefox.zip"
           assets=("$chromium_zip" "$firefox_zip")
-          signed="artifacts/JotPatch-${tag}-firefox-signed.xpi"
-          if [ -f "$signed" ]; then assets+=("$signed"); fi
           notes="docs/RELEASE_NOTES_${version//./_}.md"
           test -f "$notes"
           if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then

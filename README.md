@@ -6,14 +6,14 @@ JotPatch 是一款轻量浏览器便签扩展。阅读网页或 ChatGPT、Gemini
 
 ## 下载与安装
 
-从 [最新 GitHub Release](https://github.com/Housz/JotPatch/releases/latest) 选择浏览器对应的文件。目前正式发行版本为 **v0.1.17**。
+从 [最新 GitHub Release](https://github.com/Housz/JotPatch/releases/latest) 选择浏览器对应的文件。本次正式发行版本为 **v0.1.18**。
 
 | 浏览器 | 当前文件 | 首次安装 |
 | --- | --- | --- |
-| Chrome / Edge | `JotPatch-v0.1.17-chromium.zip` | 解压；在扩展管理页开启开发者模式，选择「加载已解压的扩展程序」 |
-| Firefox 142+ | `JotPatch-v0.1.17-firefox-signed.xpi` | 保持 XPI 原样，在 `about:addons` 的齿轮菜单选择「从文件安装附加组件」 |
+| Chrome / Edge | `JotPatch-v0.1.18-chromium.zip` | 解压；在扩展管理页开启开发者模式，选择「加载已解压的扩展程序」 |
+| Firefox 142+ | `JotPatch-v0.1.18-firefox.zip` | **未签名**：用于 Mozilla Unlisted 提交和 `about:debugging` 临时测试。普通用户安装请使用经 Mozilla 签名的同版本 XPI（签名完成后由维护者另行上传） |
 
-Firefox 文件已由 Mozilla 签名；未签名 ZIP 仅适合开发者临时调试。**本项目暂时使用手动更新**：有新版本时下载对应浏览器的安装包升级，不需要卸载旧扩展。Firefox 的安装、签名及版本来源见 [Firefox 说明](docs/FIREFOX.md)。
+**v0.1.18 的 Firefox ZIP 尚未签名**，不能作为普通 Firefox 的长期安装包。已经使用 v0.1.17 签名 XPI 的用户请保留现有安装，直到 Release 新增 v0.1.18 签名 XPI 后再覆盖升级。**本项目暂时使用手动更新**；不需要卸载旧扩展。Firefox 的安装、签名及版本来源见 [Firefox 说明](docs/FIREFOX.md)。
 
 ## 开始使用
 
@@ -27,7 +27,7 @@ Firefox 文件已由 Mozilla 签名；未签名 ZIP 仅适合开发者临时调�
 
 ## 功能与边界
 
-- 同一网页可存放多张便签，自动保存为本地 Markdown；支持轻量的原文锚定、拖动、缩放、颜色及删除撤销。
+- 同一网页可存放多张便签，自动保存为本地 Markdown；支持轻量的原文锚定、拖动、缩放、颜色及删除撤销。**v0.1.18** 新增可读取 KaTeX/MathML 公式的整条公式锚定，并改进浅灰单色图钉。
 - AI 会话导航仅索引已观察到的轮次；遇到动态卸载的历史内容，用户点击时才进行有界恢复。
 - **Navigation Lab** 是仅适用于 ChatGPT 的实验性导航选项，默认关闭。
 - Chrome/Edge 与 Firefox 的存储互相独立；目前没有账户、云同步、跨网页持续跟随或自动备份。
@@ -35,7 +35,7 @@ Firefox 文件已由 Mozilla 签名；未签名 ZIP 仅适合开发者临时调�
 
 ## 参与开发
 
-当前采用 `main` 正式发行线、`dev` 集成开发线；`dev` 的版本目标为 **`0.1.18-dev.1`**，与 v0.1.17 的已发行代码不同。
+当前采用 `main` 正式发行线、`dev` 集成开发线。最新稳定发行是 **`v0.1.18`**，当前 `dev` 开发版本为 **`0.1.19-dev.1`**；这不会改变已发布的发行文件。
 
 ```bash
 # Node.js >=20；在仓库根目录和 dev 分支执行

@@ -83,7 +83,7 @@ ChatGPT 适配器精确匹配 `chatgpt.com` / `chat.openai.com`，Gemini 匹配 
 
 `tsconfig.content.json` 通过 TypeScript `module: "none"` 和 `outFile: "dist/content.js"` 构建共享的 `namespace JP` 经典内容脚本。关键顺序为 **类型 → browser/site registry → 站点适配 → 算法、存储、样式 → `app.ts` → `entry.ts`**。模块系统迁移须单独评审并覆盖双浏览器回归。
 
-Firefox Manifest 由 [`scripts/firefox-manifest.mjs`](../scripts/firefox-manifest.mjs)派生，改用事件页与 `options_ui`；Chromium 使用 service worker。注意 `dev` 的 Firefox ID 与后续签名修复版仍有差异，具体见 [Firefox 发行来源](FIREFOX.md)，不能直接拿旧 `dev` ZIP 替代签名 XPI。
+Firefox Manifest 由 [`scripts/firefox-manifest.mjs`](../scripts/firefox-manifest.mjs)派生，改用事件页与 `options_ui`；Chromium 使用 service worker。v0.1.18 使用固定 Firefox Gecko ID，与已经签名的 v0.1.17 保持一致；Firefox ZIP 仍需 Mozilla 签名才可供普通用户长期安装，详见 [Firefox 发行来源](FIREFOX.md)。
 
 ## 已实现与尚未实现
 

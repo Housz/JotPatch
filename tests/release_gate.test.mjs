@@ -25,9 +25,11 @@ test('publish and signing operations must be gated', () => {
     'Package Firefox from the same source commit',
     'Validate both distributables and shared runtime identity',
     'Mozilla validation of Firefox distributable',
-    'Optionally sign a normal-installable Firefox XPI via AMO',
+    'Prepare manual Mozilla signing handoff',
     'Tag main commit and publish both verified browser ZIPs'
   ];
   assert.equal((source.match(/if: steps\.release-gate\.outputs\.publish == 'true'/g)||[]).length,steps.length);
   for(const step of steps)assert.ok(source.includes(step),step);
+  assert.doesNotMatch(source,/web-ext sign|AMO_JWT_ISSUER|AMO_JWT_SECRET/);
+  assert.match(source,/Firefox ZIP is unsigned/);
 });
