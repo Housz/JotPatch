@@ -28,30 +28,46 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Verify this is an approved release commit on main
+      - name: Check whether this commit is an approved release
+        id: release-gate
         run: |
           set -euo pipefail
           git fetch origin main --tags
           git merge-base --is-ancestor HEAD origin/main
           node --input-type=module -e '
-            import {readFileSync} from "node:fs";
+            import {appendFileSync} from "node:fs";
             import {loadVersionConfig,verifySourceVersions} from "./scripts/versioning.mjs";
             const c=loadVersionConfig();
-            if(c.channel!=="release") throw Error("Only release-channel commits may publish");
-            verifySourceVersions(".",c);
-            if(process.env.GITHUB_REF_TYPE==="tag" && process.env.GITHUB_REF_NAME!==`v${c.nextRelease}`)
-              throw Error("Tag does not match release version");
+            const tag=process.env.GITHUB_REF_TYPE==="tag";
+            if(c.channel!=="release") {
+              if(tag) throw Error("A release tag must point to release-channel source");
+              console.log("Skipping publication: main is on the dev channel.");
+              appendFileSync(process.env.GITHUB_OUTPUT,"publish=false\n");
+              appendFileSync(process.env.GITHUB_STEP_SUMMARY,"Publication skipped: this main commit is not a release.\n");
+            } else {
+              verifySourceVersions(".",c);
+              if(tag && process.env.GITHUB_REF_NAME!==`v${c.nextRelease}`)
+                throw Error("Tag does not match release version");
+              appendFileSync(process.env.GITHUB_OUTPUT,"publish=true\n");
+            }
           '
-      - run: npm install --no-audit --no-fund
-      - run: npm run check
-      - run: npm run package:release
+      - if: steps.release-gate.outputs.publish == 'true'
+        run: npm install --no-audit --no-fund
+      - if: steps.release-gate.outputs.publish == 'true'
+        run: npm run check
+      - if: steps.release-gate.outputs.publish == 'true'
+        run: npm run package:release
       - name: Package Firefox from the same source commit
+        if: steps.release-gate.outputs.publish == 'true'
         run: node scripts/package.mjs --channel=release --browser=firefox
       - name: Validate both distributables and shared runtime identity
+        if: steps.release-gate.outputs.publish == 'true'
         run: node scripts/verify-release-package.mjs
       - name: Mozilla validation of Firefox distributable
+        if: steps.release-gate.outputs.publish == 'true'
         run: npx --yes web-ext lint --source-dir build/firefox --self-hosted
       - name: Optionally sign a normal-installable Firefox XPI via AMO
+        if: steps.release-gate.outputs.publish == 'true'
         env:
           AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
@@ -70,6 +86,7 @@ jobs:
             echo "AMO signing credentials unavailable; only temporary-install Firefox ZIP will be published." >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Tag main commit and publish both verified browser ZIPs
+        if: steps.release-gate.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
