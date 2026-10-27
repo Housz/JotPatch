@@ -1,85 +1,86 @@
-# JotPatch 可扩展架构（dev）
+# JotPatch 架构与数据边界
 
-> 当前实现是**渐进式模块化**，并已支持 Chromium/Firefox 两套 ZIP 构建；Firefox ZIP 未经 Mozilla 签名只能临时调试，不能据此认定商店上架完成。记录实际可用边界，避免 AI 编码代理臆造目录或功能。原始 v0.1.15 架构参考 [历史文档](LEGACY_ARCHITECTURE_0_1_15.md)。
+JotPatch 是一套 **Chromium / Firefox 共用核心的 WebExtension**。本文以 `dev` 当前实现为准，说明模块职责、数据流、兼容约束与可扩展点；已发布版本和待合并修复请分别核对 [版本说明](VERSIONING.md)与 [Firefox 说明](FIREFOX.md)。
 
-## 分层与依赖
+设计采用渐进式模块化：`src/content/app.ts` 仍负责大量页面交互，后续按职责小步拆分，不在普通修复中重写整套运行时。早期设计记录保存在 [v0.1.15 架构归档](LEGACY_ARCHITECTURE_0_1_15.md)。
+
+## 启动与数据流
 
 ```text
-Browser WebExtension API (Chrome/Edge service worker; Firefox MV3 event page)
-        │
-        ▼
-src/adapters/browsers/webextension.ts  ← extensionApi()
-        │
-        ▼
-src/content/app.ts   (application orchestration; current large legacy file)
-   ├── src/adapters/sites/{registry,chatgpt,gemini}.ts
-   │       │
-   │       └── src/content/conversation.ts  (site-neutral DOM scan/navigation)
-   ├── src/core/ (NoteRepository via injected StoragePort, anchors, markdown,
-   │               conversation-index, navigation-recovery, navigation-lab,
-   │               rail-layout, shared data types)
-   └── src/ui/{palette,elements,paper-styles}.ts
-
-src/background/index.ts          Chromium MV3 service worker / Firefox MV3 event page (shared source)
-options.html/options.js          settings; runtime API selection supports both browsers; modularization pending
+浏览器工具栏 / 选区右键 / 已授权网站
+      ↓
+src/background/index.ts
+  ├─ Chromium: MV3 service worker
+  ├─ Firefox: MV3 event page（打包时转换 Manifest）
+  └─ 按需注入 dist/content.js + styles/highlight.css
+      ↓
+src/content/entry.ts（避免重复实例）
+      ↓
+src/content/app.ts（Shadow DOM、事件、读写与导航编排）
+  ├─ src/adapters/sites/registry.ts + chatgpt.ts / gemini.ts
+  ├─ src/content/conversation.ts（网页 Prompt 采集与坐标）
+  ├─ src/core/（锚点、索引、恢复、布局、Markdown、存储）
+  └─ src/ui/（便签及轨道样式）
+      ↓
+src/adapters/browsers/webextension.ts
+      ↓
+扩展 storage.local（仅当前浏览器配置）
 ```
 
-**核心原则：**
+`options.html`、`options.js` 负责设置与站点授权；站点自动恢复使用可选 HTTP(S) 主机权限，平时点击图标使用 `activeTab`。这些路径不会读取浏览器 Cookie 或向远程服务器同步便签。
 
-1. `src/core` 不应直接访问 `chrome.*` 或 `browser.*`；浏览器存储通过 `StoragePort` 注入，轮次扫描经通用接口获取 DOM 识别结果。
-2. `src/adapters/sites/*` 负责**域名判断、用户 Prompt 选择器、容器和官方导航检测**，不保存便签、不发网络请求、不修改 JotPatch 核心布局。
-3. `src/adapters/browsers` 只处理浏览器 API 差异；Firefox Manifest 转换在 `scripts/firefox-manifest.mjs`，事件生命周期由 `src/background/index.ts` 的共享实现及跨浏览器 CI 验证。
-4. `src/ui` 负责呈现；`src/content/app.ts` 暂时保留大型应用编排和 DOM 事件。**后续小步拆分**，优先按单功能可测职责抽取，不一次重写全部。
-5. `src/content/entry.ts` 是唯一启动点，注入重复执行不得创建第二个应用实例。
+## 模块与依赖规则
 
-## 向网站注册新适配器
+| 路径 | 责任 | 不应承担的任务 |
+| --- | --- | --- |
+| `src/core/` | `TextAnchor`、`NoteRepository`、Markdown、轮次身份、导航恢复与轨道布局 | AI 网站选择器、直接 `chrome.*` / `browser.*` 调用 |
+| `src/adapters/sites/` | 精确匹配 AI 网站域名，定位用户 Prompt、识别网站自带导航 | 修改便签 Schema、存储和通用布局 |
+| `src/adapters/browsers/` | 提供 `extensionApi()` 浏览器 API 入口 | 站点 DOM 逻辑 |
+| `src/content/conversation.ts` | 扫描当前已挂载用户提问、判断滚动容器和目标元素 | 扫描未加载聊天历史或调用网站私有 API |
+| `src/content/app.ts` | 页面 UI 事件、权限消息响应、便签生命周期和导航调度 | 作为新增站点选择器的存放处 |
+| `src/background/index.ts` | 工具栏、右键、按需注入、授权站点脚本注册 | 保存聊天内容到远端 |
+| `src/ui/` | Shadow DOM 便签、导航轨道的样式与 UI 工具 | 跨浏览器数据协议 |
 
-实现 `ConversationAdapter`，放在 `src/adapters/sites/<site>.ts`：
+## 本地数据与兼容性
 
-```ts
-namespace JP {
-  JP.registerConversationAdapter({
-    site: 'claude',
-    matches(url) { return url.hostname.toLowerCase() === 'claude.ai'; },
-    selectors: '[data-example-user-prompt]', // 示例，请从真实页面取证
-    canonical(node) { return node; },
-    prompt(node) { return node; },
-    nativeRailPresent() { return false; }
-  });
-}
-```
+以 [`src/core/types.ts`](../src/core/types.ts)和 [`src/core/repository.ts`](../src/core/repository.ts)为权威定义。
 
-把此文件放入 `tsconfig.content.json` 的 `files` 数组，位置在 `registry.ts` 之后、`src/content/conversation.ts` 之前。**选择器上面的字符串只是示例，不代表 Claude 当前实际 DOM**；新开发者必须采集真实 DOM 并添加测试。不要仅根据相似 hostname 宽松匹配，谨防 `chatgpt.com.evil.example`。
+| 存储对象 | 标识 / 字段 | 用途 |
+| --- | --- | --- |
+| 单张便签 | `jotpatch:note:v1:<id>`，`Note.schemaVersion: 1` | 保存 `id`、`pageKey`、`text`、`createdAt`、`updatedAt`、原网址与标题 |
+| 原文锚点（可选） | `anchor: {version, type, exact, prefix, suffix, start, end}` | 查找原文并避免相似文本误锚定 |
+| 轮次关联（可选） | `conversationTurnId`、`spatial` | 将便签归入正确 AI 提问，保存位置提示 |
+| 外观（可选） | `appearance.color/fontSize/width/height/offsetX/offsetY` | 保存颜色、字号、大小和偏移 |
+| 修订与删除（可选） | `revision`、`deletedAt` | 处理跨页面保存冲突、删除撤销及短期墓碑 |
+| 偏好 | `jotpatch:preferences:v1` | 图钉模式、导航开关、Lab 开关、默认颜色 |
 
-站点适配器目前识别用户提问、获取真正的 Prompt element（而不是包含回复的整段 article）、检测原生导航。未来如果需要站点特有的分页恢复，可给适配器增加**可选能力接口**，不要在 `NavigationLab` 内散落 `if(site ===...)`。当前 Lab 仍只对 ChatGPT 启用。
+存储由 `StoragePort` 注入 `NoteRepository`。页面只加载当前 `pageKey` 的便签；`pageKey` 使用网址路径、重要查询参数和路由 hash，过滤常见追踪参数。不同浏览器安装、不同扩展 ID 或浏览器配置的本地存储并不自动互通。
 
-## 便签数据与稳定性
+删除通过 `deletedAt` 临时墓碑避免旧标签页重放已删除内容；有冲突时暂停本页覆盖保存并提示用户备份。升级必须保持旧数据结构可读取，不得因原文卸载自动删除便签。
 
-- 兼容旧数据键 `jotpatch:note:v1:*` 和 `jotpatch:preferences:v1`，`schemaVersion:1`。
-- `NoteRepository` 构造参数为 `StoragePort`；单元测试可传 Map 伪存储，不需要网页环境。
-- 原文以 quote + prefix/suffix + start/end 寻找锚点；当目标轮次未挂载时先找回所属轮次，再限制在该轮内验证原文；相同文字不代表同一消息。
-- 轮次身份使用网页提供的稳定标识；历史记录不应保留被卸载的旧 Element 引用。
-- 自动历史恢复必须**由用户导航点击触发**，有步数/时间上限、支持 AbortSignal、手动滚动中止，并防止错误成功。
-- 不得通过“自动扫描所有历史”或直接调用未公开 ChatGPT API 作为默认能力；Navigation Lab 是可关闭实验。
+## 原文锚定和 AI 对话恢复
 
-## 内容脚本构建方式
+1. 用户主动选区时，`src/core/anchor.ts` 通过 `Range` 提取 exact quote、最多 48 字符的前后文和字符偏移。原文选区上限 1600 字，正文索引有 2,000,000 字符上限。
+2. 后续恢复优先匹配 exact quote 和上下文；旧字符坐标只是参考。多处匹配不够确定时拒绝自动重连。
+3. AI 网页先由站点适配器找出用户 Prompt；`ConversationIndex` 保留曾发现的稳定轮次身份，不将被卸载的旧 DOM 元素当作有效目标。
+4. 点击历史 Prompt 时，`navigation-recovery.ts` 在有限时间/步数内按需查找；支持 `AbortSignal` 和用户中止。滚动完成不等于找到了目标。
+5. 点击锚定便签时，优先恢复保存的 `conversationTurnId`，再在该轮范围内验证 exact quote。跨轮次出现同一句话不能判为到达。
+6. `navigation-lab.ts` 使用可选的内存检查点实验策略，目前默认关闭，且只在 ChatGPT 适配场景开启。
 
-本项目目前使用 `tsconfig.content.json` 的 `compilerOptions.module="none"`、`outFile="dist/content.js"`，多个文件共享 `namespace JP`。这是出于经典 content script、无运行时依赖和迁移风险的考虑。文件顺序属于**构建接口的一部分**：
+导航轨道由 `src/core/rail-layout.ts` 计算位置：灰色 Prompt 短线与彩色便签标记保持原序，密集时小幅横向避让以便直接点击；不会将目标合并成二次选择器或鱼眼效果。历史方案及实验证据见 [Navigation Lab 记录](NAVIGATION_LAB_0_1_15.md)。
 
-1. `core` 类型（无运行逻辑）；
-2. browser/site adapter registry 与站点注册；
-3. `conversation.ts`/anchor 等算法、存储、UI 样式；
-4. `app.ts` 和**最后的** `entry.ts`。
+## 浏览器、站点和构建
 
-不要改成随意的 ES imports 后仍使用 `outFile`；需要转换打包工具时先独立 PR 和跨浏览器回归。当前背景脚本及设置脚本仍由独立文件构建或直接引用，Firefox 源码兼容性修复已进入主线；Leezh76 早期 Firefox 分支尚有独立提交，后续整合须保留其原始作者信息。
+ChatGPT 适配器精确匹配 `chatgpt.com` / `chat.openai.com`，Gemini 匹配 `gemini.google.com`。新 AI 站点需独立实现 `ConversationAdapter` 并在 [`tsconfig.content.json`](../tsconfig.content.json)中按顺序注册，不能猜测选择器后直接宣称兼容。
 
-## 新浏览器适配步骤
+`tsconfig.content.json` 通过 TypeScript `module: "none"` 和 `outFile: "dist/content.js"` 构建共享的 `namespace JP` 经典内容脚本。关键顺序为 **类型 → browser/site registry → 站点适配 → 算法、存储、样式 → `app.ts` → `entry.ts`**。模块系统迁移须单独评审并覆盖双浏览器回归。
 
-1. 复用 `src/core`、站点适配器和 UI；根据 Firefox 实际 MV3 能力适配 `background`、`options`、Manifest。
-2. `src/adapters/browsers/webextension.ts` 提供最基本的运行时选择，但**不能单靠这一文件宣称 Firefox 已经完成**。
-3. 验证权限请求、选区右键、自动恢复、后台重启、持久化、导航、浏览器退出后数据恢复。
-4. `npm run package:firefox` 与 Firefox 跨浏览器 CI 已建立；GitHub Release 可附临时 ZIP。正式持久安装仍依赖 AMO 签名 XPI，未经签名不能宣传为正常安装包。
+Firefox Manifest 由 [`scripts/firefox-manifest.mjs`](../scripts/firefox-manifest.mjs)派生，改用事件页与 `options_ui`；Chromium 使用 service worker。注意 `dev` 的 Firefox ID 与后续签名修复版仍有差异，具体见 [Firefox 发行来源](FIREFOX.md)，不能直接拿旧 `dev` ZIP 替代签名 XPI。
 
-## 关键测试
+## 已实现与尚未实现
 
-`npm run check`：编译/51+ 项 Node 契约、适配器、ZIP/版本测试。`npm run test:e2e`：Chromium 合成 DOM 浏览器回归。`npm run test:lab`：较慢的合成长会话模型，按场景运行。详见 [开发指南](DEVELOPMENT.md)。
+- **已实现**：本页多便签、原文锚点、简化 Markdown、ChatGPT/Gemini 已发现轮次导航、Chromium/Firefox 构建、Navigation Lab 可选实验。
+- **待验证**：真实登录 AI 网站持续变更的 DOM、跨浏览器实际权限流程、Firefox 正式持久安装的完整人工矩阵。
+- **尚未实现**：跨网页持续跟随悬浮便签、浏览器外独立窗口、账号/云同步；不得把产品方向写成当前功能。
+
+运行与测试层级见 [开发指南](DEVELOPMENT.md)。架构决定随新需求更新本页；原始实验结论保持在带版本的历史报告中。
