@@ -21,7 +21,7 @@ Mozilla has signed the Firefox XPI. An unsigned ZIP is only suitable for tempora
 2. Select text and click the nearby 📌 to create an anchored note. Without a selection, use `+` in the small launcher to create a page note.
 3. Type directly. Drag the top bar, copy Markdown, or use the bottom bar for bold, italic and lists; `···` contains color, font-size and delete controls.
 4. On ChatGPT and Gemini, gray bars indicate discovered user prompts and colored markers indicate notes. Hover for a preview and click a marker to navigate.
-5. For automatic restoration after a page refresh, grant permission to that specific website in the **Automatic restoration** settings.
+5. For automatic restoration after a page refresh, grant permission to that specific website under **「自动恢复」 (Automatic restoration)** in JotPatch settings.
 
 [Full user guide (Chinese)](docs/USER_GUIDE.md)
 
