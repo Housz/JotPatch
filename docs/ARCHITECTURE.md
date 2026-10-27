@@ -69,13 +69,21 @@ src/adapters/browsers/webextension.ts
 
 导航轨道由 `src/core/rail-layout.ts` 计算位置：灰色 Prompt 短线与彩色便签标记保持原序，密集时小幅横向避让以便直接点击；不会将目标合并成二次选择器或鱼眼效果。历史方案及实验证据见 [Navigation Lab 记录](NAVIGATION_LAB_0_1_15.md)。
 
+## KaTeX / MathML 原文锚定
+
+普通文本索引不等于浏览器选区的 `Range.toString()`。KaTeX 一个公式往往包含隐藏的辅助 MathML、原始 TeX 注释与供人阅读的 HTML 字形，SVG/辅助文本可能导致原始 `Range` 为空、重复或超长。
+
+`src/core/anchor.ts` 将**可识别公式作为索引中的一个虚拟片段**：从 `annotation[encoding^="application/x-tex"]` 或网页自带 `data-tex`、`data-latex`、`math[alttext]` 读取稳定内容，以 `\\(...\\)` 形式纳入 `anchor.exact`，不解析公式含义，也不写入页面 DOM。定位时映射到整个公式的 DOM 元素边界；原文混合选区与普通文字共用 `TextAnchor` v1、上下文消歧、所属轮次限制和撤销逻辑。重绘后验证新的真实 DOM，未提供可读取数学身份时拒绝猜测。
+
+**当前精度是整条公式**，不是每个上/下标单独锚定。没有 LaTeX/可读 MathML 的图片或纯 SVG 不保证支持。回归材料在 [`fixtures/math-selection.html`](../fixtures/math-selection.html) 与 [`tests/math_selection_e2e.py`](../tests/math_selection_e2e.py)，由合成 DOM 浏览器测试验证；不将此测试称为已覆盖 ChatGPT 的全部线上 DOM 变体。
+
 ## 浏览器、站点和构建
 
 ChatGPT 适配器精确匹配 `chatgpt.com` / `chat.openai.com`，Gemini 匹配 `gemini.google.com`。新 AI 站点需独立实现 `ConversationAdapter` 并在 [`tsconfig.content.json`](../tsconfig.content.json)中按顺序注册，不能猜测选择器后直接宣称兼容。
 
 `tsconfig.content.json` 通过 TypeScript `module: "none"` 和 `outFile: "dist/content.js"` 构建共享的 `namespace JP` 经典内容脚本。关键顺序为 **类型 → browser/site registry → 站点适配 → 算法、存储、样式 → `app.ts` → `entry.ts`**。模块系统迁移须单独评审并覆盖双浏览器回归。
 
-Firefox Manifest 由 [`scripts/firefox-manifest.mjs`](../scripts/firefox-manifest.mjs)派生，改用事件页与 `options_ui`；Chromium 使用 service worker。注意 `dev` 的 Firefox ID 与后续签名修复版仍有差异，具体见 [Firefox 发行来源](FIREFOX.md)，不能直接拿旧 `dev` ZIP 替代签名 XPI。
+Firefox Manifest 由 [`scripts/firefox-manifest.mjs`](../scripts/firefox-manifest.mjs)派生，改用事件页与 `options_ui`；Chromium 使用 service worker。v0.1.18 使用固定 Firefox Gecko ID，与已经签名的 v0.1.17 保持一致；Firefox ZIP 仍需 Mozilla 签名才可供普通用户长期安装，详见 [Firefox 发行来源](FIREFOX.md)。
 
 ## 已实现与尚未实现
 

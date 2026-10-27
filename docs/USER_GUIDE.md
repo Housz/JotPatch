@@ -1,6 +1,6 @@
 # JotPatch 用户指南
 
-JotPatch 将轻量便签保存在你正在阅读的网页旁。本文适用于 GitHub Release **v0.1.17** 的常规使用；正在开发的 `0.1.18-dev.1` 与尚未合并的 Firefox 修复应分别核对。
+JotPatch 将轻量便签保存在你正在阅读的网页旁。本文以 GitHub Release **v0.1.18** 的功能为基线。Firefox 的新 ZIP 仍需 Mozilla 手动签名，获取签名 XPI 后才能进行普通浏览器的长期安装。
 
 ## 安装
 
@@ -8,19 +8,19 @@ JotPatch 将轻量便签保存在你正在阅读的网页旁。本文适用于 G
 
 **前提**：支持扩展的 Chrome 或 Edge，使用 [最新 Release](https://github.com/Housz/JotPatch/releases/latest) 中的 Chromium ZIP。
 
-1. 完整解压 `JotPatch-v0.1.17-chromium.zip`。
+1. 完整解压 `JotPatch-v0.1.18-chromium.zip`。
 2. 打开 `chrome://extensions` 或 `edge://extensions`，开启「开发者模式」。
 3. 点击「加载已解压的扩展程序」，选择**直接包含 `manifest.json`** 的目录。
 4. 在普通 HTTP(S) 网页点击 JotPatch 图标，看到右上角的迷你启动区即表示已启用。
 
 ### Firefox
 
-**前提**：Firefox 142 或更高版本。下载 Release 中的 **`JotPatch-v0.1.17-firefox-signed.xpi`**；无需解压。
+**前提**：Firefox 142 或更高版本。只有当 Release 中提供 **`JotPatch-v0.1.18-firefox-signed.xpi`**（Mozilla 签名）时，普通用户才能安装新版本；**`JotPatch-v0.1.18-firefox.zip` 是未签名包，用于开发临时加载及 Mozilla 提交**。若签名 XPI 尚未提供，请继续使用此前已经签名的 v0.1.17。
 
 1. 打开 `about:addons`，在扩展管理页的齿轮菜单选择「从文件安装附加组件」。
 2. 选择 XPI，确认浏览器的安装提示。
 3. 打开普通 HTTP(S) 网页并点击 JotPatch 工具栏图标；首次启动应看到迷你启动区。
-4. 重启浏览器后检查扩展仍在。签名 XPI 用于正常持久安装；`about:debugging` 加载的未签名 ZIP 仅为临时调试。
+4. 重启浏览器后检查扩展仍在。签名 XPI 用于正常持久安装；`about:debugging` 加载的未签名 ZIP 仅为临时调试。**升级时不要先卸载原版，以保护本地便签数据。**
 
 Firefox 的 ID、手动升级及已知发行差异见 [Firefox 专题](FIREFOX.md)。不同浏览器的便签数据不会自动同步。
 
@@ -45,6 +45,15 @@ Firefox 的 ID、手动升级及已知发行差异见 [Firefox 专题](FIREFOX.m
 - 顶栏的复制按钮复制 Markdown 源码，关闭按钮收起便签但不删除。
 - `···` 菜单用于颜色、小/中/大字号和删除；在便签上按 Ctrl + 鼠标滚轮可调整字号。
 - 删除后可在短暂出现的提示条点击「撤销」。关闭或刷新网页可能使这次临时撤销机会结束。
+
+### 数学公式和普通文字混选
+
+在 ChatGPT 等使用 KaTeX 或可识别 MathML 的网页中，可以选中**整个公式**，或同时选中公式与前后普通文字，点击 📌 创建便签。
+
+- JotPatch 优先读取网页渲染结果已有的 LaTeX 注释、`data-tex` / `data-latex` 等元信息，把一个公式当作一个完整的锚定单元。选中公式的一部分时按**整条公式**锚定，不保证精确到单个数学符号。
+- 对重复公式仍使用前后文字与所属对话轮次核对位置；网页重新渲染相同公式后可尝试恢复，不会因为另一轮出现相同公式就自动关联。
+- 网页若只留下无法解析的图片/SVG、没有可靠的 TeX/MathML 文本身份，或规范化选区超过 1600 字，仍可能无法创建锚点。可以改选公式旁边的可见文字，或用 `+` 创建本页悬浮便签。
+- 数学支持在合成 KaTeX/MathML DOM 上执行 Chromium、Firefox 回归；真实登录 ChatGPT 的渲染可能随网站更新，问题反馈请附可公开的 DOM 结构和浏览器版本，勿上传私人聊天内容。
 
 ## ChatGPT / Gemini 导航
 
@@ -81,7 +90,7 @@ Firefox 的 ID、手动升级及已知发行差异见 [Firefox 专题](FIREFOX.m
 | 现象 | 检查方法与下一步 |
 | --- | --- |
 | 点击图标没有出现便签 | 先在普通 HTTP(S) 页面测试；浏览器内部页如 `about:newtab`、`chrome://extensions` 不支持注入。再到扩展错误控制台查 JotPatch 堆栈。 |
-| Firefox 显示未签名或无法长期保留 | 确认安装的是 Release 中的 `-firefox-signed.xpi`，不是开发 ZIP。参阅 [Firefox 说明](FIREFOX.md)。 |
+| Firefox 显示未签名或无法长期保留 | 确认安装的是 Release 中实际提供的 `-firefox-signed.xpi`，不是 `JotPatch-v0.1.18-firefox.zip` 开发 / 签名候选包。参阅 [Firefox 说明](FIREFOX.md)。 |
 | 刷新网页后需要重新点图标 | 在「自动恢复」中为该网站授权，再刷新网页。 |
 | 导航没有列出所有历史提问 | 默认只记住页面已经暴露的轮次；正常浏览旧消息后才逐步加入，不会后台自动扫描全历史。 |
 | 原文便签暂时不显示 | 检查原文是否已被网站动态卸载；通过导航明确请求恢复。不要删除旧便签重建。 |

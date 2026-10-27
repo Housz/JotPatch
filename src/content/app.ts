@@ -68,7 +68,7 @@ namespace JP {
         if (external.some(record => record.type === 'childList' || record.type === 'attributes')) this.scheduleConversationScan();
       });
       this.observer.observe(document.body, { subtree: true, childList: true, characterData: true,
-        attributes: true, attributeFilter: ['data-turn-key','data-turn-id','data-message-id','data-turn','data-message-author-role'] });
+        attributes: true, attributeFilter: ['data-turn-key','data-turn-id','data-message-id','data-turn','data-message-author-role','data-tex','data-latex','alttext'] });
       // SPA navigation without injecting into page-owned history functions.
       window.setInterval(() => this.checkPageRoute(), 1400);
     }
@@ -93,8 +93,10 @@ namespace JP {
       this.host.setAttribute('data-jotpatch-exclude', '');
       this.host.style.cssText = 'position:fixed;inset:0;z-index:2147483647;pointer-events:none;';
       this.shadow = this.host.attachShadow({ mode: 'open' });
+      // A trusted static template avoids AMO warning on interpolated HTML.
+      const styles = document.createElement('style');
+      styles.textContent = PAPER_STYLES;
       this.shadow.innerHTML = `
-        <style>${PAPER_STYLES}</style>
         <div class="launcher" id="jp-launcher" hidden aria-label="JotPatch 快捷操作">
           <button id="jp-new" aria-label="新建本页便签" title="新建本页便签" type="button">+</button>
           <button id="jp-settings" aria-label="设置" title="设置" type="button">⚙</button>
@@ -111,6 +113,7 @@ namespace JP {
         <div id="jp-markers"></div>
         <div id="jp-cards"></div>
         <div id="jp-toast" class="toast" role="status" aria-live="polite" hidden><span id="jp-toast-text"></span><button id="jp-cancel-nav" type="button" hidden>取消</button><button id="jp-undo" type="button" hidden>撤销</button></div>`;
+      this.shadow.prepend(styles);
       (document.body || document.documentElement).appendChild(this.host);
     }
 
@@ -281,7 +284,11 @@ namespace JP {
       const selection = document.getSelection();
       if (!selection || selection.isCollapsed || !selection.rangeCount) return null;
       const range = selection.getRangeAt(0);
-      if (!range.toString().trim() || range.toString().length > 1600 || this.host.contains(range.commonAncestorContainer)) return null;
+      const raw = range.toString();
+      // KaTeX duplicates assistive MathML and visible glyphs; a valid math
+      // selection can have empty or oversized raw text.
+      if (this.host.contains(range.commonAncestorContainer) ||
+          ((!raw.trim() || raw.length > 1600) && !rangeContainsReadableMath(range))) return null;
       this.pendingRange = range.cloneRange();
       return this.pendingRange;
     }
@@ -301,7 +308,8 @@ namespace JP {
       const current = document.getSelection();
       const live = current?.rangeCount && !current.isCollapsed ? current.getRangeAt(0) : null;
       let range = this.pendingRange || live;
-      if (range && selectionText && range.toString().trim() !== selectionText.trim()) range = null;
+      if (range && selectionText && range.toString().trim() !== selectionText.trim() &&
+          !rangeContainsReadableMath(range)) range = null;
       if (!range) {
         const index = buildTextIndex();
         range = uniqueQuoteRange(selectionText, index);
@@ -314,7 +322,7 @@ namespace JP {
       if (!range) { this.toast('请选中网页文字'); return false; }
       const index = buildTextIndex();
       const anchor = captureSelection(range, index);
-      if (!anchor) { this.toast('请选择 1–1600 字的普通网页文字'); return false; }
+      if (!anchor) { this.toast('请选择 1–1600 字的网页文字或可识别的数学公式'); return false; }
       return this.createNote(anchor,range);
     }
     private async createPageNote(): Promise<boolean> { return this.createNote(); }
@@ -903,7 +911,7 @@ namespace JP {
       const match=this.matches.get(note.id);
       if(!match)return null;
       const {range}=match;
-      if(!range.startContainer.isConnected||!range.endContainer.isConnected || range.toString()!==note.anchor.exact)return null;
+      if(!liveAnchorMatch(match,note.anchor,this.index))return null;
       // Fast identity check for the common case: the whole quote is in one
       // text node. React sometimes rewrites an existing Text node in place.
       if(range.startContainer===range.endContainer && range.startContainer.nodeType===Node.TEXT_NODE &&
@@ -1070,8 +1078,8 @@ namespace JP {
       // Fixed header and footer take actual layout space; no controls overlap text.
       paper.innerHTML=`
         <header class="paper-head drag-region" title="拖动整条顶栏移动便签" aria-label="拖动便签位置">
-          <button class="paper-pin" type="button" aria-label="解除原文锚定" title="已钉在原文 · 点击解除锚定" ${note.anchor?'':'hidden'}>
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-4 1-3 4v3l-3 2-2-6-6-2 2-3h3l4-3z"/><path d="m9 15-6 6"/></svg>
+          <button class="paper-pin" type="button" aria-label="解除原文锚定" title="已钉在原文 · 点击解除锚定" hidden>
+            <span class="paper-pin-symbol" aria-hidden="true">📌︎</span>
           </button>
           <span class="paper-grab" aria-hidden="true"></span>
           <div class="paper-head-actions">
@@ -1092,7 +1100,7 @@ namespace JP {
           <span class="save-indicator" aria-live="polite"></span>
         </footer>
         <div class="note-menu" hidden>
-          <div class="note-mode">${note.anchor?'📌 贴在原文':'◌ 本页悬浮'}</div>
+          <div class="note-mode"></div>
           <div class="colors" role="group" aria-label="便签颜色"></div>
           <div class="font-label">字号</div>
           <div class="font-choices" role="group" aria-label="字号">
@@ -1103,6 +1111,8 @@ namespace JP {
           <button class="menu-action delete-menu danger" type="button">删除便签</button>
         </div>
         <div class="resize-handle" role="separator" aria-label="拖动调整便签大小" title="拖动调整便签大小"></div>`;
+      paper.querySelector<HTMLElement>('.paper-pin')!.hidden = !note.anchor;
+      paper.querySelector<HTMLElement>('.note-mode')!.textContent = note.anchor ? '📌 贴在原文' : '◌ 本页悬浮';
       const editor=paper.querySelector<HTMLElement>('.note-editor')!;
       renderMarkdown(editor,note.text);
       const changed=()=>{

@@ -1,6 +1,8 @@
 // Firefox variant of the Chromium manifest. Pure on purpose: packaging and the
 // contract tests share this single transformation.
-export const FIREFOX_ADDON_ID = 'jotpatch@housz.dev';
+// New globally unique ID: jotpatch@housz.dev is already registered in AMO.
+// Never change this ID after the first signed add-on is distributed.
+export const FIREFOX_ADDON_ID = '{8801fba0-08ef-481b-a4b6-870a061b2878}';
 // Firefox 142 is the floor that understands gecko.data_collection_permissions,
 // which AMO now requires for new submissions.
 export const FIREFOX_MIN_VERSION = '142.0';
@@ -54,7 +56,7 @@ export function verifyFirefoxManifest(manifest) {
   for (const key of CHROMIUM_ONLY_KEYS) expect(!(key in (manifest || {})), `${key} is Chromium-only`);
   expect(manifest?.options_ui?.page === 'options.html', 'options_ui.page must point at options.html');
   const gecko = manifest?.browser_specific_settings?.gecko;
-  expect(typeof gecko?.id === 'string' && gecko.id.includes('@'), 'browser_specific_settings.gecko.id is required');
+  expect(typeof gecko?.id === 'string' && (/^\{[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\}$/i.test(gecko.id) || /^[^@{}\s]+@[^@{}\s]+$/.test(gecko.id)), 'browser_specific_settings.gecko.id must be a GUID or email-style ID');
   expect(Number.parseInt(gecko?.strict_min_version || '0', 10) >= 142,
     'strict_min_version must be >= 142 for data_collection_permissions');
   expect(gecko?.data_collection_permissions?.required?.join(',') === 'none',

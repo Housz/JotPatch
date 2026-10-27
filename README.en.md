@@ -6,14 +6,14 @@ JotPatch is a lightweight browser sticky-note extension. Attach notes near selec
 
 ## Download and install
 
-Choose the file for your browser from the [latest GitHub Release](https://github.com/Housz/JotPatch/releases/latest). The current stable release is **v0.1.17**.
+Choose the file for your browser from the [latest GitHub Release](https://github.com/Housz/JotPatch/releases/latest). The current release is **v0.1.18**.
 
 | Browser | Current download | First installation |
 | --- | --- | --- |
-| Chrome / Edge | `JotPatch-v0.1.17-chromium.zip` | Extract the ZIP, enable Developer mode in your extensions page, then select **Load unpacked** |
-| Firefox 142+ | `JotPatch-v0.1.17-firefox-signed.xpi` | Keep the XPI intact; open `about:addons` and choose **Install Add-on From File** in the gear menu |
+| Chrome / Edge | `JotPatch-v0.1.18-chromium.zip` | Extract the ZIP, enable Developer mode in your extensions page, then select **Load unpacked** |
+| Firefox 142+ | `JotPatch-v0.1.18-firefox.zip` | **Unsigned:** for submission to Mozilla Unlisted signing or temporary `about:debugging` tests only. Regular users need the separately signed v0.1.18 XPI once it is attached to the Release |
 
-Mozilla has signed the Firefox XPI. An unsigned ZIP is only suitable for temporary developer testing. **Updates are currently manual**: download the new package for your browser when a release is published, and update without first uninstalling the existing extension. See [Firefox installation and release details](docs/FIREFOX.md).
+The **v0.1.18 Firefox ZIP is not signed yet** and is not a persistent installation package. Users of the signed v0.1.17 XPI should keep it installed until the signed v0.1.18 XPI appears in the Release assets. **Updates remain manual:** install the newer version without first uninstalling the extension. See [Firefox installation and release details](docs/FIREFOX.md).
 
 ## Quick start
 
@@ -27,7 +27,7 @@ Mozilla has signed the Firefox XPI. An unsigned ZIP is only suitable for tempora
 
 ## Features and limits
 
-- Multiple notes per page, locally saved as Markdown; text anchoring, moving, resizing, colors and undo for deletion.
+- Multiple notes per page, locally saved as Markdown; text anchoring, moving, resizing, colors and undo for deletion. **v0.1.18** adds whole-formula anchoring for readable KaTeX/MathML and a muted monochrome paper pin.
 - Conversation navigation remembers turns the page has actually exposed. A bounded historical recovery starts only after you click an indexed target.
 - **Navigation Lab** is an opt-in, ChatGPT-only experimental navigation strategy, disabled by default.
 - Chrome/Edge and Firefox have separate local storage. There is no account, cloud sync, persistent cross-page floating mode or automatic backup.
@@ -35,7 +35,7 @@ Mozilla has signed the Firefox XPI. An unsigned ZIP is only suitable for tempora
 
 ## Contributing
 
-The `main` branch tracks stable releases and `dev` is the integration branch. The development target is **`0.1.18-dev.1`**, not the already released v0.1.17.
+The `main` branch tracks stable releases and `dev` is the integration branch. This release's source and package version is **`0.1.18`**. A later synchronization PR will establish the next `dev` cycle.
 
 ```bash
 # Node.js >=20; run at repository root on dev
