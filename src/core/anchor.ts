@@ -77,8 +77,17 @@ namespace JP {
   }
 
   type Segment = {node: Text | Element; start: number; end: number};
-  function orderedSegments(index: TextIndex): Segment[] {
-    return [...index.nodes, ...index.math].sort((a, b) => a.start - b.start);
+  /** Text and formula segments are already ordered within each list.
+   *  Merge lazily: sorting the whole page during every candidate probe is
+   *  prohibitively expensive in long, virtualized conversations. */
+  function* orderedSegments(index: TextIndex): IterableIterator<Segment> {
+    let text = 0, math = 0;
+    while (text < index.nodes.length || math < index.math.length) {
+      if (math >= index.math.length ||
+          (text < index.nodes.length && index.nodes[text].start <= index.math[math].start))
+        yield index.nodes[text++];
+      else yield index.math[math++];
+    }
   }
 
   function boundaryOffset(index: TextIndex, node: Node, offset: number, isEnd: boolean): number | null {
@@ -117,8 +126,9 @@ namespace JP {
   }
 
   function toPoint(index: TextIndex, offset: number, isEnd: boolean): {node: Node; offset: number} | null {
-    const segments = orderedSegments(index);
-    for (const entry of segments) {
+    let last: Segment | null = null;
+    for (const entry of orderedSegments(index)) {
+      last = entry;
       if (offset < entry.end || (isEnd && offset === entry.end)) {
         if (entry.node.nodeType === Node.TEXT_NODE)
           return {node: entry.node, offset: offset - entry.start};
@@ -132,7 +142,6 @@ namespace JP {
         return null;
       }
     }
-    const last = segments[segments.length - 1];
     if (last && offset === last.end) {
       if (last.node.nodeType === Node.TEXT_NODE)
         return {node: last.node, offset: (last.node as Text).length};
