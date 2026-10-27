@@ -1,70 +1,49 @@
 # JotPatch
 
-**随地大小贴** · Powered by Housz
+**随地大小贴** · Powered by Housz · [English](README.en.md)
 
-JotPatch 为网页原文添加可编辑的彩色便签，支持 ChatGPT / Gemini 对话导航和长对话的按需定位。便签默认保存在浏览器本地，不上传对话文本。
+JotPatch 是一款轻量浏览器便签扩展。阅读网页或 ChatGPT、Gemini 对话时，可以把想法写在原文附近，之后从右侧导航轨道返回对应位置。便签保存在当前浏览器的扩展本地存储中。
 
-本仓库正在从单人原型过渡到多人开发，采用 **`main` 正式发行、`dev` 集成开发、短期任务分支** 的协作模型。
+## 下载与安装
 
-## 立即使用
+从 [最新 GitHub Release](https://github.com/Housz/JotPatch/releases/latest) 选择浏览器对应的文件。目前正式发行版本为 **v0.1.17**。
 
-**v0.1.17** 使用统一源码构建 Chromium 与 Firefox 两个版本。Chromium ZIP 可解压后在 Chrome/Edge 开发者模式安装；Firefox ZIP 可在 `about:debugging` 中临时安装测试。**Firefox 普通用户长期安装需要 Mozilla 签名的 XPI**（仅在 Release 附有 `-firefox-signed.xpi` 时提供），不能将无签名 ZIP 当成已上架的 Firefox 正式扩展。两个浏览器使用相同便签与导航核心，存储彼此独立。
+| 浏览器 | 当前文件 | 首次安装 |
+| --- | --- | --- |
+| Chrome / Edge | `JotPatch-v0.1.17-chromium.zip` | 解压；在扩展管理页开启开发者模式，选择「加载已解压的扩展程序」 |
+| Firefox 142+ | `JotPatch-v0.1.17-firefox-signed.xpi` | 保持 XPI 原样，在 `about:addons` 的齿轮菜单选择「从文件安装附加组件」 |
 
-1. 从 [GitHub Releases](https://github.com/Housz/JotPatch/releases) 下载与浏览器对应的 ZIP，解压后确认根目录包含 `manifest.json`。Firefox 安装请先阅读 [Firefox 指南](docs/FIREFOX.md)。
-2. 在 `chrome://extensions` 或 `edge://extensions` 开启开发者模式，**加载已解压的扩展程序**。
-3. 打开网页，点击 JotPatch 扩展图标激活；选中文字后点击 📌，或右键添加便签。
-4. AI 聊天页面右侧的灰色横线用于定位问题、彩色标记用于定位便签。鼠标悬停显示摘要，点击直接导航。
-5. 在设置页调整选区图钉、默认便签颜色和导航开关。Navigation Lab 默认关闭。
+Firefox 文件已由 Mozilla 签名；未签名 ZIP 仅适合开发者临时调试。**本项目暂时使用手动更新**：有新版本时下载对应浏览器的安装包升级，不需要卸载旧扩展。Firefox 的安装、签名及版本来源见 [Firefox 说明](docs/FIREFOX.md)。
 
-详细说明：[使用指南](docs/USER_GUIDE.md) · [安装与数据安全](docs/USER_GUIDE.md#数据与升级)
+## 开始使用
 
-## 开发者：五分钟上手
+1. 打开普通 HTTP(S) 网页，点击浏览器工具栏中的 JotPatch 图标。
+2. 选中文字，点击旁边的 📌 创建原文便签；没有选区时可点迷你启动区的 `+` 新建本页悬浮便签。
+3. 直接输入内容；顶栏拖动、复制 Markdown，底栏加粗、斜体或添加列表；`···` 可更换颜色、字号或删除。
+4. 在 ChatGPT、Gemini 页面，灰色短横条代表已发现的用户提问，彩色标记代表便签。悬停查看摘要，点击直接跳转。
+5. 如需刷新网页后自动恢复，在设置中的「自动恢复」为对应网站单独授权。
+
+[完整使用方法与数据注意事项](docs/USER_GUIDE.md)
+
+## 功能与边界
+
+- 同一网页可存放多张便签，自动保存为本地 Markdown；支持轻量的原文锚定、拖动、缩放、颜色及删除撤销。
+- AI 会话导航仅索引已观察到的轮次；遇到动态卸载的历史内容，用户点击时才进行有界恢复。
+- **Navigation Lab** 是仅适用于 ChatGPT 的实验性导航选项，默认关闭。
+- Chrome/Edge 与 Firefox 的存储互相独立；目前没有账户、云同步、跨网页持续跟随或自动备份。
+- 浏览器内部页面、未获授权的网站和无法访问的跨域内容不属于常规支持范围。真实登录 ChatGPT/Gemini 的兼容性可能随网站 DOM 更新变化。
+
+## 参与开发
+
+当前采用 `main` 正式发行线、`dev` 集成开发线；`dev` 的版本目标为 **`0.1.18-dev.1`**，与 v0.1.17 的已发行代码不同。
 
 ```bash
-# Node.js 20+
+# Node.js >=20；在仓库根目录和 dev 分支执行
 npm install
-npm run check          # 构建 + 全部 Node 测试
-npm run package:dev    # 生成可安装的 Chromium 开发 ZIP
-npm run package:firefox  # 生成 Firefox（MV3 事件页）开发 ZIP
+npm run check
+npm run package:dev
 ```
 
-构建结果分别在 `dist/`（编译脚本）、`build/chromium/` 或 `build/firefox/`（可解压安装目录）、`artifacts/`（ZIP）。Firefox 包可在 `about:debugging#/runtime/this-firefox` 以临时扩展加载。浏览器集成测试需要 Python、Playwright 和 Chromium，见 [开发指南](docs/DEVELOPMENT.md) 与 [Firefox 移植说明](docs/FIREFOX.md)。
+阅读 [贡献规范](CONTRIBUTING.md)、[开发指南](docs/DEVELOPMENT.md)、[架构说明](docs/ARCHITECTURE.md)和 [发行流程](docs/RELEASING.md)。文档贡献遵循 [W01–W10](docs/WRITING_STYLE.md)、[D01–D12/P0–P2](docs/DOCUMENTATION_TYPES.md)，Agent 可从 [文档 Skill](.agents/skills/jotpatch-documentation/SKILL.md)进入。
 
-**新功能 / 修复从 `dev` 分支创建任务分支，PR 的目标分支选 `dev`。不要直接提交到 `main`。**
-
-## 代码结构
-
-```text
-src/core/                  数据类型、便签/锚点/存储、导航引擎（无站点选择器）
-src/adapters/sites/        ChatGPT / Gemini DOM 适配器注册；未来 Claude / DeepSeek
-src/adapters/browsers/     WebExtension 运行时边界（Chrome `chrome` / Firefox `browser`）
-src/content/               网页扫描与应用编排、入口
-src/ui/                    便签、Dock 的 UI 样式
-src/background/            MV3 事件与权限入口（Chromium 服务工作线程 / Firefox 事件页）
-config/version.json        版本/渠道配置
-scripts/                   构建校验、版本与归档打包
-tests/                     合约、架构、浏览器集成测试
-```
-
-当前采用 TypeScript `namespace JP` 和 `tsconfig.content.json` 中**显式文件顺序**打包为经典内容脚本，保持原有 MV3 兼容行为。本轮**未引入新运行时框架，也未改动便签存储键或访问权限**。了解设计边界和如何新增适配器：[架构说明](docs/ARCHITECTURE.md)。
-
-## 文档索引
-
-| 角色 | 从这里开始 |
-| --- | --- |
-| 用户 | [使用指南](docs/USER_GUIDE.md) |
-| 第一次参与开发 | [开发环境与测试](docs/DEVELOPMENT.md) |
-| 新合作者 | [贡献与协作规则](CONTRIBUTING.md) |
-| 浏览器/AI 平台适配开发者 | [架构与扩展点](docs/ARCHITECTURE.md) |
-| 发布负责人 | [版本规则](docs/VERSIONING.md) → [发行流程](docs/RELEASING.md) |
-| GPT / Codex / Claude / Copilot | [AGENTS.md](AGENTS.md) → [AI 开发说明](docs/AI_DEVELOPMENT.md) |
-| 研究与历史 | [v0.1.15 Navigation Lab](docs/NAVIGATION_LAB_0_1_15.md) · [既有产品演进记录](docs/PRODUCT_HISTORY.md) |
-
-## 当前支持范围
-
-- **Chromium**：Chrome/Edge，已提供编译和安装包构建路径。
-- **Firefox**：v0.1.17 已发布 MV3 临时测试 ZIP，CI 已验证 Firefox 158 安装、事件页通信、设置存储及合成 DOM 核心回归；Firefox ZIP **不能长期安装**，正式用户需要 Mozilla 签名的 XPI / AMO 上架版本。真实登录的 ChatGPT/Gemini 与所有网站权限路径仍需人工验收。
-- **AI 适配**：ChatGPT、Gemini 已接入注册表；未来的 Claude、DeepSeek 需要各自新增适配器和测试，不应直接在 `core` 里加选择器。
-- **Navigation Lab**：v0.1.15 的长会话实验功能仍**默认关闭**，用户主动启用才生效，不保证可找回网页从未加载过的全部历史。
-
-许可与外部分发条款尚待项目维护者确定；不要据此假定已获得第三方商业再分发授权。
+研究与旧版设计记录见 [产品历史](docs/PRODUCT_HISTORY.md)及 [Navigation Lab 实验](docs/NAVIGATION_LAB_0_1_15.md)。许可文件尚未在仓库明确提供；外部再分发及授权条件需由维护者确认。
