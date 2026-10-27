@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.content.json && tsc -p tsconfig.background.json && node scripts/verify-build.mjs",
     "check": "npm run build && node --test tests/*.test.mjs",
-    "test:e2e": "python tests/browser_e2e.py && python tests/conversation_e2e.py && python tests/optimization_e2e.py && python tests/virtualized_notes_e2e.py && python tests/spatial_rail_e2e.py && python tests/stable_rail_e2e.py && python tests/branding_e2e.py && python tests/navigation_recovery_e2e.py && python tests/navigation_recovery_e2e.py unreachable",
+    "test:e2e": "python tests/browser_e2e.py && python tests/math_selection_e2e.py && python tests/conversation_e2e.py && python tests/optimization_e2e.py && python tests/virtualized_notes_e2e.py && python tests/spatial_rail_e2e.py && python tests/stable_rail_e2e.py && python tests/branding_e2e.py && python tests/navigation_recovery_e2e.py && python tests/navigation_recovery_e2e.py unreachable",
     "test:lab": "python tests/navigation_lab_e2e.py",
     "package:dev": "npm run build && node scripts/package.mjs --channel=dev",
     "package:firefox": "npm run build && node scripts/package.mjs --channel=dev --browser=firefox",
