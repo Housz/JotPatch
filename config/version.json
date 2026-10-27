@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "channel": "release",
-  "baseline": "0.1.17",
-  "nextRelease": "0.1.18",
+  "channel": "dev",
+  "baseline": "0.1.18",
+  "nextRelease": "0.1.19",
   "devBuild": 1
 }

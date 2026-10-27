@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "JotPatch",
   "short_name": "JotPatch",
-  "version": "0.1.18",
+  "version": "0.1.18.1",
   "description": "JotPatch · 随地大小贴。",
   "action": {
     "default_title": "JotPatch · 打开当前网页的便签",
@@ -32,5 +32,5 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "version_name": "0.1.18"
+  "version_name": "0.1.19-dev.1"
 }

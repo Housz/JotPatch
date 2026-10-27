@@ -35,7 +35,7 @@ The **v0.1.18 Firefox ZIP is not signed yet** and is not a persistent installati
 
 ## Contributing
 
-The `main` branch tracks stable releases and `dev` is the integration branch. This release's source and package version is **`0.1.18`**. A later synchronization PR will establish the next `dev` cycle.
+The `main` branch tracks stable releases and `dev` is the integration branch. The latest stable release is **`v0.1.18`**. The current `dev` development version is **`0.1.19-dev.1`**; published artifacts are unchanged.
 
 ```bash
 # Node.js >=20; run at repository root on dev
