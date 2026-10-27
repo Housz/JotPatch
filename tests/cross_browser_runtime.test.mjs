@@ -13,6 +13,7 @@ function runtime(kind='firefox') {
   const tabs=[];
   let menuCreated=0;
   let granted=[];
+  let injected=false;
   const event=name=>({addListener(fn){(events[name] ||= []).push(fn)}});
   const emit=(name,...args)=>(events[name]||[]).map(fn=>fn(...args));
   const api={
@@ -43,11 +44,14 @@ function runtime(kind='firefox') {
       }},
       async unregisterContentScripts({ids}){ids.forEach(id=>registered.delete(id));},
       async insertCSS(payload){injects.push({type:'css',...payload});},
-      async executeScript(payload){injects.push({type:'js',...payload});}
+      async executeScript(payload){injects.push({type:'js',...payload});injected=true;}
     },
     tabs:{
       async sendMessage(tabId,message){sends.push({tabId,message});
-        if(message.type==='JP_PING')throw Error('content not injected');
+        if(message.type==='JP_PING'){
+          if(!injected)throw Error('content not injected');
+          return {ready:true};
+        }
         return {ok:true};
       },
       async create({url}){tabs.push(url)}
@@ -113,5 +117,14 @@ test('an unapproved host never gets registered in either browser',async()=>{
     if(kind==='firefox') assert.equal((await returned).ok,false);
     else {assert.equal(returned,true);await tick();}
     assert.equal(r.registered.size,0);
+  }
+});
+
+test('restricted browser pages show help instead of silently failing on action clicks',async()=>{
+  for(const kind of ['firefox','chromium']){
+    const r=runtime(kind);
+    await r.emit('action',{id:10,url:'about:newtab'})[0];
+    assert.equal(r.injects.length,0);
+    assert.match(r.tabs.at(-1),/options\.html\?help=restricted/);
   }
 });

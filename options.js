@@ -22,6 +22,13 @@ function updatePreferences(patch) {
   return preferenceWrite;
 }
 const modes = new Set(['always', 'alt', 'off']);
+const helpReason = new URLSearchParams(location.search).get('help');
+if (helpReason === 'restricted' || helpReason === 'failed') {
+  document.querySelector('#activation-help').hidden = false;
+  document.querySelector('#activation-help-detail').textContent = helpReason === 'restricted'
+    ? '当前浏览器内部页面不允许注入扩展。'
+    : '注入或消息发送失败。请检查 about:debugging 中的扩展错误信息。';
+}
 const providedOrigin = new URLSearchParams(location.search).get('origin');
 if (providedOrigin) originField.value = providedOrigin;
 
