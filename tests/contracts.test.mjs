@@ -82,7 +82,7 @@ test('0.1.7 rejects missing or stale anchored ranges before showing papers', () 
   assert.ok(app.includes('private liveMatch(note:Note):Match|null'));
   assert.ok(app.includes('if(!match||!rect)'));
   assert.ok(app.includes('explicitlyDetachedIds.has(noteId)'));
-  assert.ok(app.includes('range.startContainer.isConnected'));
+  assert.ok(readFileSync('src/core/anchor.ts','utf8').includes('range.startContainer.isConnected'));
   assert.ok(app.includes('this.concealCard(card)'));
 });
 

@@ -75,10 +75,14 @@ namespace JP {
     .paper:hover .paper-head,.paper:focus-within .paper-head{background:#00000006;border-bottom:1px solid #0000000b}
     .paper:hover .paper-foot,.paper:focus-within .paper-foot{background:#00000006;border-top:1px solid #0000000b}
     .paper-grab{flex:1;min-width:8px;pointer-events:none}
-    .paper-pin{flex:0 0 22px;display:grid;place-items:center;color:#947235!important;
-      opacity:.85!important;pointer-events:auto!important;cursor:pointer}
+    /* Request the monochrome text presentation of 📌 (U+FE0E); do not
+       inherit the platform's colored emoji artwork on different papers. */
+    .paper-head button.paper-pin{flex:0 0 22px;display:grid;place-items:center;
+      color:#746f69;opacity:.6;pointer-events:auto;cursor:pointer}
+    .paper-pin-symbol{font-family:'Segoe UI Symbol','Apple Symbols','Noto Sans Symbols 2','DejaVu Sans',sans-serif;
+      font-variant-emoji:text;font-size:13px;line-height:1;filter:grayscale(1)}
     .paper-pin[hidden]{display:none!important}
-    .paper-pin:hover{background:#00000012!important;color:#60491c!important}
+    .paper-head button.paper-pin:hover{background:#0000000c;color:#514c46;opacity:.88}
     .paper-head-actions{display:flex;gap:1px;opacity:0;pointer-events:auto;transition:opacity .14s ease}
     .paper-foot>button,.paper-foot>.save-indicator{opacity:0;pointer-events:auto;transition:opacity .14s ease}
     .paper:hover .paper-head-actions,.paper:focus-within .paper-head-actions,

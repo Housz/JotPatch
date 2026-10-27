@@ -69,6 +69,8 @@ namespace JP {
   export interface TextIndex {
     text: string;
     nodes: Array<{ node: Text; start: number; end: number }>;
+    /** Canonical TeX text indexed as one DOM element boundary; not persisted. */
+    math: Array<{ node: Element; start: number; end: number }>;
     truncated: boolean;
   }
 }

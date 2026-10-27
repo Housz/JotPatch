@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>JotPatch KaTeX / MathML selection regression</title>
+  <style>
+    body{max-width:780px;margin:35px auto;font:18px/1.65 system-ui}
+    p{padding:15px;margin:15px 0}
+    .katex{display:inline-block;position:relative;white-space:nowrap}
+    .katex-mathml{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+    .katex-html{display:inline-block}
+  </style>
+</head>
+<body>
+  <h1>Rendered mathematics: quote + DOM anchoring</h1>
+  <p id="pure"><span class="katex">
+    <span class="katex-mathml"><math><semantics><mrow><mi>x</mi><msup><mi>y</mi><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">x^2+y^2=z^2</annotation></semantics></math></span>
+    <span class="katex-html" aria-hidden="true"><span>x² + y² = z²</span></span>
+  </span></p>
+  <p id="mixed">这里有公式 <span class="katex">
+    <span class="katex-mathml"><math><semantics><mrow><mi>E</mi><mo>=</mo><mi>m</mi></mrow><annotation encoding="application/x-tex">E=mc^2</annotation></semantics></math></span>
+    <span class="katex-html" aria-hidden="true">E = mc²</span>
+  </span> 和普通说明。</p>
+  <p id="duplicate-a">第一处假设：<span class="katex" data-tex="x^2+y^2=z^2"><span class="katex-html" aria-hidden="true">x² + y² = z²</span></span>，在这里成立。</p>
+  <p id="duplicate-b">另一种场景：<span class="katex" data-tex="x^2+y^2=z^2"><span class="katex-html" aria-hidden="true">x² + y² = z²</span></span>，此处只是参考。</p>
+  <p id="svg-math">公式 SVG：<span class="katex" data-tex="\int_0^1 x^2 dx"><span class="katex-html" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="140" height="40" viewBox="0 0 140 40"><path d="M8 0L20 34H45" fill="none" stroke="black" stroke-width="2"></path></svg></span></span></p>
+  <p id="huge-raw">文本 <span class="katex" data-tex="a+b"><span class="katex-html" aria-hidden="true"><span id="huge-visible"></span></span></span> 结尾。</p>
+  <p id="unreadable">不可识别公式：<svg width="30" height="30"><path d="M0 0L20 20"></path></svg></p>
+</body>
+</html>
