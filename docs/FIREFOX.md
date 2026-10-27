@@ -2,7 +2,15 @@
 
 JotPatch uses the same note, anchoring and navigation source as Chrome/Edge, with a Firefox-specific Manifest V3 event page and Mozilla-signed XPI distribution.
 
-## Get the released extension
+## v0.1.18: Firefox ZIP ready for manual Mozilla signing
+
+The [v0.1.18 GitHub Release](https://github.com/Housz/JotPatch/releases/tag/v0.1.18) is built from the same verified source commit as the Chromium ZIP. It includes `JotPatch-v0.1.18-firefox.zip`, an **unsigned** Firefox 142+ package. The maintainer will upload this ZIP to the existing Mozilla AMO **Unlisted / On your own** add-on, then separately attach the signed `JotPatch-v0.1.18-firefox-signed.xpi` after verification.
+
+**Do not rename ZIP to XPI or install the ZIP as a permanent Firefox extension.** Until the signed v0.1.18 XPI is available, keep the existing signed v0.1.17 XPI installed. The Gecko ID must stay `{8801fba0-08ef-481b-a4b6-870a061b2878}`; manual in-place upgrades preserve the existing extension's storage identity.
+
+v0.1.18 also carries the native toolbar startup fix, reliable first-edit Markdown, AMO-safe templates, LaTeX formula anchoring, and the monochrome paper pin. These were regression-tested against real Chromium/Firefox DOM fixtures and a temporarily installed Firefox MV3 add-on, not every authenticated ChatGPT/Gemini session.
+
+## Previous signed version (v0.1.17)
 
 As checked on **2026-10-27**, [GitHub Release v0.1.17](https://github.com/Housz/JotPatch/releases/tag/v0.1.17) provides:
 
@@ -21,7 +29,7 @@ An unsigned Firefox ZIP is for temporary testing in `about:debugging#/runtime/th
 
 The original `v0.1.17` Tag points to stable commit `34be0692`. A subsequent [Firefox repair PR #24](https://github.com/Housz/JotPatch/pull/24) was tested at `6757760a` and supplies the corrected source used for the separately signed Firefox 0.1.17 XPI. The repair covers the AMO duplicate-ID issue, two `innerHTML` lint warnings, native toolbar activation and first-edit Markdown behavior.
 
-**v0.1.18 development integration:** the Firefox recovery fixes and signed Gecko ID have been merged into this development line while retaining the original hotfix commit ancestry. The original v0.1.17 Tag still predates the fix; its Chromium ZIP and the subsequently signed Firefox XPI therefore have different source provenance. Future signing must use this fixed Gecko ID.
+**v0.1.18 release source:** the Firefox recovery fixes and signed Gecko ID are incorporated while retaining the original hotfix commit ancestry. The original v0.1.17 Tag still predates the fix; its Chromium ZIP and the subsequently signed Firefox XPI therefore have different source provenance. Future signing must use this fixed Gecko ID.
 
 The signed Firefox add-on ID is `{8801fba0-08ef-481b-a4b6-870a061b2878}`; preserve it in future releases. The uploaded v0.1.17 signed XPI has already been compared with the repaired runtime in the [PR's successful CI](https://github.com/Housz/JotPatch/actions/runs/40354313470). This is build/signature evidence, not a claim that all authenticated websites were manually tested.
 
@@ -64,7 +72,7 @@ To test a **real temporarily installed** Firefox MV3 extension, install Selenium
 python tests/firefox_addon_smoke.py
 ```
 
-The v0.1.18 development baseline includes the toolbar readiness handshake, fixed Gecko ID and native Firefox regression from [PR #24](https://github.com/Housz/JotPatch/pull/24). This does not rewrite the historical v0.1.17 signed package. For new versions, submit the newly verified release ZIP to the existing Mozilla Unlisted add-on.
+The v0.1.18 release baseline includes the toolbar readiness handshake, fixed Gecko ID and native Firefox regression from [PR #24](https://github.com/Housz/JotPatch/pull/24). This does not rewrite the historical v0.1.17 signed package. For new versions, submit the newly verified release ZIP to the existing Mozilla Unlisted add-on.
 
 ## Troubleshooting and validation levels
 

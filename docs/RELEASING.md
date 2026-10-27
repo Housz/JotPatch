@@ -37,7 +37,7 @@ Release PR 还需核对 GitHub CI 的 `typecheck-and-contracts` 和 `cross-brows
 
 审批通过后，以 Merge commit 将 Release PR 合并至 `main`。[发行工作流](../.github/workflows/release.yml)检查 `release` 渠道、源码版本、包的文件清单和跨浏览器代码一致性，在**同一次**工作流中创建 Tag 和 GitHub Release。
 
-发布的基础附件为同一源码版本的 Chromium ZIP 与 Firefox ZIP。Firefox ZIP 用于开发者临时调试；普通用户安装必须使用 Mozilla **签名的 XPI**。在 GitHub Actions 未配置 AMO 签名凭据时，流水线不会自动生成 XPI，也不能称该 ZIP 已签名。
+发布的基础附件为同一源码版本的 Chromium ZIP 与 Firefox ZIP。Firefox ZIP 用于开发者临时调试；普通用户安装必须使用 Mozilla **签名的 XPI**。本次采用手工签名流程：流水线仅发布 ZIP，**不读取 AMO API 密钥、不自动签名或上传 XPI**。
 
 Tag 和 Release 不等价于 `main` 合并成功；合并后必须实际核对 Tag 指向、CI、Release 状态及附件。对已有 Tag、Release 或历史产物，不覆盖同名附件或悄悄移动提交。
 
@@ -49,7 +49,7 @@ Tag 和 Release 不等价于 `main` 合并成功；合并后必须实际核对 T
 4. 在普通 Firefox 中检查 XPI 的正常安装、工具栏首次激活、便签保存、刷新恢复以及重启后扩展仍存在。已安装旧版的升级测试要避免先卸载。
 5. 把已经验收的签名 XPI 添加到该版本的 GitHub Release，注明安装方式与已知限制。手动上传是当前默认流程；自动签名仅是可选扩展。
 
-发行流水线已预留 `AMO_JWT_ISSUER`、`AMO_JWT_SECRET` 环境配置用于 `web-ext sign` 的 Unlisted 签名；不能在仓库、PR 或公开日志中放入密钥。没有实际生成 XPI 就不能宣称签名完成。
+当前 GitHub Actions 的正式发布步骤不执行 Mozilla 自动签名；维护者从新版本 Firefox ZIP 手工获取 XPI 后，再单独核对并上传到同一 GitHub Release。**不要将签名凭据写进源码、PR 或公开日志。**
 
 ## 5. 手动更新与升级
 
