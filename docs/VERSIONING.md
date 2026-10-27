@@ -1,36 +1,46 @@
-# 版本号与开发 / 发行渠道
+# 版本与分支渠道
 
-项目使用一个公共发行版本序列：**`vMAJOR.MINOR.PATCH`**（Git Tag / GitHub Release / 稳定应用版本），开发工作则使用 **`MAJOR.MINOR.PATCH-dev.N`**（在 `dev` 上迭代）。Chrome 的 `manifest.version` 只允许最多四段**纯整数**，因此需要额外映射，而不是直接将 `-dev` 写入扩展 `version`。
+JotPatch 的稳定版本使用 `MAJOR.MINOR.PATCH`（例如 `0.1.17`），Git Tag 使用 `v0.1.17`；`dev` 使用 `MAJOR.MINOR.PATCH-dev.N`。以 [`config/version.json`](../config/version.json)为发行渠道源，构建约束由 [`scripts/versioning.mjs`](../scripts/versioning.mjs)校验。
 
-## v0.1.17 已发行；当前下一轮开发为 v0.1.18
+## 当前已核实的版本
 
-| 类型 | 具体值 | 在哪里使用 |
+截至 **2026-10-27**：
+
+| 对象 | 数值 | 说明 |
 | --- | --- | --- |
-| 开发目标 | `0.1.18-dev.1` | `package.json`、`manifest.version_name`、ZIP 名字 |
-| 开发 Numeric ID | `0.1.17.1` | `manifest.version`，浏览器更新排序 |
-| 下一次正式发布目标 | `0.1.18` | 计划下一版 Tag `v0.1.18`、正式包 |
-| CI 第 N 次 dev 构建 | `0.1.18-dev.N` + `0.1.17.N` | GitHub Actions 编号，自动生成测试包 |
+| GitHub 最新稳定 Release / `main` | `v0.1.17` | Tag 指向的正式源码 |
+| `dev` 的 `package.json.version` | `0.1.18-dev.1` | 下一轮开发标识 |
+| `dev` 的 `manifest.version` | `0.1.17.1` | Chrome 要求的纯数字版本 |
+| `dev` 的 `manifest.version_name` | `0.1.18-dev.1` | Chromium 中的显示版本；Firefox 构建时移除 |
+| `config/version.json` | `channel=dev`，`baseline=0.1.17`，`nextRelease=0.1.18`，`devBuild=1` | 构建校验来源 |
 
-Chrome 按数字逐段比较版本，因此 `0.1.17.N` 严格小于 `0.1.18`，测试版可以升级到同一轮的稳定版。每一段必须在 0–65535，`N` 不得超过 65535。**不要在 `manifest.version` 中写 `0.1.18-dev.1`。**
+这些值描述当前 `dev` 的版本机制，不表明 `0.1.18` 已经发布。Chrome Manifest 最多四段纯整数，每段 0–65535，不能直接填 `-dev.N`。
 
-`config/version.json` 是唯一的渠道控制信息：
+## 版本映射
 
-```json
-{"schema":1,"channel":"dev","baseline":"0.1.17","nextRelease":"0.1.18","devBuild":1}
+```text
+dev package.version     0.1.18-dev.1
+dev manifest.version    0.1.17.1
+dev manifest.version_name 0.1.18-dev.1
+
+release package.version 0.1.18
+release manifest.version 0.1.18
+release manifest.version_name 0.1.18  (源文件；发布时可移除)
+Git Tag                 v0.1.18
 ```
 
-- `baseline`：上一次完成公开发行的版本，本阶段为 GitHub Release `v0.1.17`；商店审核和上架与 GitHub Release 是独立流程。
-- `nextRelease`：下一次计划发布的稳定版本。
-- `devBuild`：本地构建默认序号；CI 使用 `--build=<GitHub run number>` 自动生成新编号，无需开发者每天改源文件。
-- `channel`：`dev` 或 `release`；发布前必须通过 Release PR 明确改为 `release`。
+`scripts/package.mjs --channel=dev --build=N` 会用流水线编号生成 `0.1.17.N` 的 Manifest 版本及 `v0.1.18-dev.N` 安装包名。数字开发版排序低于正式 `0.1.18`，避免测试版阻碍稳定版升级。
 
-开发阶段可运行 `npm run package:dev`，或 `node scripts/package.mjs --channel=dev --build=123`（先构建）。正式发布前在 Release PR 中将 `channel` 改为 `release`，并同步设置 `package.json.version`、`manifest.version` 为 `nextRelease`、`manifest.version_name` 为同一个稳定版本值。`npm run package:release` 会严格检查这几个值；若仍是 dev 配置，则拒绝发行。
+## 开发与正式发行
 
-### 什么时候升版本？
+开发时运行 `npm run package:dev` 或 `npm run package:firefox`。正式发行前在 Release PR 中将 `config/version.json.channel` 改为 `release`，并把 `package.json.version`、`manifest.version` 和 `manifest.version_name` 设置为 `nextRelease`。运行 `npm run check`、目标浏览器验收及 `npm run package:release`；版本未对齐时打包脚本应拒绝发布。
 
-- 修复正式版 Bug：PATCH，例如 `0.1.17 → 0.1.18`。
-- 向后兼容的新功能或适配：MINOR，例如 `0.1.x → 0.2.0`。
-- 大范围不兼容改动：MAJOR，发布前专门审查存储/权限/迁移。
-- 早期原型仍使用 `0.x.y`，**不要把 dev Build 编号当成新的独立功能版本**。
+稳定版修复一般递增 PATCH（例如 `0.1.17 → 0.1.18`）；新增兼容功能可递增 MINOR；破坏兼容的重大调整需单独评估升级和数据迁移。早期 `0.x` 版本变化按项目实际审批决定，不将 `-dev.N` 当成独立正式版本。
 
-每次正式发布后：更新 `dev` 的 `baseline` 为该正式版、`nextRelease` 为下一版，`devBuild` 复位为 1，`channel` 回到 `dev`，创建下一轮开发版本。相同发布版本的各浏览器包应源自同一 Tag，但可以只发布已完成验收的浏览器平台。
+## Firefox 扩展身份和例外来源
+
+Firefox 每次提交新版本时须保持已经 Mozilla 签名的固定 Gecko ID：`{8801fba0-08ef-481b-a4b6-870a061b2878}`。**截至本次文档改写，`dev` 的 Firefox Manifest 生成器仍使用旧 ID；该差异由 [PR #24](https://github.com/Housz/JotPatch/pull/24) 修复，必须先整合到未来正式版本。** 直接用旧 `dev` 构建提交 Mozilla 会产生不同的扩展身份风险。
+
+另一个版本身份例外是 GitHub Release v0.1.17 的签名 Firefox XPI：它基于修复源码 `6757760a`，而原 `v0.1.17` Tag 指向 `34be0692`；因此不能仅凭相同的数字版本断言两者源代码相同。此后版本应使签名 XPI、正式源代码提交和发行包有明确、可查的对应关系。
+
+目前两个浏览器采用**手动下载安装更新**，没有已交付的自托管更新清单或跨浏览器自动更新功能。升级方式见 [用户指南](USER_GUIDE.md)，发布步骤见 [发行指南](RELEASING.md)。

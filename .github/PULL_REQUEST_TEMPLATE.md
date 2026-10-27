@@ -1,22 +1,27 @@
-## What changed
+## 变更与依据
 
-<!-- One paragraph: visible behavior, impacted site(s)/browser(s), reason. -->
+- 解决的问题、目标用户/读者：
+- 变更范围及原因：
+- 目标分支：`dev`
+- 关联 Issue/源码或发布证据：
 
-## Scope
+## 分类与影响
 
-- Base branch: `dev`
-- Areas: [ ] core [ ] ChatGPT [ ] Gemini [ ] new site adapter [ ] Chromium [ ] Firefox [ ] UI [ ] build/docs
-- Storage schema / permissions changed? Explain if yes.
+- 代码：core / AI 站点 / Chromium / Firefox / UI / 构建 / 不适用
+- 文档：D01–D12 类型、现行/版本化/历史（参见 `docs/DOCUMENTATION_TYPES.md`）
+- 便签 Schema、扩展权限、安装或升级方式是否变化：
+- 合作者历史是否保留：
 
-## Verification
+## 实际验收
 
-- [ ] `npm run check` — actual result:
-- [ ] Browser integration tests — list commands and outcomes, or why not run:
-- [ ] Manual smoke test where required — browser/site/version:
-- [ ] New tests/docs included for behavior changes:
+- [ ] `npm run check`：注明执行与结果，或未运行原因
+- [ ] 适用的浏览器回归：列出实际命令、版本与结果
+- [ ] 必要的真实扩展安装 / 真实网站验收：注明覆盖和未覆盖项
+- [ ] 文档相对链接、版本、签名附件、双语 README 与 D01–D12 检查
+- [ ] P0/P1 已解决；P2 风格建议说明（如适用）
 
-## Compatibility & attribution
+## 风险和交付
 
-- Known limits / user-visible risks:
-- Preserved original author commits when integrating another person's work? [ ] Yes [ ] Not applicable
-- Screenshots or demo steps if this changes UI:
+- 已知限制、数据/升级风险、未验证事项：
+- 需要人工 Review 的事实：
+- 本 PR 不自动授权 `main` 合并、打 Tag、签名或发布：

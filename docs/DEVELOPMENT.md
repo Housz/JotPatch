@@ -1,10 +1,8 @@
-# 开发环境与本地验证
+# JotPatch 开发与验证
 
-## 准备
+从 `dev` 分支开发新功能；`main` 是正式发行线。本文适用于 Node.js **20+**（推荐 22）及当前 `dev` 配置，所有示例在仓库根目录执行。
 
-- Node.js **20 或更新**（推荐 22）、npm。
-- `npm install` 安装唯一必需的开发依赖 TypeScript；运行时无第三方依赖。
-- 浏览器端到端回归可选：Python 3、`pip install playwright` 和 Chromium；Linux 发行版路径通常是 `/usr/bin/chromium`。具体安装由各测试脚本参数和环境决定。
+## 环境与首次运行
 
 ```bash
 git clone https://github.com/Housz/JotPatch.git
@@ -15,52 +13,61 @@ npm run check
 npm run package:dev
 ```
 
-如本机没有开发专用依赖，请先通过 `npm install`；CI 同样如此。不是 Firefox 开发者时，不需要安装 Firefox SDK。项目不依赖 ChatGPT API Key。
+运行时不依赖远程 AI API Key，开发依赖主要是 TypeScript。浏览器 E2E 另需 Python 3、Playwright 和对应浏览器；Firefox 真实安装烟测另需 Selenium、Firefox 和 geckodriver。请分别记录安装和环境问题。
 
-## 开发位置速查
+## 常用命令
 
-- **原文选区/定位**：`src/core/anchor.ts`、`src/core/page-key.ts`
-- **便签数据/偏好**：`src/core/repository.ts`、`src/core/types.ts`
-- **Prompt 识别**：`src/adapters/sites/{registry,chatgpt,gemini}.ts`
-- **对话扫描与坐标**：`src/content/conversation.ts`
-- **历史轮次身份与恢复**：`src/core/conversation-index.ts`、`navigation-recovery.ts`、`navigation-lab.ts`
-- **导航标记布局**：`src/core/rail-layout.ts`
-- **页面交互/DOM 编排**：`src/content/app.ts`
-- **UI 样式**：`src/ui/{palette,elements,paper-styles}.ts`、`options.html`
-- **浏览器入口**：`src/adapters/browsers/webextension.ts`、`src/background/index.ts`
+| 命令 | 实际作用 |
+| --- | --- |
+| `npm run build` | 编译 `dist/content.js`、`dist/background.js` 并校验构建文件 |
+| `npm run check` | 构建 + `node --test tests/*.test.mjs`，包含文档链接与架构/合约测试 |
+| `npm run package:dev` | 在当前 dev 渠道生成 Chromium 开发 ZIP |
+| `npm run package:firefox` | 生成 Firefox 开发 ZIP 及 `build/firefox/` 目录 |
+| `npm run test:e2e` | 运行 Chromium 合成页面的多项集成回归 |
+| `npm run test:lab` | 运行较慢的 Navigation Lab 合成历史恢复场景 |
+| `npm run package:release` | 仅在经审批、版本文件匹配的 `release` 渠道生成 Chromium 正式 ZIP |
 
-添加新文件需要同时检查 `tsconfig.content.json` **显式文件顺序**。不要在 `core` 引入站点选择器/浏览器全局 API。
+使用 `npm run package:release` 前，必须按 [版本规则](VERSIONING.md) 将 `config/version.json`、`package.json` 和 Manifest 同步到正式版本；当前 `dev` 配置本就应拒绝错误发行。
 
-## 测试流程
+Firefox 的衍生 Manifest、临时安装和验证差异见 [Firefox 指南](FIREFOX.md)。
 
-```bash
-npm run build                # dist/content.js + dist/background.js
-npm run check                # build + Node 契约/布局/适配/版本测试
-npm run package:dev          # 开发 ZIP 可用于 Chromium 解压加载
-npm run package:firefox      # Firefox MV3 事件页 ZIP（build/firefox/）
-npm run test:e2e             # Chromium 集成测试（较慢）
-npm run test:lab             # 慢速历史导航模拟，可指定一个场景
-```
+## 实现位置
 
-Firefox 包产物在 `build/firefox/`（可解压安装目录）和 `artifacts/JotPatch-*-firefox.zip`。它由 `scripts/firefox-manifest.mjs` 从 `manifest.json` 派生：`background.service_worker` → `background.scripts`、`options_page` → `options_ui`，并补上 `browser_specific_settings.gecko`。加载方式、已知差异和验证步骤见 [Firefox 移植说明](FIREFOX.md)。
+| 任务 | 主要文件 |
+| --- | --- |
+| 原文选择与恢复 | `src/core/anchor.ts`、`src/core/page-key.ts` |
+| 本地 Note Schema 与读写 | `src/core/types.ts`、`src/core/repository.ts` |
+| Prompt 扫描和站点适配 | `src/content/conversation.ts`、`src/adapters/sites/*` |
+| 历史身份与按需恢复 | `src/core/conversation-index.ts`、`navigation-recovery.ts`、`navigation-lab.ts` |
+| 导航布局 | `src/core/rail-layout.ts` |
+| 页面交互与便签 UI | `src/content/app.ts`、`src/ui/*` |
+| 浏览器 API、后台、设置 | `src/adapters/browsers/webextension.ts`、`src/background/index.ts`、`options.html` / `options.js` |
+| 版本与发布 | `config/version.json`、`scripts/versioning.mjs`、`scripts/package.mjs` |
 
-合成网页测试无法证明真实登录 ChatGPT/Gemini 页面完全兼容。若你修复与虚拟化或浏览器权限有关的问题，需要再做真实浏览器人工验证，记录目标是否确实进入视口，而不只是 scrollTop 值改变。
+新增站点适配器时，先从真实站点记录 DOM 结构及稳定选择器，放入 `src/adapters/sites/<site>.ts`，并把新文件置于 `tsconfig.content.json` 的 registry 之后、`src/content/conversation.ts` 之前。添加针对重复 Prompt、虚拟化和非目标网站的测试。不要在 `core` 中硬编码站点域名。
 
-### 在 Windows / macOS 开发
+## 测试等级与准入
 
-`npm run check` 和 `npm run package:dev` 使用 Node 构建，跨平台；打包 ZIP 不依赖外部 `zip` 命令。Playwright 使用的 Chromium 执行文件路径可能不同，可以只运行 Node 测试并在 PR 明确说明未执行 E2E；不要把未运行写为通过。
+1. **静态/Node**：`npm run check` 证明 TypeScript、单元、合同及文档链接测试在该代码提交下通过。
+2. **合成浏览器页面**：`npm run test:e2e` 和 CI 中的 Chromium/Firefox Playwright 测试检验已构造的 DOM 场景，不含真实登录站点的网络行为。
+3. **真实扩展安装**：Firefox 专项使用 `python tests/firefox_addon_smoke.py`，验证实际 MV3 安装、设置、本地存储、事件页/工具栏等；须匹配所测试的分支与 Manifest。
+4. **真实登录站点人工验收**：对于 ChatGPT/Gemini DOM、长历史恢复、浏览器站点授权、升级或重启的数据场景，单独记录浏览器版本、复现步骤和结果。
+5. **签名/发行**：AMO 签名 XPI、GitHub Release 附件及对应来源提交分别核对，不能由 lint 或模拟安装推定。
 
-### 调试扩展
+当前 [CI 工作流](../.github/workflows/check.yml)在 PR 和 push 上运行 `typecheck-and-contracts` 与 `cross-browser-acceptance`，包括 Node、双浏览器合成页面、Firefox 临时安装和 Mozilla lint。新增用户可见行为后需要在实际变更提交上核对 CI 结果，不能沿用旧提交的通过结论。
 
-1. `npm run build` 后到 Chromium 扩展页面加载**仓库根目录**（或者 `build/chromium`）。
-2. 修改内容脚本后，扩展管理页点击**重新加载**，刷新目标网页。
-3. `console` 出错请区分网站本身（如 Statsig 请求被客户端拦截）与 JotPatch 栈；收集最短重现信息，不复制用户聊天数据。
-4. 若改变存储模型，必须写迁移测试，确保旧 `jotpatch:note:v1:*` 仍可读取或安全升级。
+## 调试与边界
 
-## 开发风格
+- 修改内容脚本后，在浏览器扩展管理页重新加载扩展，并刷新目标网页；避免把旧注入脚本当成新版本。
+- 如果用户在原文卸载后看到便签隐藏，先核对 `Range` 是否仍连接、`conversationTurnId` 是否匹配，不要把 DOM 重挂载误作创建新便签。
+- 导航跳转失败时记录逻辑身份、滚动容器和目标 DOM 是否实际可见；不要仅检查 `scrollTop`。
+- 浏览器控制台中的网站遥测错误不自动归因于 JotPatch。日志和测试页面不要保留真实聊天内容、账号或令牌。
+- 跨浏览器变更不要增加未经批准的权限、云同步或未公开 AI 网站接口。
 
-- 新 PR 范围小且可撤销；尽量不要和功能修复同时升级构建工具。
-- 核心导航要求逻辑身份确认、不可达时停止、滚动可取消，不以接近的像素位置当作成功。
-- 不要因为虚拟化卸载，就删除或强行弹出历史便签。
-- 默认权限最小化；不得上传用户原文，不能通过未公开接口后台扫描会话。
-- 新站点适配写 DOM 合成测试并由真实站点验证；Firefox 适配必须完成 Firefox 特有权限与生命周期测试。
+## 只修改文档
+
+从 [Agent Skill](../.agents/skills/jotpatch-documentation/SKILL.md)进入 [写作规则](WRITING_STYLE.md)、[文档类型与验收](DOCUMENTATION_TYPES.md)，按 D01–D12 确定内容归属。保留历史实验与发行证据，不因重写 README 顺便修改源码、Manifest、签名或 Tag。
+
+最小文档检查是 Markdown 相对链接、事实与版本对照、README 双语一致性以及 `node --test tests/documentation.test.mjs`。如执行 `npm run check`，报告实际结果；未运行 E2E、真实 Firefox 或登录站点测试时直接注明。PR 仍应指向 `dev`，合并由维护者决定。
+
+PR 说明与归属要求见 [贡献规范](../CONTRIBUTING.md)。

@@ -1,3 +1,5 @@
-# GitHub Copilot instructions for JotPatch
+# GitHub Copilot — JotPatch
 
-Read and follow `AGENTS.md` at the repository root (single shared instruction source). Then consult `docs/ARCHITECTURE.md` for module boundaries, `docs/DEVELOPMENT.md` for commands and tests, and `CONTRIBUTING.md` for the `feature → dev → main` workflow. Do not introduce broader permissions or private AI chat API calls, do not squash collaborators' authorship, and do not claim Firefox distribution is ready before its branch is integrated and validated.
+统一遵守仓库根目录的 [AGENTS.md](../AGENTS.md)。代码任务按 [架构说明](../docs/ARCHITECTURE.md)、[开发指南](../docs/DEVELOPMENT.md)和 [贡献规则](../CONTRIBUTING.md)执行。文档任务先阅读 [JotPatch documentation Skill](../.agents/skills/jotpatch-documentation/SKILL.md)，按 [写作规则](../docs/WRITING_STYLE.md)、[文档类型与验收](../docs/DOCUMENTATION_TYPES.md)核验。
+
+本文件只是入口，不覆盖 `AGENTS.md` 的分支、存储、隐私、作者归属和发行规定。
