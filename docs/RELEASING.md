@@ -16,7 +16,7 @@
 
 准备匹配版本的 `docs/RELEASE_NOTES_0_1_18.md`；当前 [`.github/workflows/release.yml`](../.github/workflows/release.yml)按版本数字读取 `docs/RELEASE_NOTES_<underscored-version>.md`，不要复用旧版说明或假设有另一处 `--notes-file` 手工参数。
 
-Firefox 签名使用固定 Gecko ID `{8801fba0-08ef-481b-a4b6-870a061b2878}`。**在准备下一版之前，必须核对 [Firefox 修复 PR #24](https://github.com/Housz/JotPatch/pull/24) 是否已进入正式代码和 `dev`；旧代码的 ID 不得重新签名作为同一插件升级。**
+Firefox 签名使用固定 Gecko ID `{8801fba0-08ef-481b-a4b6-870a061b2878}`。**v0.1.18 开发线已整合 [Firefox 修复 PR #24](https://github.com/Housz/JotPatch/pull/24)，正式发行前仍需验证 Firefox ZIP 中的 ID、启动行为和本地存储升级路径。**
 
 ## 2. 验证待发代码
 

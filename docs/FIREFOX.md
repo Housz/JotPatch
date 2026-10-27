@@ -21,7 +21,7 @@ An unsigned Firefox ZIP is for temporary testing in `about:debugging#/runtime/th
 
 The original `v0.1.17` Tag points to stable commit `34be0692`. A subsequent [Firefox repair PR #24](https://github.com/Housz/JotPatch/pull/24) was tested at `6757760a` and supplies the corrected source used for the separately signed Firefox 0.1.17 XPI. The repair covers the AMO duplicate-ID issue, two `innerHTML` lint warnings, native toolbar activation and first-edit Markdown behavior.
 
-**As of 2026-10-27, PR #24 is still a draft and has not been merged into `main` or `dev`.** Do not treat the tagged source or current `dev` Firefox build as interchangeable with the signed repair XPI. In particular, the `dev` transformation still declares the older `jotpatch@housz.dev` ID until the repair is integrated.
+**v0.1.18 development integration:** the Firefox recovery fixes and signed Gecko ID have been merged into this development line while retaining the original hotfix commit ancestry. The original v0.1.17 Tag still predates the fix; its Chromium ZIP and the subsequently signed Firefox XPI therefore have different source provenance. Future signing must use this fixed Gecko ID.
 
 The signed Firefox add-on ID is `{8801fba0-08ef-481b-a4b6-870a061b2878}`; preserve it in future releases. The uploaded v0.1.17 signed XPI has already been compared with the repaired runtime in the [PR's successful CI](https://github.com/Housz/JotPatch/actions/runs/40354313470). This is build/signature evidence, not a claim that all authenticated websites were manually tested.
 
@@ -64,7 +64,7 @@ To test a **real temporarily installed** Firefox MV3 extension, install Selenium
 python tests/firefox_addon_smoke.py
 ```
 
-The current `dev` script is a baseline for development and does not contain PR #24's complete real-toolbar fix. For a verified v0.1.17 repair, check out [PR #24](https://github.com/Housz/JotPatch/pull/24), use its build and its specific CI evidence. Do not use an older `dev` ZIP to resubmit the signed v0.1.17 add-on to AMO.
+The v0.1.18 development baseline includes the toolbar readiness handshake, fixed Gecko ID and native Firefox regression from [PR #24](https://github.com/Housz/JotPatch/pull/24). This does not rewrite the historical v0.1.17 signed package. For new versions, submit the newly verified release ZIP to the existing Mozilla Unlisted add-on.
 
 ## Troubleshooting and validation levels
 

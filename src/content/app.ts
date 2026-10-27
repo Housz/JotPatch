@@ -93,8 +93,10 @@ namespace JP {
       this.host.setAttribute('data-jotpatch-exclude', '');
       this.host.style.cssText = 'position:fixed;inset:0;z-index:2147483647;pointer-events:none;';
       this.shadow = this.host.attachShadow({ mode: 'open' });
+      // A trusted static template avoids AMO warning on interpolated HTML.
+      const styles = document.createElement('style');
+      styles.textContent = PAPER_STYLES;
       this.shadow.innerHTML = `
-        <style>${PAPER_STYLES}</style>
         <div class="launcher" id="jp-launcher" hidden aria-label="JotPatch 快捷操作">
           <button id="jp-new" aria-label="新建本页便签" title="新建本页便签" type="button">+</button>
           <button id="jp-settings" aria-label="设置" title="设置" type="button">⚙</button>
@@ -111,6 +113,7 @@ namespace JP {
         <div id="jp-markers"></div>
         <div id="jp-cards"></div>
         <div id="jp-toast" class="toast" role="status" aria-live="polite" hidden><span id="jp-toast-text"></span><button id="jp-cancel-nav" type="button" hidden>取消</button><button id="jp-undo" type="button" hidden>撤销</button></div>`;
+      this.shadow.prepend(styles);
       (document.body || document.documentElement).appendChild(this.host);
     }
 
@@ -1075,7 +1078,7 @@ namespace JP {
       // Fixed header and footer take actual layout space; no controls overlap text.
       paper.innerHTML=`
         <header class="paper-head drag-region" title="拖动整条顶栏移动便签" aria-label="拖动便签位置">
-          <button class="paper-pin" type="button" aria-label="解除原文锚定" title="已钉在原文 · 点击解除锚定" ${note.anchor?'':'hidden'}>
+          <button class="paper-pin" type="button" aria-label="解除原文锚定" title="已钉在原文 · 点击解除锚定" hidden>
             <span class="paper-pin-symbol" aria-hidden="true">📌︎</span>
           </button>
           <span class="paper-grab" aria-hidden="true"></span>
@@ -1097,7 +1100,7 @@ namespace JP {
           <span class="save-indicator" aria-live="polite"></span>
         </footer>
         <div class="note-menu" hidden>
-          <div class="note-mode">${note.anchor?'📌 贴在原文':'◌ 本页悬浮'}</div>
+          <div class="note-mode"></div>
           <div class="colors" role="group" aria-label="便签颜色"></div>
           <div class="font-label">字号</div>
           <div class="font-choices" role="group" aria-label="字号">
@@ -1108,6 +1111,8 @@ namespace JP {
           <button class="menu-action delete-menu danger" type="button">删除便签</button>
         </div>
         <div class="resize-handle" role="separator" aria-label="拖动调整便签大小" title="拖动调整便签大小"></div>`;
+      paper.querySelector<HTMLElement>('.paper-pin')!.hidden = !note.anchor;
+      paper.querySelector<HTMLElement>('.note-mode')!.textContent = note.anchor ? '📌 贴在原文' : '◌ 本页悬浮';
       const editor=paper.querySelector<HTMLElement>('.note-editor')!;
       renderMarkdown(editor,note.text);
       const changed=()=>{

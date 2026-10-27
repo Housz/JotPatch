@@ -39,7 +39,7 @@ Git Tag                 v0.1.18
 
 ## Firefox 扩展身份和例外来源
 
-Firefox 每次提交新版本时须保持已经 Mozilla 签名的固定 Gecko ID：`{8801fba0-08ef-481b-a4b6-870a061b2878}`。**截至本次文档改写，`dev` 的 Firefox Manifest 生成器仍使用旧 ID；该差异由 [PR #24](https://github.com/Housz/JotPatch/pull/24) 修复，必须先整合到未来正式版本。** 直接用旧 `dev` 构建提交 Mozilla 会产生不同的扩展身份风险。
+Firefox 每次提交新版本时须保持已经 Mozilla 签名的固定 Gecko ID：`{8801fba0-08ef-481b-a4b6-870a061b2878}`。**v0.1.18 开发线已整合 [Firefox 热修复 PR #24](https://github.com/Housz/JotPatch/pull/24) 的固定身份、工具栏启动和存储兼容修改。** 提交 Mozilla 新版本须核对包内此 ID，不能退回旧的 `jotpatch@housz.dev`。
 
 另一个版本身份例外是 GitHub Release v0.1.17 的签名 Firefox XPI：它基于修复源码 `6757760a`，而原 `v0.1.17` Tag 指向 `34be0692`；因此不能仅凭相同的数字版本断言两者源代码相同。此后版本应使签名 XPI、正式源代码提交和发行包有明确、可查的对应关系。
 

@@ -4,9 +4,10 @@ import {readFileSync, statSync} from 'node:fs';
 import {buildFirefoxManifest, verifyFirefoxManifest, FIREFOX_MIN_VERSION} from '../scripts/firefox-manifest.mjs';
 
 const base = JSON.parse(readFileSync('manifest.json', 'utf8'));
+const testedVersion = base.version;
 
 test('Firefox manifest swaps the service worker for an event page and keeps the permission contract', () => {
-  const manifest = buildFirefoxManifest(base, '0.1.17');
+  const manifest = buildFirefoxManifest(base, testedVersion);
   assert.equal(manifest.manifest_version, 3);
   assert.deepEqual(manifest.background, {scripts: ['dist/background.js']});
   for (const key of ['short_name', 'minimum_chrome_version', 'version_name', 'options_page']) {
@@ -16,13 +17,13 @@ test('Firefox manifest swaps the service worker for an event page and keeps the 
   assert.deepEqual(manifest.optional_host_permissions, base.optional_host_permissions);
   assert.deepEqual(manifest.icons, base.icons);
   assert.deepEqual(manifest.options_ui, {page: 'options.html', open_in_tab: true});
-  assert.equal(manifest.version, '0.1.17');
+  assert.equal(manifest.version, testedVersion);
   assert.deepEqual(verifyFirefoxManifest(manifest), []);
 });
 
 test('Firefox metadata pins a stable add-on id, the gecko floor and the no-data declaration', () => {
-  const gecko = buildFirefoxManifest(base, '0.1.17').browser_specific_settings.gecko;
-  assert.equal(gecko.id, 'jotpatch@housz.dev');
+  const gecko = buildFirefoxManifest(base, testedVersion).browser_specific_settings.gecko;
+  assert.equal(gecko.id, '{8801fba0-08ef-481b-a4b6-870a061b2878}');
   assert.equal(gecko.strict_min_version, FIREFOX_MIN_VERSION);
   assert.ok(Number.parseInt(gecko.strict_min_version, 10) >= 142, gecko.strict_min_version);
   assert.deepEqual(gecko.data_collection_permissions, {required: ['none']});
@@ -55,4 +56,15 @@ test('Chromium packaging still ships its own manifest untouched', () => {
   assert.equal(base.background.service_worker, 'dist/background.js');
   assert.equal(base.minimum_chrome_version, '116');
   assert.equal(base.options_page, 'options.html');
+});
+
+test('Firefox AMO warnings: do not construct notes with innerHTML assignments',()=>{
+  const app=readFileSync('src/content/app.ts','utf8');
+  // AMO permits trusted static templates without interpolated HTML variables.
+  const mount=app.match(/this\.shadow\.innerHTML\s*=\s*`([^`]+)`/);
+  const paper=app.match(/paper\.innerHTML\s*=\s*`([^`]+)`/);
+  assert.ok(mount && paper);
+  assert.doesNotMatch(mount[1],/\$\{/);
+  assert.doesNotMatch(paper[1],/\$\{/);
+  assert.doesNotMatch(app,/createContextualFragment\s*\(/);
 });
