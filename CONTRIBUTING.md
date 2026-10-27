@@ -1,50 +1,46 @@
-# 贡献与协作（Contributing）
+# 贡献 JotPatch
 
-感谢帮助改进 JotPatch。项目采用**一个仓库、两条长期分支**的轻量流程。
+JotPatch 使用一个仓库、两条长期分支。请先从 [README](README.md) 了解项目，再按 [开发指南](docs/DEVELOPMENT.md)运行适用检查。文档贡献按 [文档类型与验收规范](docs/DOCUMENTATION_TYPES.md) 处理。
 
-## 分支工作流
+## 分支与 PR
 
-| 分支 | 用途 | 合入哪里 |
-| --- | --- | --- |
-| `main` | 稳定发行线、正式 Tag | 仅通过 `dev → main` 的 Release PR 或紧急补丁 |
-| `dev` | 所有平台的集成开发线 | —— |
-| `feature/<topic>` | 新功能/网站/浏览器适配 | `dev` |
-| `fix/<topic>` | Bug 修复 | `dev` |
-| `experiment/<topic>` | 尚待实测的技术探索 | 只有验证通过才申请合入 `dev` |
-| `refactor/<topic>` | 工程重构 | `dev` |
+| 分支 | 用途 |
+| --- | --- |
+| `main` | 稳定发行代码、正式 Tag |
+| `dev` | 跨浏览器开发集成线 |
+| `feature/*`、`fix/*`、`refactor/*` | 功能、修复和小步重构，PR 到 `dev` |
+| `experiment/*` | 尚待验证的方案，不直接视为正式功能 |
+| `hotfix/*` | 仅在明确的发行故障下从 `main` 派生，修复后同步到 `dev` |
 
 ```bash
 git fetch origin
 git switch dev
 git pull --ff-only origin dev
-git switch -c feature/claude-adapter
-# 开发、测试、提交…
-git push -u origin feature/claude-adapter
+git switch -c docs/describe-change
+# 编辑、检查、提交并推送
+git push -u origin docs/describe-change
 ```
 
-在 GitHub 创建 PR，**base 选 `dev`，不是默认的 `main`**。尚未完成的实验可开 Draft PR，避免强行合入。保护 `main`、`dev` 时至少要求 CI 通过；项目设置由维护者根据团队规模决定，不在未经确认时自行更改。
+创建 PR 时选择 **base: `dev`**。已发行的紧急修复可按 [发行指南](docs/RELEASING.md)走独立 hotfix 流程；正式发行 `dev → main` 必须 Merge commit，不能 Squash 合作者历史。PR 审核通过不意味着自动合并或发布。
 
-## PR 的最小要求
+## 代码 PR 提交信息
 
-- 描述问题/需求、核心变化、影响的浏览器/网站。
-- 贴出 `npm run check` 的真实执行结果；浏览器回归跑了什么、没有跑什么。
-- 新网站适配：说明真实 DOM 来源和选择器边界，不凭猜测上线。
-- 修改存储：说明向后兼容/迁移策略。
-- 修改导航：说明虚拟化、取消、失败回滚是否经过测试。
-- 无新增无关权限、网络请求、用户正文收集或密钥。
-- 新增模块时，更新 `tsconfig`、开发文档和相应测试。
+说明实际问题、影响的浏览器和网站、主要改动、向后兼容、数据/权限变化、测试范围及限制。添加站点适配器需提供真实页面 DOM 证据和合成回归；变更导航应覆盖重挂载、取消、不可达及错误原文匹配。不要提交个人对话、Cookie、密钥或未授权日志。
 
-## 作者归属与 Leezh76 Firefox 开发
+`npm run check` 是基础检查。涉及用户行为时运行相应 E2E；涉及 Firefox 权限/后台生命周期时补充真实安装测试。不能执行的测试请明确记录原因，不写成已通过。
 
-Firefox 工作现存于 `feature/firefox-port`（Leezh76）。其独立开发分支**尚未整合到当前 `dev`**。整合者应从原始分支以 **Merge commit** 或保留作者身份的 Cherry-pick 合入，不要把源码复制成 Housz 自己的提交。解决冲突的整合修改则由实际作者独立提交。对确实共同开发的改动使用双方认可的 `Co-authored-by`。
+## 文档 PR 提交信息
 
-`dev → main` 的发行合并**统一采用 Merge commit**，不要 squash 掉多人提交历史。GitHub Contributors 通常根据默认分支的非合并提交作者统计；贡献进入 `dev` 但未进入 `main` 前可能暂不显示在默认统计。
+1. 按 [D01–D12](docs/DOCUMENTATION_TYPES.md)标记文档类型和适用生命周期（现行/版本化/历史）。
+2. 对照 [W01–W10](docs/WRITING_STYLE.md)检查自然表达、事实来源与术语；`README.md` 和 `README.en.md` 成对更新。
+3. P0（事实/安全/证据）、P1（内容/链接/一致性）必须解决；P2 是人工风格建议。
+4. 核对 Markdown 相对链接、版本号、权限、签名 XPI 和真实附件；记录实际执行的检查。纯文档 PR 不修改代码、Manifest、版本、Release、Tag 或已归档实验。
+5. 在 PR 中列出修改文件、事实基线、检查结果与未执行的浏览器/商店验收。
 
-## 工作范围与联系
+可通过 [.agents/skills/jotpatch-documentation/SKILL.md](.agents/skills/jotpatch-documentation/SKILL.md) 进入文档流程。
 
-- Housz：主线核心、产品体验、发行。
-- Leezh76：Firefox 适配（正在开发），其他合作者可按任务负责 Claude、DeepSeek 等站点。
-- 核心模块变更请让受影响的适配维护者参与 Review。
-- 使用 GitHub Issue 讨论任务；不要在代码里留真实对话、Cookie、账号或私有令牌。
+## 作者与维护者
 
-新开发者先看 [开发指南](docs/DEVELOPMENT.md) 和 [架构说明](docs/ARCHITECTURE.md)；AI 编码助手先读 [AGENTS.md](AGENTS.md)。
+Housz 维护核心、产品与发行；Leezh76 主要贡献 Firefox 适配。原始提交须保留原作者，冲突解决由实际整合者记录；确实共同完成时才使用双方认可的 `Co-authored-by`。必要时邀请受影响平台的维护者 Review。发现 Bug 可用 GitHub Issue，附可公开的复现步骤并移除敏感内容。
+
+长期分支与发布细则见 [版本规范](docs/VERSIONING.md)及 [发行流程](docs/RELEASING.md)。

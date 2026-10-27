@@ -1,52 +1,77 @@
-# 发布 JotPatch（维护者操作）
+# JotPatch 发行与签名流程
 
-## 分支流
+本文供维护者发布新版本。**正式发布必须由维护者批准**；文档 PR、测试通过、打包完成和商店签名是不同状态，不会自动相互授权。
 
-- `main`：正式发布代码；Tag/Release 只从这里产生。
-- `dev`：集成分支，所有功能、修复通过 PR 合入；未完成的技术实验继续保留在任务分支。
-- `feature/*`、`fix/*`、`experiment/*`、`refactor/*`：个人任务分支。PR **目标必须选 `dev`**。
+## 发行模型
 
-对功能 PR，推荐 **Create a merge commit** 以保留其他合作者的完整作者/提交记录。尤其 `dev → main` 的发布 PR **禁止 Squash**，必须保留祖先关系。冲突解决由整合者用独立提交记录；非共同完成工作不要滥用 `Co-authored-by`。
+- `dev`：功能与修复集成线，任务分支通过 PR 合入。
+- `main`：正式发布线，从 `dev` 创建 Release PR，使用 **Merge commit** 保留原始作者和祖先历史，不能 Squash。
+- `hotfix/*`：已发行版本的独立紧急修复，完成测试后整合同一修复到 `main` 和 `dev`，避免下一版回归。
 
-## 日常 dev 构建
+详细版本校验见 [版本规则](VERSIONING.md)，贡献和作者归属见 [CONTRIBUTING.md](../CONTRIBUTING.md)。
 
-合并到 `dev` 后，GitHub Actions 执行 `npm run check`，然后按 `GITHUB_RUN_NUMBER` 生成 `JotPatch-v0.1.17-dev.N-chromium.zip` 作为测试 Artifact。这个 ZIP 在根目录直接含 `manifest.json`、`dist/` 等必要文件，**不含源码和 Node 环境**。
+## 1. 锁定发行源码和版本
 
-本地：
+从最新 `dev` 创建 Release PR 到 `main`，将 `config/version.json` 切换为 `channel=release`，同步 `package.json.version`、`manifest.version` 与 `manifest.version_name` 到新正式版本，例如 `0.1.18`。
+
+准备匹配版本的 `docs/RELEASE_NOTES_0_1_18.md`；当前 [`.github/workflows/release.yml`](../.github/workflows/release.yml)按版本数字读取 `docs/RELEASE_NOTES_<underscored-version>.md`，不要复用旧版说明或假设有另一处 `--notes-file` 手工参数。
+
+Firefox 签名使用固定 Gecko ID `{8801fba0-08ef-481b-a4b6-870a061b2878}`。**在准备下一版之前，必须核对 [Firefox 修复 PR #24](https://github.com/Housz/JotPatch/pull/24) 是否已进入正式代码和 `dev`；旧代码的 ID 不得重新签名作为同一插件升级。**
+
+## 2. 验证待发代码
 
 ```bash
+# 在经审批的 release 版本分支根目录运行
 npm install
 npm run check
-npm run package:dev
-# 产物：build/chromium/ + artifacts/JotPatch-v0.1.17-dev.1-chromium.zip
+npm run test:e2e
+npm run package:release
+node scripts/package.mjs --channel=release --browser=firefox
+node scripts/verify-release-package.mjs
+npx web-ext lint --source-dir build/firefox --self-hosted
 ```
 
-Firefox 开发 ZIP 可通过 `npm run package:firefox` 构建，并在 `about:debugging#/runtime/this-firefox` 中临时加载。GitHub CI 使用 Firefox/Chromium 两个真实浏览器运行回归，Firefox 还通过 Selenium 临时安装和事件页测试。**没有签名的 Firefox ZIP 不等于可持续安装的正式 XPI**。
+Release PR 还需核对 GitHub CI 的 `typecheck-and-contracts` 和 `cross-browser-acceptance` 成功，安排相关浏览器的实际安装/权限测试。真实登录 ChatGPT/Gemini、Firefox 持久安装和浏览器重启如果没有执行，应在验收及发行说明中明确。构建、合成页面、临时安装、Mozilla lint、正式签名各有不同的证据粒度。
 
-## 正式发行前
+## 3. 合并并生成 GitHub Release
 
-1. 从最新 `dev` 创建 Release PR，目标 `main`。不要在普通 feature PR 中改稳定版本。
-2. PR 中锁定待发功能，更新 `config/version.json` 为 `"channel":"release"`，并将 `package.json.version`、`manifest.version`、`manifest.version_name` 都改成 `nextRelease`，例如 `0.1.17`。此外要为该版本准备发行说明，并更新发行工作流里的 `--notes-file` 到对应文件，严禁复用旧版本说明。
-3. 执行 `npm run check`、完整 `npm run test:e2e` 和指定浏览器的人工安装烟测；`npm run package:release` 必须通过。
-4. 合并前必须确保 `cross-browser-acceptance` 和 `typecheck-and-contracts` 两项 CI 均成功；Firefox Selenium 安装/事件页烟测不能被静态测试代替。真实登录 ChatGPT/Gemini 和商店权限提示若未实测须在发行说明披露。**Merge commit 合入 `main`**，保留原始提交及作者信息。
-5. `.github/workflows/release.yml` 在 main 更新时验证发行渠道、版本、构建与包内容，然后**在同一个工作流中**创建指向该 main 提交的注释 Tag（例如 `v0.1.17`）和 GitHub Release（附 Chromium ZIP 与 Firefox 临时开发 ZIP）。如维护者设置 AMO_JWT_ISSUER / AMO_JWT_SECRET，自动通过 Mozilla AMO 签名并额外附上 Firefox signed XPI；签名步骤失败时整体发行失败。无签名凭据则必须在发行说明中明确 Firefox 仅供临时加载测试。GitHub Actions 内使用 GITHUB_TOKEN 推送的 Tag 不会再触发另一个工作流，因此不可把“推送 Tag”与“创建 Release”拆成相互依赖的两个任务。已有同名 Release 时保持幂等，不覆盖历史发行包。也支持对已有 Tag 的单独工作流重试。
-6. 手动完成 Chrome Web Store、Edge Add-ons 的上传审核流程；Firefox 必须以完成 Mozilla 签名的 XPI/AMO 为准，不能把未签名 ZIP 改名成 XPI 后视为正式版。
-7. 把修复和版本状态同步回 `dev`（如有临时 hotfix），随后开启下一轮 `-dev.1`。
+审批通过后，以 Merge commit 将 Release PR 合并至 `main`。[发行工作流](../.github/workflows/release.yml)检查 `release` 渠道、源码版本、包的文件清单和跨浏览器代码一致性，在**同一次**工作流中创建 Tag 和 GitHub Release。
 
-## 已发行版本紧急 Bug
+发布的基础附件为同一源码版本的 Chromium ZIP 与 Firefox ZIP。Firefox ZIP 用于开发者临时调试；普通用户安装必须使用 Mozilla **签名的 XPI**。在 GitHub Actions 未配置 AMO 签名凭据时，流水线不会自动生成 XPI，也不能称该 ZIP 已签名。
 
-从 `main` 切 `hotfix/*` 修复并测试，合入 `main`、发布补丁 Tag，然后**合并或 Cherry-pick 同一修复回 `dev`**。不要让下一次发布回滚正式线中的修复。
+Tag 和 Release 不等价于 `main` 合并成功；合并后必须实际核对 Tag 指向、CI、Release 状态及附件。对已有 Tag、Release 或历史产物，不覆盖同名附件或悄悄移动提交。
 
-## 发行审批表
+## 4. 手工 Mozilla Unlisted 签名（当前采用）
 
-| 检查 | 必须 |
+1. 从通过验证的**明确提交**构建 Firefox 发行 ZIP，核对 `manifest.version` 和固定 Gecko ID。
+2. 在 Mozilla AMO Developer Hub **已有的 JotPatch 附加组件**下提交新版本，选择 **On your own / Unlisted**，而不是新建不同 ID 的项目。
+3. 等待 Mozilla 实际批准并获得签名 XPI。核对签名 XPI 的版本、ID、运行时代码和待发源码一致性。
+4. 在普通 Firefox 中检查 XPI 的正常安装、工具栏首次激活、便签保存、刷新恢复以及重启后扩展仍存在。已安装旧版的升级测试要避免先卸载。
+5. 把已经验收的签名 XPI 添加到该版本的 GitHub Release，注明安装方式与已知限制。手动上传是当前默认流程；自动签名仅是可选扩展。
+
+发行流水线已预留 `AMO_JWT_ISSUER`、`AMO_JWT_SECRET` 环境配置用于 `web-ext sign` 的 Unlisted 签名；不能在仓库、PR 或公开日志中放入密钥。没有实际生成 XPI 就不能宣称签名完成。
+
+## 5. 手动更新与升级
+
+- Chrome/Edge：用户重新下载 Chromium ZIP，保留原解压扩展身份并重新加载。不是 Chrome Web Store 自动更新。
+- Firefox：用户下载**版本更高且固定 ID 不变**的签名 XPI，通过 `about:addons` 从文件安装覆盖升级。当前没有 `update_url` 自动更新机制。
+- 既有用户应尽量升级原安装而非卸载；升级前记录存储兼容性与权限差异。不同浏览器的数据不会自动迁移。
+- Chrome Web Store、Edge Add-ons 和 Mozilla AMO 的审核/签名状态是独立流程；本项目当前以 GitHub Releases 作为公开下载入口。
+
+## v0.1.17 的已知发行来源差异
+
+截至 2026-10-27，Release v0.1.17 提供 `JotPatch-v0.1.17-chromium.zip` 和 `JotPatch-v0.1.17-firefox-signed.xpi`。Firefox 签名 XPI 是后续修复 `6757760a` 的文件，而原 Tag 指向 `34be0692`。该历史差异须保留可追溯说明；未来版本优先保证签名包和正式源码同源。详见 [Firefox 指南](FIREFOX.md)。
+
+## 发行核对表
+
+| 验收 | 必须核对的证据 |
 | --- | --- |
-| 基线来源可追溯、Commit Author 保留 | 是 |
-| Node 构建、类型和契约测试通过 | 是 |
-| Chromium 安装与新建、保存、恢复和跳转基本用例 | 是 |
-| 版本、扩展权限、Manifest 一致 | 是 |
-| ZIP 根目录有 Manifest、无源码/敏感文件 | 是 |
-| Firefox 临时安装、设置页、存储及事件页通信 | 是；失败不发布跨浏览器版本 |
-| Firefox 签名 XPI 是否存在 | 若没有，Release 只注明临时安装 Firefox ZIP，不能宣传为普通用户安装版 |
-| 当前浏览器平台是否已经实际支持 | 是；未完成的平台暂不发布 |
-| 长对话 Lab 实验是否仍默认关闭 | 是，直到决定正式启用 |
+| 版本与源码 | `config/version.json`、Manifest、`package.json`、Tag 的提交 SHA |
+| 数据与权限 | Note Schema v1、最小权限、无意外主机权限 |
+| 自动化质量 | Node/合约、适用 Chromium 和 Firefox 合成 DOM、浏览器原生安装 |
+| Firefox 安装包 | Mozilla 实际签名 XPI、固定 Gecko ID、正确版本和安装测试 |
+| 真实网站 | 已运行的 ChatGPT/Gemini 人工验收及未运行的部分 |
+| 历史与作者 | 不覆盖旧 Tag/附件，保留合作者提交身份 |
+| 文档 | [发行说明类型 D10](DOCUMENTATION_TYPES.md)、用户指南及中英文 README 内容一致 |
+
+发布后同步正式修复回 `dev`，更新 `baseline` 并开始下一轮 `-dev.1`；避免后续正式版恢复已修复的 Firefox 故障。
