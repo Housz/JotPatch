@@ -4,13 +4,13 @@ namespace JP {
     :host([hidden]){display:none!important}
     *,*::before,*::after{box-sizing:border-box} [hidden]{display:none!important}
     button{font:inherit;border:0;cursor:pointer} button:focus-visible,[contenteditable]:focus-visible{outline:2px solid #7461ae;outline-offset:2px}
-    .bubble{position:fixed;z-index:20;pointer-events:auto;transform:translateY(-100%)}
+    .bubble{position:fixed;z-index:1030;pointer-events:auto;transform:translateY(-100%)}
     .bubble button{width:31px;height:31px;border-radius:50%;background:#fff8df;color:#7a612a;box-shadow:0 2px 12px #0003;
       border:1px solid #e7d59e;font-size:16px;line-height:30px;padding:0;text-align:center}
     .bubble button:hover{background:#ffe7a1;transform:scale(1.06)}
     /* One stable surface for creation, navigation and settings. On an empty
        page it collapses to two controls instead of showing an empty track. */
-    .rail{position:fixed;right:7px;top:50%;transform:translateY(-50%);height:68vh;max-height:730px;
+    .rail{position:fixed;z-index:1000;right:7px;top:50%;transform:translateY(-50%);height:68vh;max-height:730px;
       min-height:230px;width:38px;border-radius:19px;background:#fffdf9d9;
       border:1px solid #e7e2d7;box-shadow:0 2px 10px #0001;pointer-events:auto}
     .rail.native-nav{right:42px}
@@ -44,12 +44,12 @@ namespace JP {
     .rail-pin.missing{border:1px dashed #716b66;opacity:.85}
     .rail-pin:focus-visible,.rail-turn:focus-visible{outline:2px solid #7461ae;outline-offset:2px}
     .rail-pin:hover,.rail-pin:focus-visible,.marker:hover{outline:2px solid #7562a4;outline-offset:2px;z-index:8}
-    .turn-preview{position:fixed;max-width:252px;min-width:140px;z-index:40;pointer-events:none;
+    .turn-preview{position:fixed;max-width:252px;min-width:140px;z-index:1020;pointer-events:none;
       border-radius:8px;padding:9px 11px;background:#fffefcf7;border:1px solid #e6e3dc;
       box-shadow:0 4px 18px #0002;font-size:12px;line-height:1.5;color:#37342e;
       overflow-wrap:anywhere;white-space:pre-line;max-height:8.4em;overflow:hidden}
 
-    .list{position:fixed;z-index:35;right:53px;top:19%;width:min(298px,calc(100vw - 108px));max-height:69vh;
+    .list{position:fixed;z-index:1010;right:53px;top:19%;width:min(298px,calc(100vw - 108px));max-height:69vh;
       overflow:auto;pointer-events:auto;background:#fffefaf7;border:1px solid #eae5da;
       border-radius:9px;box-shadow:0 8px 26px #0002;padding:6px}
     .list.native-nav{right:88px}
@@ -130,7 +130,7 @@ namespace JP {
     .menu-action{display:block;text-align:left;width:100%;padding:7px;border-radius:5px;background:transparent;color:#4b463b}
     .menu-action:hover{background:#eee8d8}.menu-action.danger{color:#9b4440}
     .save-indicator{font-size:10px;color:#9b4141;pointer-events:none}
-    .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:50;pointer-events:auto;
+    .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:1040;pointer-events:auto;
       background:#34302c;color:#fff;border-radius:8px;padding:9px 12px;box-shadow:0 3px 14px #0003;
       display:flex;gap:12px;align-items:center;max-width:min(440px,92vw);font-size:12px}
     .toast button{background:transparent;color:#ffe1a0;font-weight:600;padding:4px;border-radius:4px}

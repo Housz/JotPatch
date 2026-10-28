@@ -94,6 +94,21 @@ def run():
         expect(list_button).to_have_attribute('aria-expanded','false')
         print('PASS: first page note appears in compact Dock list without a redundant loose count')
 
+        # A user can drag a note underneath the Dock. Controls must stay on
+        # top and remain clickable even when the editor has a higher local z.
+        first_paper=page.locator('#jotpatch-root .paper').first
+        original_style=first_paper.get_attribute('style')
+        first_paper.evaluate("""paper => {
+          const r=paper.getRootNode().querySelector('#jp-rail').getBoundingClientRect();
+          paper.style.left=(r.left-12)+'px';
+          paper.style.top=r.top+'px';
+          paper.style.zIndex='500';
+        }""")
+        new_button.click(trial=True)
+        settings.click(trial=True)
+        first_paper.set_attribute('style',original_style)
+        print('PASS: Dock controls remain interactable when a dragged paper overlaps them')
+
         # Keyboard access; Escape closes the panel and returns focus to its control.
         list_button.focus()
         list_button.press('Enter')
