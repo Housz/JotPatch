@@ -28,11 +28,26 @@ test('anchor matching, page keys, unresolved states, persisted note fields are r
   }
 });
 
-test('selection bubble has no label, no quote/title/footer, and no permanent toolbar', () => {
+test('selection bubble remains independent from the compact Dock', () => {
   const source = readFileSync('src/content/app.ts', 'utf8');
   assert.match(source, /id="jp-bubble-pin"[^>]*>📌<\/button>/);
   assert.doesNotMatch(source, /class="card-head"|class="card-foot"|id="jp-quote"/);
   assert.match(readFileSync('src/ui/paper-styles.ts', 'utf8'), /\.paper\{--paper/);
+});
+
+test('v0.1.19 uses one accessible Dock with a stable first-note action', () => {
+  const app=readFileSync('src/content/app.ts','utf8');
+  const css=readFileSync('src/ui/paper-styles.ts','utf8');
+  const bg=readFileSync('src/background/index.ts','utf8');
+  for(const id of ['id="jp-rail"','id="jp-new"','id="jp-settings"','id="jp-list-toggle"'])
+    assert.ok(app.includes(id),id);
+  assert.doesNotMatch(app,/id="jp-launcher"|id="jp-hide"|launcherOpen|renderLauncher/);
+  assert.doesNotMatch(css,/\.launcher\{/);
+  assert.ok(app.includes("rail.classList.toggle('compact',compact)"));
+  assert.ok(app.includes("rail.hidden = !this.visible"));
+  assert.ok(app.includes("this.$<HTMLButtonElement>('#jp-list-toggle').setAttribute('aria-expanded'"));
+  assert.ok(bg.includes("ready?'JP_TOGGLE_UI':'JP_OPEN_DOCK'"));
+  assert.equal(manifest.host_permissions,undefined);
 });
 
 test('right-click action and selection-trigger preference are included', () => {
@@ -100,7 +115,7 @@ test('minimal rail keeps independent markers, original spatial hints and one-cli
     assert.ok(!app.includes(forbidden),`should remove ${forbidden}`);
   assert.doesNotMatch(css,/\.rail-detail\{/);
   assert.doesNotMatch(css,/\.turn-preview small\{/);
-  assert.match(css,/\.rail-head\{[^}]*left:50%;transform:translateX\(-50%\)/);
+  assert.match(css,/\.rail-new,\.rail-head,\.rail-settings\{[^}]*left:50%;transform:translateX\(-50%\)/);
   assert.match(css,/\.rail-pin\.missing\{border:1px dashed/);
   assert.ok(!layout.includes('findCrowdedRailGroups'));
   assert.equal(manifest.host_permissions,undefined);

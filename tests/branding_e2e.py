@@ -42,7 +42,7 @@ def run():
         notes.evaluate("() => chrome.storage.local.set({'jotpatch:preferences:v1':{defaultNoteColorMode:'random',selectionTrigger:'always',conversationNavigation:true}})")
         colors=[]
         for _ in range(9):
-            notes.evaluate("() => window.__jpSendMessage({type:'JP_OPEN_LAUNCHER'})")
+            notes.evaluate("() => window.__jpSendMessage({type:'JP_OPEN_DOCK'})")
             notes.locator('#jotpatch-root #jp-new').click()
             # Wait until new note is actually present in stored local data.
             notes.wait_for_function('(n) => Object.values(window.__jotpatchFakeStore).filter(item=>item?.id).length>=n',arg=len(colors)+1)
@@ -54,7 +54,7 @@ def run():
         assert set(colors).issubset({'yellow','pink','green','blue','purple','gray'}),colors
         print('PASS: random-colour mode creates nine notes with no adjacent duplicate:',colors)
         notes.evaluate("() => chrome.storage.local.set({'jotpatch:preferences:v1':{defaultNoteColorMode:'yellow',selectionTrigger:'always',conversationNavigation:true}})")
-        notes.evaluate("() => window.__jpSendMessage({type:'JP_OPEN_LAUNCHER'})")
+        notes.evaluate("() => window.__jpSendMessage({type:'JP_OPEN_DOCK'})")
         notes.locator('#jotpatch-root #jp-new').click()
         notes.wait_for_function('() => Object.values(window.__jotpatchFakeStore).filter(item=>item?.id).length>=10')
         latest=notes.evaluate("() => Object.values(window.__jotpatchFakeStore).filter(item=>item?.id).at(-1)")

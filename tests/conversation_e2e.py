@@ -165,13 +165,18 @@ def run():
         gemini.close()
 
         ordinary=new_site(context,'https://example.com/doc', '<!doctype html><body><main><p>普通网页不应该出现轮次导航。</p></main></body>')
-        expect(ordinary.locator('#jotpatch-root #jp-rail')).to_be_hidden()
-        print('PASS: generic webpage remains free of conversation navigation')
+        expect(ordinary.locator('#jotpatch-root #jp-rail')).to_be_visible()
+        expect(ordinary.locator('#jotpatch-root #jp-new')).to_be_visible()
+        expect(ordinary.locator('#jotpatch-root .rail-turn')).to_have_count(0)
+        assert 'compact' in ordinary.locator('#jotpatch-root #jp-rail').get_attribute('class')
+        print('PASS: ordinary webpage has compact Dock without conversation navigation')
         ordinary.close()
 
         short=new_site(context,'https://gemini.google.com/app/short',gemini_body(2))
-        expect(short.locator('#jotpatch-root #jp-rail')).to_be_hidden()
-        print('PASS: one or two turns do not create a distracting rail')
+        expect(short.locator('#jotpatch-root #jp-rail')).to_be_visible()
+        expect(short.locator('#jotpatch-root .rail-turn')).to_have_count(0)
+        expect(short.locator('#jotpatch-root #jp-list-toggle')).to_be_hidden()
+        print('PASS: one or two turns retain compact Dock without navigation track')
         short.close()
 
         # High-turn-count document: no O(N^2) rail construction and each turn remains discoverable.

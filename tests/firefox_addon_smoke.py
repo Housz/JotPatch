@@ -114,7 +114,8 @@ def main():
                 WebDriverWait(driver,10).until(lambda d:d.execute_script('''
                     const root=document.querySelector("#jotpatch-root");
                     return !!(root && !root.hidden && root.shadowRoot &&
-                      !root.shadowRoot.querySelector("#jp-launcher").hidden);
+                      !root.shadowRoot.querySelector("#jp-rail").hidden &&
+                       !root.shadowRoot.querySelector("#jp-new").hidden);
                 '''))
             except TimeoutException as original_error:
                 # A failed action may open an options/help tab; the driver
@@ -127,7 +128,7 @@ def main():
                             const root=document.querySelector("#jotpatch-root");
                             return {url:location.href,title:document.title,hasRoot:!!root,
                               rootHidden:root?.hidden,hasShadow:!!root?.shadowRoot,
-                              launcherHidden:root?.shadowRoot?.querySelector("#jp-launcher")?.hidden,
+                              dockHidden:root?.shadowRoot?.querySelector("#jp-rail")?.hidden,
                               help:document.querySelector("#activation-help-detail")?.textContent};
                         '''))
                     except Exception as error:
@@ -196,17 +197,16 @@ def main():
                     })().then(done,e=>done({error:String(e)}));
                 ''')
                 print(f'DIAGNOSTIC: Firefox action failure tabs={tab_states!r} extension={ext_state!r}',flush=True)
-                raise AssertionError('Native Firefox toolbar click did not activate launcher; see diagnostic tabs / injection result') from original_error
-            print('PASS: Firefox native toolbar action injects and displays real launcher',flush=True)
+                raise AssertionError('Native Firefox toolbar click did not activate Dock; see diagnostic tabs / injection result') from original_error
+            print('PASS: Firefox native toolbar action injects and displays unified Dock',flush=True)
             r=trigger()
             assert r.get('ok'),r
             WebDriverWait(driver,12).until(lambda d:d.execute_script('''
                 const root=document.querySelector("#jotpatch-root");
-                return !!(root && root.shadowRoot &&
-                  root.shadowRoot.querySelector("#jp-launcher").hidden);
+                return !!(root && root.shadowRoot && root.hidden);
             '''))
             assert driver.execute_script('return document.querySelectorAll("#jotpatch-root").length')==1
-            print('PASS: second real toolbar click toggles launcher, no duplicate root',flush=True)
+            print('PASS: second real toolbar click hides Dock and notes, no duplicate root',flush=True)
 
             # The real installed extension must create a note, serialize the
             # editor text, and restore it from Firefox storage after reload.
@@ -214,7 +214,8 @@ def main():
             trigger()
             WebDriverWait(driver,8).until(lambda d:d.execute_script('''
                 const root=document.querySelector("#jotpatch-root");
-                return root && !root.shadowRoot.querySelector("#jp-launcher").hidden;
+                return !!(root && !root.hidden && root.shadowRoot &&
+                  !root.shadowRoot.querySelector("#jp-rail").hidden);
             '''))
             new_button=driver.execute_script('''
                 return document.querySelector("#jotpatch-root").shadowRoot.querySelector("#jp-new");
@@ -275,7 +276,7 @@ def main():
                 if(!root || root.hidden || !root.shadowRoot)return false;
                 const rail=root.shadowRoot.querySelector("#jp-rail");
                 const list=root.shadowRoot.querySelector("#jp-list-toggle");
-                return !!rail && !rail.hidden && !!list && Number(list.textContent)>=1;
+                return !!rail && !rail.hidden && !!list && !list.hidden;
             '''))
             assert driver.execute_script('return document.querySelectorAll("#jotpatch-root").length')==1
             print('PASS: real Firefox stored note restored after page reload and action click',flush=True)

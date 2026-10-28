@@ -1,27 +1,34 @@
 namespace JP {
   export const PAPER_STYLES = `
     :host{all:initial;font:13px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif;color:#37342e}
+    :host([hidden]){display:none!important}
     *,*::before,*::after{box-sizing:border-box} [hidden]{display:none!important}
     button{font:inherit;border:0;cursor:pointer} button:focus-visible,[contenteditable]:focus-visible{outline:2px solid #7461ae;outline-offset:2px}
-    .launcher{position:fixed;top:14px;right:42px;display:flex;gap:3px;align-items:center;padding:3px;
-      background:#fffdf8f0;border:1px solid #e8e3d8;border-radius:20px;box-shadow:0 4px 16px #0002;pointer-events:auto}
-    .launcher button{width:29px;height:29px;border-radius:50%;background:transparent;color:#5f5b51;font-size:17px}
-    .launcher button:hover{background:#eee9df} .launcher button#jp-new{font-size:21px;line-height:26px}
-    .bubble{position:fixed;z-index:20;pointer-events:auto;transform:translateY(-100%)}
+    .bubble{position:fixed;z-index:1030;pointer-events:auto;transform:translateY(-100%)}
     .bubble button{width:31px;height:31px;border-radius:50%;background:#fff8df;color:#7a612a;box-shadow:0 2px 12px #0003;
       border:1px solid #e7d59e;font-size:16px;line-height:30px;padding:0;text-align:center}
     .bubble button:hover{background:#ffe7a1;transform:scale(1.06)}
-    .rail{position:fixed;right:7px;top:50%;transform:translateY(-50%);height:68vh;max-height:730px;
-      min-height:220px;width:27px;border-radius:16px;background:#fffdf9d9;
+    /* One stable surface for creation, navigation and settings. On an empty
+       page it collapses to two controls instead of showing an empty track. */
+    .rail{position:fixed;z-index:1000;right:7px;top:50%;transform:translateY(-50%);height:68vh;max-height:730px;
+      min-height:230px;width:38px;border-radius:19px;background:#fffdf9d9;
       border:1px solid #e7e2d7;box-shadow:0 2px 10px #0001;pointer-events:auto}
-    .rail.with-conversation{width:33px}
     .rail.native-nav{right:42px}
-    .rail-head{position:absolute;top:5px;left:50%;transform:translateX(-50%);width:23px;height:23px;
-      border-radius:50%;font-size:14px;background:#f0ece2;color:#615a4b;padding:0;display:grid;place-items:center}
-    .rail-head:hover,.rail-loose:hover{background:#e7e1d5}
-    .rail-track{position:absolute;top:33px;bottom:16px;left:2px;right:2px}
-    .rail.with-conversation .rail-track{bottom:25px;left:2px;right:2px}
-    .rail-loose{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);height:18px;min-width:20px;
+    .rail.compact{height:114px;min-height:0;max-height:none}
+    .rail.compact.no-notes{height:76px}
+    .rail-new,.rail-head,.rail-settings{position:absolute;left:50%;transform:translateX(-50%);
+      width:28px;height:28px;padding:0;border-radius:50%;display:grid;place-items:center;
+      background:transparent;color:#615a4b;font-size:16px;line-height:1}
+    .rail-new{top:5px;font-size:22px;font-weight:350}
+    .rail-head{top:40px;font-size:16px}
+    .rail-settings{bottom:5px;font-size:17px}
+    .rail-new:hover,.rail-head:hover,.rail-settings:hover,.rail-loose:hover{background:#e7e1d5}
+    .rail-new:focus-visible,.rail-head:focus-visible,.rail-settings:focus-visible{
+      outline:2px solid #7461ae;outline-offset:2px}
+    .rail-track{position:absolute;top:76px;bottom:42px;left:2px;right:2px}
+    .rail.has-loose .rail-track{bottom:67px}
+    .rail.compact .rail-track,.rail.compact .rail-loose{display:none}
+    .rail-loose{position:absolute;bottom:41px;left:50%;transform:translateX(-50%);height:19px;min-width:23px;
       padding:0 3px;background:#efe9df;border-radius:10px;color:#6d6659;font-size:11px}
     .rail-turn{position:absolute;right:2px;width:14px;height:3px;min-height:2px;padding:0;
       background:#c3c7cc;border-radius:8px;transform:translateY(-50%);
@@ -37,13 +44,16 @@ namespace JP {
     .rail-pin.missing{border:1px dashed #716b66;opacity:.85}
     .rail-pin:focus-visible,.rail-turn:focus-visible{outline:2px solid #7461ae;outline-offset:2px}
     .rail-pin:hover,.rail-pin:focus-visible,.marker:hover{outline:2px solid #7562a4;outline-offset:2px;z-index:8}
-    .turn-preview{position:fixed;max-width:252px;min-width:140px;z-index:40;pointer-events:none;
+    .turn-preview{position:fixed;max-width:252px;min-width:140px;z-index:1020;pointer-events:none;
       border-radius:8px;padding:9px 11px;background:#fffefcf7;border:1px solid #e6e3dc;
       box-shadow:0 4px 18px #0002;font-size:12px;line-height:1.5;color:#37342e;
       overflow-wrap:anywhere;white-space:pre-line;max-height:8.4em;overflow:hidden}
 
-    .list{position:fixed;right:43px;top:19%;width:min(298px,78vw);max-height:69vh;overflow:auto;pointer-events:auto;
-      background:#fffefaf7;border:1px solid #eae5da;border-radius:9px;box-shadow:0 8px 26px #0002;padding:6px}
+    .list{position:fixed;z-index:1010;right:53px;top:19%;width:min(298px,calc(100vw - 108px));max-height:69vh;
+      overflow:auto;pointer-events:auto;background:#fffefaf7;border:1px solid #eae5da;
+      border-radius:9px;box-shadow:0 8px 26px #0002;padding:6px}
+    .list.native-nav{right:88px}
+    .list.compact{top:50%;transform:translateY(-50%);max-height:65vh}
     .list-header{display:flex;justify-content:space-between;align-items:center;padding:7px 7px 10px;font-weight:600}
     .list-header button{background:transparent;color:#777;margin:0 3px;font-size:16px}
         .entry{width:100%;background:transparent;padding:7px 7px;display:flex;align-items:center;gap:8px;
@@ -61,6 +71,7 @@ namespace JP {
     .entry-pin{font-size:12px;color:#9a8551;flex:none}
     .entry-pin.unresolved{color:#aaa;text-decoration:underline dotted}
     @media (prefers-reduced-motion:reduce){.rail-turn,.rail-pin{transition:none!important}}
+    @media (max-height:420px){.rail:not(.compact){height:86vh;min-height:0}}
     .marker{position:fixed;z-index:4;width:19px;height:19px;pointer-events:auto;border-radius:50%;padding:0;
       box-shadow:0 2px 7px #0003;color:#755d24;font-size:11px;border:1px solid #fff9}
     .paper{--paper:#fff1b8;--jp-font-size:14px;position:fixed;z-index:8;display:flex;flex-direction:column;
@@ -119,7 +130,7 @@ namespace JP {
     .menu-action{display:block;text-align:left;width:100%;padding:7px;border-radius:5px;background:transparent;color:#4b463b}
     .menu-action:hover{background:#eee8d8}.menu-action.danger{color:#9b4440}
     .save-indicator{font-size:10px;color:#9b4141;pointer-events:none}
-    .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:50;pointer-events:auto;
+    .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:1040;pointer-events:auto;
       background:#34302c;color:#fff;border-radius:8px;padding:9px 12px;box-shadow:0 3px 14px #0003;
       display:flex;gap:12px;align-items:center;max-width:min(440px,92vw);font-size:12px}
     .toast button{background:transparent;color:#ffe1a0;font-weight:600;padding:4px;border-radius:4px}
