@@ -142,7 +142,7 @@ def run():
         page.locator('#jotpatch-root #jp-bubble-pin').click()
         expect(page.locator('#jotpatch-root .paper')).to_have_count(2)
         assert len(notes(page)) == 2
-        assert any(n.get('anchor',{}).get('exact')=='直接选中' for n in notes(page))
+        assert any((n.get('anchor') or {}).get('exact')=='直接选中' for n in notes(page))
         expect(rail).to_be_visible()
         print('PASS: selected-text 📌 still makes an anchored note independently of Dock +')
 
