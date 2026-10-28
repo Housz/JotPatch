@@ -52,6 +52,18 @@
   </section>
 
   <section>
+    <h2>界面透明度</h2>
+    <p>只调整便签纸、Dock 和列表的背景；文字与操作按钮保持清晰。无需背景模糊。</p>
+    <fieldset aria-label="界面透明度">
+      <div class="inline-choice">
+        <label class="choice"><input type="radio" name="uiTransparency" value="clear"><span>清晰<small>默认，便签纸不透明。</small></span></label>
+        <label class="choice"><input type="radio" name="uiTransparency" value="soft"><span>柔和<small>轻微透出网页。</small></span></label>
+        <label class="choice"><input type="radio" name="uiTransparency" value="light"><span>轻透<small>较高通透感，编辑时自动恢复清晰。</small></span></label>
+      </div>
+    </fieldset>
+    <p id="transparency-status" role="status" aria-live="polite"></p>
+  </section>
+  <section>
     <h2>AI 会话导航</h2>
     <label class="choice"><input type="checkbox" id="conversation-navigation" checked><span>显示对话轮次导航
       <small>在 ChatGPT 与 Gemini 中用浅色短横线定位每一轮提问，已有彩色便签点共用同一条 Dock；普通网页不受影响。</small></span></label>

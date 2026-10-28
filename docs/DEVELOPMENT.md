@@ -72,11 +72,12 @@ Firefox 的衍生 Manifest、临时安装和验证差异见 [Firefox 指南](FIR
 npm run check
 JP_CHROMIUM_BIN=playwright python tests/unified_dock_e2e.py
 JP_E2E_BROWSER=firefox python tests/unified_dock_e2e.py
+JP_E2E_BROWSER=firefox python tests/dock_polish_e2e.py
 # 已完成 Firefox 包构建且安装 Selenium / geckodriver 后：
 python tests/firefox_addon_smoke.py
 ```
 
-重点覆盖首次进入空页面能新建便签、悬浮便签列表、Esc/页面点击关闭、工具栏显隐、选中文字 📌、本地数据刷新恢复、长 ChatGPT 对话横条直接点击与原生导航回退。合成 DOM 不等于真实登录网页人工验收。具体范围见 [设计与验收记录](UNIFIED_DOCK_0_1_19.md)。
+重点覆盖首次进入空页面能新建便签、悬浮便签分组显隐、精简列表、Esc/页面点击关闭、工具栏显隐、选中文字 📌、本地数据刷新恢复、长 ChatGPT 对话横条直接点击与原生导航回退。另有 `tests/dock_polish_e2e.py` 验证标题栏置顶、菜单不裁剪、Tab 缩进和透明度即时变化。合成 DOM 不等于真实登录网页人工验收。具体范围见 [设计与验收记录](UNIFIED_DOCK_0_1_19.md)。
 
 ## 只修改文档
 

@@ -76,7 +76,9 @@ def run():
         expect(page.locator('#jotpatch-root .paper')).to_have_count(1)
         expect(rail).to_be_visible()
         expect(list_button).to_be_visible()
-        expect(rail).to_have_class('rail compact')
+        assert 'compact' in rail.get_attribute('class')
+        expect(page.locator('#jotpatch-root #jp-loose-toggle')).to_be_visible()
+        expect(page.locator('#jotpatch-root #jp-loose-toggle')).to_have_text('1')
         expect(page.locator('#jotpatch-root #jp-rail-track')).to_be_hidden()
         assert len(notes(page)) == 1
         assert notes(page)[0].get('anchor') is None
@@ -89,10 +91,13 @@ def run():
         assert compact_dock and compact_panel
         assert abs((compact_panel['y']+compact_panel['height']/2)-
                    (compact_dock['y']+compact_dock['height']/2)) < 45
-        panel.locator('.list-header button').click()
+        assert panel.locator('.list-header,.list-footer').count()==0
+        assert 'JotPatch' not in panel.inner_text()
+        assert 'Powered by Housz' not in panel.inner_text()
+        list_button.click()
         expect(panel).to_be_hidden()
         expect(list_button).to_have_attribute('aria-expanded','false')
-        print('PASS: first page note appears in compact Dock list without a redundant loose count')
+        print('PASS: compact Dock has separate navigation list and floating visibility count, without branding chrome')
 
         # A user can drag a note underneath the Dock. Controls must stay on
         # top and remain clickable even when the editor has a higher local z.

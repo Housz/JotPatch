@@ -1,6 +1,7 @@
 namespace JP {
   export const PAPER_STYLES = `
-    :host{all:initial;font:13px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif;color:#37342e}
+    :host{all:initial;font:13px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif;color:#37342e;
+      --jp-paper-amount:100%;--jp-dock-surface:#fffdf9d9;--jp-list-surface:#fffefaf7}
     :host([hidden]){display:none!important}
     *,*::before,*::after{box-sizing:border-box} [hidden]{display:none!important}
     button{font:inherit;border:0;cursor:pointer} button:focus-visible,[contenteditable]:focus-visible{outline:2px solid #7461ae;outline-offset:2px}
@@ -11,11 +12,12 @@ namespace JP {
     /* One stable surface for creation, navigation and settings. On an empty
        page it collapses to two controls instead of showing an empty track. */
     .rail{position:fixed;z-index:1000;right:7px;top:50%;transform:translateY(-50%);height:68vh;max-height:730px;
-      min-height:230px;width:38px;border-radius:19px;background:#fffdf9d9;
+      min-height:230px;width:38px;border-radius:19px;background:var(--jp-dock-surface);
       border:1px solid #e7e2d7;box-shadow:0 2px 10px #0001;pointer-events:auto}
     .rail.native-nav{right:42px}
     .rail.compact{height:114px;min-height:0;max-height:none}
     .rail.compact.no-notes{height:76px}
+    .rail.compact.has-loose{height:144px}
     .rail-new,.rail-head,.rail-settings{position:absolute;left:50%;transform:translateX(-50%);
       width:28px;height:28px;padding:0;border-radius:50%;display:grid;place-items:center;
       background:transparent;color:#615a4b;font-size:16px;line-height:1}
@@ -27,9 +29,11 @@ namespace JP {
       outline:2px solid #7461ae;outline-offset:2px}
     .rail-track{position:absolute;top:76px;bottom:42px;left:2px;right:2px}
     .rail.has-loose .rail-track{bottom:67px}
-    .rail.compact .rail-track,.rail.compact .rail-loose{display:none}
-    .rail-loose{position:absolute;bottom:41px;left:50%;transform:translateX(-50%);height:19px;min-width:23px;
-      padding:0 3px;background:#efe9df;border-radius:10px;color:#6d6659;font-size:11px}
+    .rail.compact .rail-track{display:none}
+    .rail.compact .rail-loose:not([hidden]){display:grid;place-items:center}
+    .rail-loose{position:absolute;bottom:41px;left:50%;transform:translateX(-50%);height:22px;min-width:26px;
+      padding:0 4px;background:#efe9df;border-radius:11px;color:#6d6659;font-size:11px}
+    .rail-loose[aria-pressed="true"]{background:#ded8ca;color:#433e37}
     .rail-turn{position:absolute;right:2px;width:14px;height:3px;min-height:2px;padding:0;
       background:#c3c7cc;border-radius:8px;transform:translateY(-50%);
       transition:width .12s ease,background .12s ease;z-index:1}
@@ -50,18 +54,16 @@ namespace JP {
       overflow-wrap:anywhere;white-space:pre-line;max-height:8.4em;overflow:hidden}
 
     .list{position:fixed;z-index:1010;right:53px;top:19%;width:min(298px,calc(100vw - 108px));max-height:69vh;
-      overflow:auto;pointer-events:auto;background:#fffefaf7;border:1px solid #eae5da;
-      border-radius:9px;box-shadow:0 8px 26px #0002;padding:6px}
+      overflow:auto;pointer-events:auto;background:var(--jp-list-surface);border:1px solid #eae5da;
+      border-radius:9px;box-shadow:0 8px 26px #0002;padding:4px 5px}
     .list.native-nav{right:88px}
     .list.compact{top:50%;transform:translateY(-50%);max-height:65vh}
-    .list-header{display:flex;justify-content:space-between;align-items:center;padding:7px 7px 10px;font-weight:600}
-    .list-header button{background:transparent;color:#777;margin:0 3px;font-size:16px}
-        .entry{width:100%;background:transparent;padding:7px 7px;display:flex;align-items:center;gap:8px;
+    .entry{width:100%;background:transparent;padding:7px 7px;display:flex;align-items:center;gap:8px;
       border-top:1px solid #ece9e0;color:#34312e;text-align:left}
     .entry:hover{background:#f7f2e8}
     .entry .dot{width:9px;height:9px;flex:0 0 9px;border-radius:50%;margin:0 1px}
     .list-section{font-size:11px;color:#827d74;letter-spacing:.025em;padding:8px 8px 3px}
-    .list-footer{padding:10px 8px 6px;font-size:11px;color:#9a9387;text-align:right}
+    .entry:first-child{border-top:0}
     .turn-entry{gap:8px;font-size:12px;font-weight:520}
     .turn-entry span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .turn-order{color:#8e928f;flex:0 0 21px;font-variant-numeric:tabular-nums;text-align:right}
@@ -75,9 +77,11 @@ namespace JP {
     .marker{position:fixed;z-index:4;width:19px;height:19px;pointer-events:auto;border-radius:50%;padding:0;
       box-shadow:0 2px 7px #0003;color:#755d24;font-size:11px;border:1px solid #fff9}
     .paper{--paper:#fff1b8;--jp-font-size:14px;position:fixed;z-index:8;display:flex;flex-direction:column;
-      background:var(--paper);border:1px solid #0000000d;border-radius:4px;box-shadow:0 5px 18px #0002;
-      pointer-events:auto;min-width:180px;min-height:132px;overflow:hidden}
-    .paper:focus-within{box-shadow:0 6px 24px #0003}.paper:hover{box-shadow:0 6px 21px #0003}
+      background:color-mix(in srgb,var(--paper) var(--jp-paper-amount),transparent);
+      border:1px solid #0000000d;border-radius:4px;box-shadow:0 5px 18px #0002;
+      pointer-events:auto;min-width:180px;min-height:132px;overflow:visible}
+    .paper:focus-within{box-shadow:0 6px 24px #0003;background:var(--paper)}
+    .paper:hover{box-shadow:0 6px 21px #0003}
     .paper-head,.paper-foot{width:100%;display:flex;align-items:center;flex:0 0 28px;
       padding:2px 5px;user-select:none;border-color:transparent;transition:background .13s ease}
     .paper-head{justify-content:space-between;cursor:grab;touch-action:none}
@@ -117,8 +121,9 @@ namespace JP {
     .resize-handle{position:absolute;bottom:0;right:0;width:15px;height:15px;cursor:nwse-resize;
       touch-action:none;opacity:.12;background:linear-gradient(135deg,transparent 54%,#736a5666 55%,#736a5666 61%,transparent 62%)}
     .paper:hover .resize-handle,.paper:focus-within .resize-handle{opacity:.75}
-    .note-menu{position:absolute;right:5px;top:29px;width:183px;padding:8px;background:#fffcf4;
-      border:1px solid #e2d9c4;border-radius:8px;box-shadow:0 7px 21px #0003;z-index:8}
+    .note-menu{position:absolute;right:5px;top:29px;width:183px;max-height:calc(100vh - 20px);
+      overflow-y:auto;padding:8px;background:#fffcf4;border:1px solid #e2d9c4;
+      border-radius:8px;box-shadow:0 7px 21px #0003;z-index:8}
     .note-mode{color:#847a65;font-size:11px;padding:4px 5px 8px;margin-bottom:4px;
       border-bottom:1px solid #ece4d6}
     .colors{display:flex;gap:5px;padding:6px 4px 9px}.colors button{width:21px;height:21px;border-radius:50%;border:1px solid #0002;padding:0}

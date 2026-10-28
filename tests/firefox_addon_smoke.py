@@ -62,6 +62,16 @@ def main():
         ''')
         assert value.get('defaultNoteColorMode')=='random',value
         print('PASS: Firefox browser.storage.local persisted a real options-page preference',flush=True)
+        transparency=driver.find_element(By.CSS_SELECTOR,'input[name="uiTransparency"][value="soft"]')
+        transparency.click()
+        WebDriverWait(driver,10).until(lambda d:'已保存' in d.find_element(By.ID,'transparency-status').text)
+        opacity=driver.execute_async_script('''
+            const done=arguments[arguments.length-1];
+            browser.storage.local.get('jotpatch:preferences:v1')
+              .then(v=>done(v['jotpatch:preferences:v1']?.uiTransparency),e=>done({error:String(e)}));
+        ''')
+        assert opacity=='soft',opacity
+        print('PASS: real Firefox transparency preference is persisted in the existing settings key',flush=True)
 
         # Verify an actual event-page message round-trip without granting hosts.
         response=driver.execute_async_script('''

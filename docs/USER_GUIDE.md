@@ -29,12 +29,17 @@ Firefox 的 ID、手动升级及已知发行差异见 [Firefox 专题](FIREFOX.m
 `dev` 分支的 `0.1.19-dev.1` 正在测试一体化右侧 Dock。**正式 v0.1.18 仍使用独立的迷你启动区和导航栏；不要将下述操作视为已发布版本的行为。**
 
 - 无便签、无足够对话轮次时，页面右侧只显示小型 Dock：上方 `+` 新建本页悬浮便签，下方 `⚙` 打开设置。不会显示空白长轨道。
-- 存在本页便签后出现 `≡` 按钮，点击打开本页便签与提问列表；`Esc`、点击网页空白处或列表中的关闭按钮都可以关闭。
+- 存在本页便签后出现 `≡` 按钮，点击打开紧凑的本页便签与提问列表（不显示额外品牌标题和页脚）；再次点击 `≡`、按 `Esc` 或点击网页空白处关闭。
 - 存在可导航的原文便签或三轮以上的 AI 对话时，中段扩展为灰色提问横条和彩色便签标记。仍然点击标记**直接跳转**，不添加二次选择面板。
+- Dock 下方的**数字按钮只统计本页悬浮便签**（没有原文锚点）。点击可显示所有悬浮便签，再次点击将它们全部收起；不隐藏原文锚定便签，也不弹出导航列表。
 - 点击浏览器工具栏上的 JotPatch 图标，可**显示或隐藏整套 JotPatch 界面**（包括便签纸）。隐藏不会删除或清除任何本地笔记。
 - 选中文字后出现的独立 📌 保持原位。它负责把便签关联到原文；Dock 中的 `+` 始终创建本页悬浮便签，不随选区改变行为。
 
-这一轮只实现 [Issue #34](https://github.com/Housz/JotPatch/issues/34) 的 Dock 统一。右键删除与可调透明度分别属于 [#36](https://github.com/Housz/JotPatch/issues/36)、[#33](https://github.com/Housz/JotPatch/issues/33)，尚未在此改动中实现。开发设计与验收范围见 [统一 Dock 记录](UNIFIED_DOCK_0_1_19.md)。
+本次继续实现 [#33 透明度档位](https://github.com/Housz/JotPatch/issues/33)、[#38 编辑缩进](https://github.com/Housz/JotPatch/issues/38)、[#39 便签置顶](https://github.com/Housz/JotPatch/issues/39) 和 [#40 小便签菜单遮挡](https://github.com/Housz/JotPatch/issues/40)。右键删除 [#36](https://github.com/Housz/JotPatch/issues/36) 与跨网页悬浮 [#41](https://github.com/Housz/JotPatch/issues/41) 仍属独立后续需求。
+
+开发版编辑器中，`Tab` 插入两格缩进，`Shift+Tab` 缩回；`Ctrl+Tab` 在键盘事件可被扩展接收到时也执行缩回，但浏览器可能优先将它用于切换标签页，因此推荐 `Shift+Tab`。选择多行后缩进会作用于各行；目前不提供嵌套 Markdown 列表的语法级编辑。
+
+在设置中可选**清晰（默认）／柔和／轻透**三档，只调整便签纸、Dock 和列表的背景透明度。文字、按钮、焦点仍保持实色；编辑便签时纸张会恢复不透明。不使用性能成本较高的背景模糊。详见 [统一 Dock 设计与验收记录](UNIFIED_DOCK_0_1_19.md)。
 
 ## 创建与编辑便签
 

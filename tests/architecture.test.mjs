@@ -52,6 +52,7 @@ test('core note storage has no WebExtension globals, is injectible and preserves
   const pref=await repo.preferences();
   assert.equal(pref.navigationLab,false);
   assert.equal(pref.defaultNoteColorMode,'yellow');
+  assert.equal(pref.uiTransparency,'clear');
   assert.doesNotMatch(readFileSync('src/core/repository.ts','utf8'),/\bchrome\.|\bbrowser\./);
 });
 test('TypeScript bundle order guarantees site registry and browser seam before application startup',()=>{
@@ -61,6 +62,8 @@ test('TypeScript bundle order guarantees site registry and browser seam before a
   assert.ok(index('src/adapters/sites/registry.ts')<index('src/adapters/sites/chatgpt.ts'));
   assert.ok(index('src/adapters/sites/chatgpt.ts')<index('src/content/conversation.ts'));
   assert.ok(index('src/adapters/browsers/webextension.ts')<index('src/core/repository.ts'));
+  assert.ok(index('src/core/markdown.ts')<index('src/core/editor-indent.ts'));
+  assert.ok(index('src/core/editor-indent.ts')<index('src/content/app.ts'));
   assert.equal(files.at(-1),'src/content/entry.ts');
   assert.ok(files.every(x=>!x.includes('src/content/repository.ts')));
 });

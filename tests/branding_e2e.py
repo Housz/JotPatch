@@ -19,6 +19,9 @@ def run():
         opts.evaluate(STORAGE_SHIM)
         opts.add_script_tag(path=str(ROOT/'options.js'))
         expect(opts.locator('input[name="defaultNoteColorMode"][value="yellow"]')).to_be_checked()
+        expect(opts.locator('input[name="uiTransparency"][value="clear"]')).to_be_checked()
+        opts.locator('input[name="uiTransparency"][value="soft"]').check()
+        expect(opts.locator('#transparency-status')).to_contain_text('已保存')
         assert opts.locator('body').inner_text().count('Powered by Housz') >= 1
         assert '随地大小贴' in opts.locator('body').inner_text()
         # The synthetic page has no extension origin; PNG integrity/sizes are
@@ -27,10 +30,10 @@ def run():
         opts.locator('input[name="defaultNoteColorMode"][value="random"]').check()
         expect(opts.locator('#color-status')).to_contain_text('已保存')
         prefs=opts.evaluate("() => window.__jotpatchFakeStore['jotpatch:preferences:v1']")
-        assert prefs['defaultNoteColorMode']=='random', prefs
+        assert prefs['defaultNoteColorMode']=='random' and prefs['uiTransparency']=='soft', prefs
         opts.locator('input[name="selectionTrigger"][value="alt"]').check()
         prefs=opts.evaluate("() => window.__jotpatchFakeStore['jotpatch:preferences:v1']")
-        assert prefs['defaultNoteColorMode']=='random' and prefs['selectionTrigger']=='alt',prefs
+        assert prefs['defaultNoteColorMode']=='random' and prefs['selectionTrigger']=='alt' and prefs['uiTransparency']=='soft',prefs
         print('PASS: official logo loads; slogan/author visible; random preference persists and survives other setting edits')
         opts.close()
 

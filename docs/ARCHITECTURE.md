@@ -92,8 +92,8 @@ Firefox Manifest 由 [`scripts/firefox-manifest.mjs`](../scripts/firefox-manifes
 - **空状态**：没有笔记且不足三条待展示提问时，Dock 收缩到新建和设置两个控件；存在悬浮便签但无轨道标记时，短 Dock 再显示列表按钮。
 - **正常导航**：已发现提问达到既定阈值或已有位置可确定的锚定便签时，轨道延伸。`layoutConversationRail` / `layoutPageRail` 保持原标记身份、直接点击与密集三轨错位算法。
 - **可见性**：浏览器工具栏首次注入会显示 Dock，后续点击通过 `JP_TOGGLE_UI` 控制整个扩展 UI；与现有便签数据和站点授权无关。旧消息名称作为兼容别名保留，但不产生第二个 Launcher。
-- **临时界面**：列表可由按钮、Esc 或外部点击关闭；隐藏整个 UI 时主动清理弹出的列表和选区气泡。
-- **性能与权限**：不增加 CSS 背景模糊、外部依赖、权限或 Note Schema 字段，不为导航建立另一套存储。仍使用 Shadow DOM 和统一 `PAPER_STYLES`。
+- **临时界面**：完整列表只由上方 `≡` 控制，没有品牌标题或页脚；底部数字按类别显示/隐藏 `anchor === undefined` 的悬浮便签。列表可由按钮、Esc 或外部点击关闭；隐藏整个 UI 时清理弹出的列表和选区气泡。
+- **性能与权限**：新增偏好 `uiTransparency`（clear/soft/light）存于原有 `jotpatch:preferences:v1`；通过 CSS 变量调整背景色 alpha，输入文字不透明；不增加背景模糊、外部依赖、权限或 Note Schema 字段。便签标题栏拖动需主动置顶；更多操作菜单允许溢出纸张并根据视口上翻。缩进事件在 `src/core/editor-indent.ts` 处理，维持 Markdown 数据格式。
 
 设计决策、浏览器矩阵、已知边界见 [v0.1.19 Dock 设计与验收](UNIFIED_DOCK_0_1_19.md)。
 

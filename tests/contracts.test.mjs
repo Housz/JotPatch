@@ -50,6 +50,26 @@ test('v0.1.19 uses one accessible Dock with a stable first-note action', () => {
   assert.equal(manifest.host_permissions,undefined);
 });
 
+test('0.1.19 floating visibility, compact list, opacity and indentation have explicit contracts', () => {
+  const app=readFileSync('src/content/app.ts','utf8');
+  const styles=readFileSync('src/ui/paper-styles.ts','utf8');
+  const editor=readFileSync('src/core/editor-indent.ts','utf8');
+  assert.match(app,/toggleFloatingNotes\(\)/);
+  assert.match(app,/this\.notes\.filter\(note=>!note\.anchor\)/);
+  assert.match(app,/aria-pressed/);
+  assert.doesNotMatch(app,/list-header|list-footer|BRAND_LINE/);
+  assert.doesNotMatch(styles,/\.list-header|\.list-footer/);
+  assert.match(styles,/\.note-menu\{[^}]*max-height:/);
+  assert.match(styles,/overflow:visible/);
+  assert.match(app,/bringCardToFront\(activePaper\)/);
+  assert.match(editor,/indentNoteEditor/);
+  assert.match(app,/event\.key==='Tab'/);
+  assert.match(styles,/color-mix\(in srgb,var\(--paper\)/);
+  for(const mode of ['clear','soft','light'])
+    assert.ok(readFileSync('options.html','utf8').includes('name="uiTransparency" value="'+mode+'"'));
+  assert.equal(manifest.host_permissions,undefined);
+});
+
 test('right-click action and selection-trigger preference are included', () => {
   // The background resolves the runtime through JP.extensionApi(), so the contract
   // checks the capability instead of a Chrome-specific namespace prefix.
