@@ -146,29 +146,29 @@ def run():
         editor.press('Tab')
         editor.type('abc')
         page.wait_for_function("""id=>Object.values(__jotpatchFakeStore)
-          .some(n=>n?.id===id && n.text.startsWith('  abc'))""",floating[0])
+          .some(n=>n?.id===id && n.text.startsWith('  abc'))""",arg=floating[0])
         editor.press('Shift+Tab')
         page.wait_for_function("""id=>Object.values(__jotpatchFakeStore)
-          .some(n=>n?.id===id && n.text==='abc')""",floating[0])
+          .some(n=>n?.id===id && n.text==='abc')""",arg=floating[0])
         print('PASS: physical Tab inserts spaces, Shift+Tab outdents, and Markdown autosaves')
 
         select_lines(editor)
         page.wait_for_function("""id=>Object.values(__jotpatchFakeStore)
-          .some(n=>n?.id===id && n.text==='**第一行**\\n第二行')""",floating[0])
+          .some(n=>n?.id===id && n.text==='**第一行**\\n第二行')""",arg=floating[0])
         editor.press('Tab')
         page.wait_for_function("""id=>Object.values(__jotpatchFakeStore)
-          .some(n=>n?.id===id && n.text==='  **第一行**\\n  第二行')""",floating[0])
+          .some(n=>n?.id===id && n.text==='  **第一行**\\n  第二行')""",arg=floating[0])
         assert editor.locator('strong').count()==1
         editor.press('Shift+Tab')
         page.wait_for_function("""id=>Object.values(__jotpatchFakeStore)
-          .some(n=>n?.id===id && n.text==='**第一行**\\n第二行')""",floating[0])
+          .some(n=>n?.id===id && n.text==='**第一行**\\n第二行')""",arg=floating[0])
         select_lines(editor)
         editor.press('Tab')
         editor.evaluate("""el=>el.dispatchEvent(new KeyboardEvent('keydown',{
           key:'Tab',ctrlKey:true,bubbles:true,cancelable:true
         }))""")
         page.wait_for_function("""id=>Object.values(__jotpatchFakeStore)
-          .some(n=>n?.id===id && n.text==='**第一行**\\n第二行')""",floating[0])
+          .some(n=>n?.id===id && n.text==='**第一行**\\n第二行')""",arg=floating[0])
         print('PASS: selected lines indent/outdent and Ctrl+Tab event handler retain bold Markdown')
 
         # Preferences update live. Transparency only affects surfaces; editing
