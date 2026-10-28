@@ -58,6 +58,7 @@ jobs:
           JP_CHROMIUM_BIN: playwright
         run: |
           python tests/browser_e2e.py
+          python tests/unified_dock_e2e.py
           python tests/math_selection_e2e.py
           python tests/conversation_e2e.py
           python tests/virtualized_notes_e2e.py
@@ -68,6 +69,7 @@ jobs:
           JP_E2E_BROWSER: firefox
         run: |
           python tests/browser_e2e.py
+          python tests/unified_dock_e2e.py
           python tests/math_selection_e2e.py
           python tests/conversation_e2e.py
           python tests/virtualized_notes_e2e.py

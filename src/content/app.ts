@@ -170,11 +170,27 @@ namespace JP {
         targets[next]?.focus({preventScroll:true});
       });
       document.addEventListener('keydown', event => {
-        if(event.key==='Escape')this.hideTurnPreview();
-        if(event.key==='Escape') for(const card of this.cards.values()){const menu=card.querySelector<HTMLElement>('.note-menu');if(menu)menu.hidden=true;card.querySelector('.menu-trigger')?.setAttribute('aria-expanded','false');}
+        if(event.key!=='Escape')return;
+        this.hideTurnPreview();
+        if(this.listOpen){
+          this.listOpen=false;
+          this.renderList();
+          this.$<HTMLButtonElement>('#jp-list-toggle').focus({preventScroll:true});
+        }
+        for(const card of this.cards.values()){
+          const menu=card.querySelector<HTMLElement>('.note-menu');
+          if(menu)menu.hidden=true;
+          card.querySelector('.menu-trigger')?.setAttribute('aria-expanded','false');
+        }
       });
       document.addEventListener('pointerdown', event => {
         const path = event.composedPath();
+        // Close a temporary navigation list on outside clicks, but not on
+        // interaction with a control in the same Dock.
+        if(this.listOpen && !path.includes(this.$<HTMLElement>('#jp-list')) &&
+           !path.includes(this.$<HTMLElement>('#jp-rail'))){
+          this.listOpen=false;this.renderList();
+        }
         for (const card of this.cards.values()) {
           const menu = card.querySelector<HTMLElement>('.note-menu');
           if (menu && !path.includes(menu) && !path.includes(card.querySelector('.menu-trigger')!)){menu.hidden=true;card.querySelector('.menu-trigger')?.setAttribute('aria-expanded','false');}
