@@ -81,10 +81,14 @@ namespace JP {
       this.hideTurnPreview();
       this.$<HTMLElement>('#jp-bubble').hidden = true;
       this.host.hidden = true;
+      // :host{all:initial} can override the user-agent [hidden] display rule.
+      // Guard at the host element as well as in the Shadow DOM stylesheet.
+      this.host.style.display = 'none';
     }
     showDock(): void {
       this.visible = true;
       this.host.hidden = false;
+      this.host.style.removeProperty('display');
       this.renderDock();
       this.scheduleRefresh();
     }

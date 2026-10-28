@@ -1,6 +1,7 @@
 namespace JP {
   export const PAPER_STYLES = `
     :host{all:initial;font:13px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif;color:#37342e}
+    :host([hidden]){display:none!important}
     *,*::before,*::after{box-sizing:border-box} [hidden]{display:none!important}
     button{font:inherit;border:0;cursor:pointer} button:focus-visible,[contenteditable]:focus-visible{outline:2px solid #7461ae;outline-offset:2px}
     .bubble{position:fixed;z-index:20;pointer-events:auto;transform:translateY(-100%)}

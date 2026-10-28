@@ -114,6 +114,9 @@ def run():
           .some(n => n?.text==='统一 Dock 数据保留测试')""")
         page.evaluate("() => __jpSendMessage({type:'JP_TOGGLE_UI'})")
         expect(page.locator('#jotpatch-root')).to_be_hidden()
+        assert page.locator('#jotpatch-root').evaluate('(el)=>getComputedStyle(el).display') == 'none'
+        expect(page.locator('#jotpatch-root #jp-rail')).to_be_hidden()
+        expect(page.locator('#jotpatch-root .paper')).to_be_hidden()
         assert page.locator('#jotpatch-root .paper').count() == 1
         assert len(notes(page)) == 1
         page.evaluate("() => __jpSendMessage({type:'JP_TOGGLE_UI'})")
