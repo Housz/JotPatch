@@ -135,7 +135,6 @@ def run():
         assert rect['y']<paper_rect['y'],(rect,paper_rect)
         menu.locator('.colors button').nth(2).click()
         assert first.evaluate("el=>el.style.getPropertyValue('--paper')") == '#DFF1DD'
-        first.locator('.menu-trigger').click()
         menu.locator('.delete-menu').click(trial=True)
         first.locator('.menu-trigger').click()
         print('PASS: small paper menu flips above the viewport edge and is actually clickable')
