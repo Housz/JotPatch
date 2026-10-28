@@ -77,7 +77,7 @@ namespace JP {
       if (!this.visible) { this.showDock(); return; }
       this.visible = false;
       this.listOpen = false;
-      this.$<HTMLElement>('#jp-list').hidden = true;
+      this.renderList();
       this.hideTurnPreview();
       this.$<HTMLElement>('#jp-bubble').hidden = true;
       this.host.hidden = true;
@@ -712,7 +712,7 @@ namespace JP {
       toggle.hidden = !this.notes.length&&!showTurns;
       toggle.textContent='≡';
       toggle.title=showTurns?`已发现 ${turns.length} 轮 · ${this.notes.length} 张便签`:`本页 ${this.notes.length} 张便签`;
-      toggle.setAttribute('aria-label',toggle.title);
+      toggle.setAttribute('aria-label',`本页导航列表：${toggle.title}`);
       const track=this.$<HTMLElement>('#jp-rail-track');
       track.hidden=compact;
       const list=this.$<HTMLElement>('#jp-list');
