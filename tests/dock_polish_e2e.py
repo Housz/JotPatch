@@ -20,7 +20,7 @@ def saved(page):
 
 def expect_saved(page,count):
     page.wait_for_function("""count=>Object.values(window.__jotpatchFakeStore)
-      .filter(n=>n?.schemaVersion===1 && !n.deletedAt).length===count""",count)
+      .filter(n=>n?.schemaVersion===1 && !n.deletedAt).length===count""",arg=count)
 
 
 def select_quote(page):
