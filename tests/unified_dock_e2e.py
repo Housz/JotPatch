@@ -53,7 +53,7 @@ def run():
         dims = rail.bounding_box()
         assert dims and 68 < dims['height'] < 92, dims
         assert dims['x'] > 0.9 * 1200, dims
-        alpha = rail.evaluate("""node=>{
+        alpha = rail.evaluate(r"""node=>{
           const bg=getComputedStyle(node).backgroundColor;
           const parts=bg.match(/[\d.]+/g).map(Number);
           return parts.length===4?parts[3]:1;

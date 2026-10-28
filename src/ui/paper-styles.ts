@@ -48,7 +48,7 @@ namespace JP {
       box-shadow:0 4px 18px #0002;font-size:12px;line-height:1.5;color:#37342e;
       overflow-wrap:anywhere;white-space:pre-line;max-height:8.4em;overflow:hidden}
 
-    .list{position:fixed;right:53px;top:19%;width:min(298px,calc(100vw - 108px));max-height:69vh;
+    .list{position:fixed;z-index:35;right:53px;top:19%;width:min(298px,calc(100vw - 108px));max-height:69vh;
       overflow:auto;pointer-events:auto;background:#fffefaf7;border:1px solid #eae5da;
       border-radius:9px;box-shadow:0 8px 26px #0002;padding:6px}
     .list.native-nav{right:88px}
