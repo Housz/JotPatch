@@ -18,7 +18,6 @@ namespace JP {
     private explicitlyDetachedIds = new Set<string>();
     private cards = new Map<string, HTMLElement>();
     private visible = true;
-    private launcherOpen = false;
     private listOpen = false;
     private selectionTrigger: SelectionTrigger = 'always';
     private conversationNavigation = true;
@@ -73,18 +72,21 @@ namespace JP {
       window.setInterval(() => this.checkPageRoute(), 1400);
     }
 
+    /** Toolbar gesture toggles the entire UI, not a separate launcher. */
     toggle(): void {
-      this.visible = !this.visible;
-      this.host.hidden = !this.visible;
-      if (this.visible) { this.launcherOpen = true; this.renderLauncher(); this.scheduleRefresh(); }
+      if (!this.visible) { this.showDock(); return; }
+      this.visible = false;
+      this.listOpen = false;
+      this.$<HTMLElement>('#jp-list').hidden = true;
+      this.hideTurnPreview();
+      this.$<HTMLElement>('#jp-bubble').hidden = true;
+      this.host.hidden = true;
     }
-    openLauncher(): void {
-      this.visible = true; this.host.hidden = false; this.launcherOpen = true;
-      this.renderLauncher(); this.scheduleRefresh();
-    }
-    toggleLauncher(): void {
-      if (!this.visible) { this.openLauncher(); return; }
-      this.launcherOpen = !this.launcherOpen; this.renderLauncher();
+    showDock(): void {
+      this.visible = true;
+      this.host.hidden = false;
+      this.renderDock();
+      this.scheduleRefresh();
     }
 
     private mount(): void {
@@ -97,16 +99,13 @@ namespace JP {
       const styles = document.createElement('style');
       styles.textContent = PAPER_STYLES;
       this.shadow.innerHTML = `
-        <div class="launcher" id="jp-launcher" hidden aria-label="JotPatch 快捷操作">
-          <button id="jp-new" aria-label="新建本页便签" title="新建本页便签" type="button">+</button>
-          <button id="jp-settings" aria-label="设置" title="设置" type="button">⚙</button>
-          <button id="jp-hide" aria-label="隐藏 JotPatch" title="隐藏便签" type="button">−</button>
-        </div>
         <div class="bubble" id="jp-bubble" hidden><button id="jp-bubble-pin" aria-label="将便签钉在选中文字旁" title="贴便签" type="button">📌</button></div>
-        <nav id="jp-rail" class="rail" aria-label="网页对话与便签导航" hidden>
-          <button id="jp-list-toggle" class="rail-head" title="打开本页导航列表" aria-label="打开本页导航列表" type="button">≡</button>
-          <div class="rail-track" id="jp-rail-track"></div>
-          <button id="jp-loose-toggle" class="rail-loose" title="本页悬浮或待定位便签" aria-label="查看本页悬浮和待定位便签" type="button" hidden>▤</button>
+        <nav id="jp-rail" class="rail compact no-notes" aria-label="JotPatch 便签与对话导航" hidden>
+          <button id="jp-new" class="rail-new" aria-label="新建本页悬浮便签" title="新建本页悬浮便签" type="button">+</button>
+          <button id="jp-list-toggle" class="rail-head" aria-label="打开本页导航列表" aria-controls="jp-list" aria-expanded="false" title="打开本页导航列表" type="button" hidden>≡</button>
+          <div class="rail-track" id="jp-rail-track" hidden></div>
+          <button id="jp-loose-toggle" class="rail-loose" title="本页悬浮或待定位便签" aria-label="查看本页悬浮或待定位便签" type="button" hidden>▤</button>
+          <button id="jp-settings" class="rail-settings" aria-label="打开 JotPatch 设置" title="设置" type="button">⚙</button>
         </nav>
         <div id="jp-turn-preview" class="turn-preview" role="tooltip" hidden></div>
         <aside id="jp-list" class="list" aria-label="本页便签列表" hidden></aside>
@@ -125,7 +124,6 @@ namespace JP {
 
     private setupEvents(): void {
       this.$<HTMLButtonElement>('#jp-new').addEventListener('click', () => void this.createPageNote());
-      this.$<HTMLButtonElement>('#jp-hide').addEventListener('click', () => this.toggle());
       this.$<HTMLButtonElement>('#jp-settings').addEventListener('click', () => this.openSettings());
       this.$<HTMLButtonElement>('#jp-bubble-pin').addEventListener('pointerdown', e => e.preventDefault());
       this.$<HTMLButtonElement>('#jp-bubble-pin').addEventListener('click', () => void this.createFromSelection());
@@ -198,11 +196,14 @@ namespace JP {
       window.addEventListener('popstate', () => this.checkPageRoute());
       extensionApi().runtime.onMessage.addListener((message: {type: string; selectionText?: string}, _sender: unknown, respond: (result: unknown) => void) => {
         if (message.type === 'JP_PING') { respond({ ready: true }); return false; }
-        if (message.type === 'JP_TOGGLE_UI') { this.toggle(); respond({ ok: true }); return false; }
-        if (message.type === 'JP_OPEN_LAUNCHER') { this.openLauncher(); respond({ ok: true }); return false; }
-        if (message.type === 'JP_TOGGLE_LAUNCHER') { this.toggleLauncher(); respond({ ok: true }); return false; }
+        if (message.type === 'JP_TOGGLE_UI' || message.type === 'JP_TOGGLE_LAUNCHER') {
+          this.toggle(); respond({ ok: true }); return false;
+        }
+        if (message.type === 'JP_OPEN_DOCK' || message.type === 'JP_OPEN_LAUNCHER') {
+          this.showDock(); respond({ ok: true }); return false;
+        }
         if (message.type === 'JP_CREATE_FROM_CONTEXT') {
-          this.openLauncher();
+          this.showDock();
           void this.createFromContext(message.selectionText || '').then(
             ok => respond({ok}), () => respond({ok:false}));
           return true;
@@ -242,7 +243,6 @@ namespace JP {
     private openSettings(): void {
       void extensionApi().runtime.sendMessage({ type: 'JP_OPEN_SITE_SETUP' }).catch(() => this.toast('请从扩展管理页打开 JotPatch 设置。'));
     }
-    private renderLauncher(): void { this.$<HTMLElement>('#jp-launcher').hidden = !this.launcherOpen; }
 
     private checkPageRoute(): void {
       const next = pageKey(location.href);
@@ -343,7 +343,8 @@ namespace JP {
         this.pendingRange = null;
         this.$<HTMLElement>('#jp-bubble').hidden = true;
         document.getSelection()?.removeAllRanges();
-        this.launcherOpen = false; this.renderLauncher();
+        // The Dock remains the single stable control surface after creation.
+        this.listOpen = false;
         this.refreshAnchors(); this.showCard(note.id, true);
         return true;
       } catch (error) { console.warn('JotPatch creation failed', error); this.toast('保存失败，未创建便签'); return false; }
@@ -679,13 +680,22 @@ namespace JP {
       const turns=this.conversationNavigation?this.conversation.turns:[];
       const showTurns=turns.length>=3&&!this.conversation.nativeRailPresent;
       const anchored=this.notes.filter(note=>!!note.anchor);
-      rail.hidden=!this.notes.length&&!showTurns;
+      // The Dock must exist even on a blank page: it owns the first-note and
+      // settings actions. Only the navigation track collapses when unused.
+      const compact = !showTurns && !anchored.some(note=>note.spatial?.pageProgress!==undefined);
+      rail.hidden = !this.visible;
+      rail.classList.toggle('compact',compact);
+      rail.classList.toggle('no-notes',!this.notes.length&&!showTurns);
       rail.classList.toggle('with-conversation',showTurns);
       rail.classList.toggle('native-nav',this.conversation.nativeRailPresent);
       const toggle=this.$<HTMLButtonElement>('#jp-list-toggle');
-      toggle.textContent=showTurns?'≡':String(this.notes.length);
+      toggle.hidden = !this.notes.length&&!showTurns;
+      toggle.textContent='≡';
       toggle.title=showTurns?`已发现 ${turns.length} 轮 · ${this.notes.length} 张便签`:`本页 ${this.notes.length} 张便签`;
+      toggle.setAttribute('aria-label',toggle.title);
       const track=this.$<HTMLElement>('#jp-rail-track');
+      track.hidden=compact;
+      this.$<HTMLElement>('#jp-list').classList.toggle('native-nav',this.conversation.nativeRailPresent);
       const live=turns.filter(turn=>turn.element?.isConnected);
       const byTurn=new Map<string,Note[]>();
       const unassigned:Note[]=[];
@@ -700,10 +710,19 @@ namespace JP {
           existing.push(note);byTurn.set(identity,existing);
         }else unassigned.push(note);
       }
-      // The streaming assistant can mutate hundreds of text nodes without
-      // adding a single question. Do not destroy/recreate the entire rail for
-      // each MutationObserver callback: it causes focus loss and visible jitter.
-      const signature=JSON.stringify({page:this.page,showTurns,
+      // Do not count plotted page anchors as "loose" notes. In compact mode
+      // the list already exposes all notes, so a second count would be noise.
+      const represented = new Set(showTurns
+        ? [...byTurn.values()].flatMap(group=>group.map(note=>note.id))
+        : anchored.filter(note=>note.spatial?.pageProgress!==undefined).map(note=>note.id));
+      const otherCount=this.notes.filter(note=>!represented.has(note.id)).length;
+      const bottom=this.$<HTMLButtonElement>('#jp-loose-toggle');
+      bottom.hidden=compact||otherCount===0;
+      if(!bottom.hidden){bottom.textContent=String(otherCount);bottom.title=`${otherCount} 张悬浮或待定位便签`;}
+      rail.classList.toggle('has-loose',!bottom.hidden);
+      // Streaming may mutate hundreds of text nodes: avoid destroying/rebuilding
+      // the rail on each scan, which loses focus and causes visible jitter.
+      const signature=JSON.stringify({page:this.page,showTurns,compact,otherCount,
         native:this.conversation.nativeRailPresent,
         turnIds:showTurns?turns.map(t=>t.id):[],
         notes:this.notes.map(n=>[n.id,!!n.anchor,appearance(n).color,n.conversationTurnId]),
@@ -737,7 +756,7 @@ namespace JP {
           track.appendChild(bar);
           for(const note of notes)this.addRailNote(track,note);
         }
-        this.applyRailLayout(layoutConversationRail(this.railGroups,track.clientHeight||Math.max(170,innerHeight*.68-65)));
+        this.applyRailLayout(layoutConversationRail(this.railGroups,track.clientHeight||Math.max(130,innerHeight*.68-115)));
       }else{
         const points:PageRailPoint[]=[];
         for(const note of anchored){
@@ -746,13 +765,8 @@ namespace JP {
           points.push({noteId:note.id,fraction});
           this.addRailNote(track,note);
         }
-        this.applyRailLayout(layoutPageRail(points,track.clientHeight||Math.max(170,innerHeight*.68-65)));
+        this.applyRailLayout(layoutPageRail(points,track.clientHeight||Math.max(130,innerHeight*.68-115)));
       }
-      const assignedIds=new Set(this.railGroups.flatMap(group=>group.noteIds));
-      const bottom=this.$<HTMLButtonElement>('#jp-loose-toggle');
-      const otherCount=this.notes.filter(note=>!note.anchor||!assignedIds.has(note.id)).length;
-      bottom.hidden=otherCount===0;
-      if(!bottom.hidden){bottom.textContent=String(otherCount);bottom.title=`${otherCount} 张悬浮或待定位便签`;}
       this.activeTurnId=null;this.updateActiveTurn();this.renderList();
     }
 
@@ -828,6 +842,7 @@ namespace JP {
       const list=this.$<HTMLElement>('#jp-list');
       const turns=this.conversationNavigation&&!this.conversation.nativeRailPresent?this.conversation.turns:[];
       list.hidden=!this.listOpen || (!this.notes.length&&turns.length<3);
+      this.$<HTMLButtonElement>('#jp-list-toggle').setAttribute('aria-expanded',String(!list.hidden));
       if(list.hidden)return;
       list.replaceChildren();
       const head=el('div','list-header');

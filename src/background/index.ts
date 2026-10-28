@@ -97,8 +97,8 @@ api.action.onClicked.addListener(async(tab:any)=>{
   try{
     const ready=await contentReady(tab.id);
     if(!ready)await ensureInjected(tab.id);
-    const response=await send(tab.id,{type:ready?'JP_TOGGLE_LAUNCHER':'JP_OPEN_LAUNCHER'});
-    if(response?.ok!==true)throw new Error('Content script did not acknowledge launcher');
+    const response=await send(tab.id,{type:ready?'JP_TOGGLE_UI':'JP_OPEN_DOCK'});
+    if(response?.ok!==true)throw new Error('Content script did not acknowledge Dock visibility');
   }catch(error){
     console.warn('JotPatch could not activate on this page:',error);
     await showActivationHelp('failed');
