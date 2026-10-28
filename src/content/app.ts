@@ -1,7 +1,6 @@
 namespace JP {
   // Lightweight paper notes and a passive, shared conversation/notes timeline.
   const PREFERENCE_KEY = 'jotpatch:preferences:v1';
-  const BRAND_LINE = 'Powered by Housz';
 
   export class JotPatchApp {
     private repo = new NoteRepository(extensionApi().storage.local);
@@ -19,6 +18,8 @@ namespace JP {
     private cards = new Map<string, HTMLElement>();
     private visible = true;
     private listOpen = false;
+    // Display state is per page session; it never changes stored Note records.
+    private floatingNotesVisible = false;
     private selectionTrigger: SelectionTrigger = 'always';
     private conversationNavigation = true;
     private navigationLab = false;
@@ -108,7 +109,7 @@ namespace JP {
           <button id="jp-new" class="rail-new" aria-label="新建本页悬浮便签" title="新建本页悬浮便签" type="button">+</button>
           <button id="jp-list-toggle" class="rail-head" aria-label="打开本页导航列表" aria-controls="jp-list" aria-expanded="false" title="打开本页导航列表" type="button" hidden>≡</button>
           <div class="rail-track" id="jp-rail-track" hidden></div>
-          <button id="jp-loose-toggle" class="rail-loose" title="本页悬浮或待定位便签" aria-label="查看本页悬浮或待定位便签" type="button" hidden>▤</button>
+          <button id="jp-loose-toggle" class="rail-loose" title="显示全部本页悬浮便签" aria-label="显示全部本页悬浮便签" aria-pressed="false" type="button" hidden>0</button>
           <button id="jp-settings" class="rail-settings" aria-label="打开 JotPatch 设置" title="设置" type="button">⚙</button>
         </nav>
         <div id="jp-turn-preview" class="turn-preview" role="tooltip" hidden></div>
@@ -154,9 +155,7 @@ namespace JP {
       window.addEventListener('keydown',event=>{
         if(['PageUp','PageDown','Home','End','ArrowUp','ArrowDown',' '].includes(event.key))userInterrupt();
       },true);
-      this.$<HTMLButtonElement>('#jp-loose-toggle').addEventListener('click', () => {
-        this.listOpen = true; this.renderList();
-      });
+      this.$<HTMLButtonElement>('#jp-loose-toggle').addEventListener('click', () => this.toggleFloatingNotes());
       const track=this.$<HTMLElement>('#jp-rail-track');
       // Rail buttons themselves own hover previews and direct navigation.
       // Even if several buttons are only pixels apart, never intercept clicks
@@ -277,6 +276,7 @@ namespace JP {
       this.$<HTMLElement>('#jp-bubble').hidden = true;
       if(this.unpinUndo)clearTimeout(this.unpinUndo.timer);
       this.unpinUndo=null;
+      this.floatingNotesVisible = false;
       this.openIds.clear(); this.explicitlyDetachedIds.clear(); this.cards.clear(); this.$<HTMLElement>('#jp-cards').replaceChildren();
       this.listOpen = false;
       this.hideTurnPreview();
@@ -363,7 +363,9 @@ namespace JP {
         this.pendingRange = null;
         this.$<HTMLElement>('#jp-bubble').hidden = true;
         document.getSelection()?.removeAllRanges();
-        // The Dock remains the single stable control surface after creation.
+        // A newly created floating note must always be visible. Existing
+        // floating notes remain closed unless the group toggle is used.
+        if(!anchor)this.floatingNotesVisible=true;
         this.listOpen = false;
         this.refreshAnchors(); this.showCard(note.id, true);
         return true;
@@ -732,19 +734,21 @@ namespace JP {
           existing.push(note);byTurn.set(identity,existing);
         }else unassigned.push(note);
       }
-      // Do not count plotted page anchors as "loose" notes. In compact mode
-      // the list already exposes all notes, so a second count would be noise.
-      const represented = new Set(showTurns
-        ? [...byTurn.values()].flatMap(group=>group.map(note=>note.id))
-        : anchored.filter(note=>note.spatial?.pageProgress!==undefined).map(note=>note.id));
-      const otherCount=this.notes.filter(note=>!represented.has(note.id)).length;
+      // The lower number represents only L2 page-floating notes, never
+      // unresolved anchored notes or conversation turns. It is a show/hide
+      // command, not a second entry point to the full navigation list.
+      const floatCount=this.notes.filter(note=>!note.anchor).length;
       const bottom=this.$<HTMLButtonElement>('#jp-loose-toggle');
-      bottom.hidden=compact||otherCount===0;
-      if(!bottom.hidden){bottom.textContent=String(otherCount);bottom.title=`${otherCount} 张悬浮或待定位便签`;}
+      bottom.hidden=floatCount===0;
+      bottom.textContent=String(floatCount);
+      const action=this.floatingNotesVisible?'隐藏':'显示';
+      bottom.title=`${action}全部 ${floatCount} 张本页悬浮便签`;
+      bottom.setAttribute('aria-label',bottom.title);
+      bottom.setAttribute('aria-pressed',String(this.floatingNotesVisible));
       rail.classList.toggle('has-loose',!bottom.hidden);
       // Streaming may mutate hundreds of text nodes: avoid destroying/rebuilding
       // the rail on each scan, which loses focus and causes visible jitter.
-      const signature=JSON.stringify({page:this.page,showTurns,compact,otherCount,
+      const signature=JSON.stringify({page:this.page,showTurns,compact,floatCount,
         native:this.conversation.nativeRailPresent,
         turnIds:showTurns?turns.map(t=>t.id):[],
         notes:this.notes.map(n=>[n.id,!!n.anchor,appearance(n).color,n.conversationTurnId]),
@@ -821,6 +825,19 @@ namespace JP {
       }
     }
 
+    private toggleFloatingNotes():void {
+      const floating=this.notes.filter(note=>!note.anchor);
+      if(!floating.length)return;
+      this.floatingNotesVisible=!this.floatingNotesVisible;
+      if(this.floatingNotesVisible){
+        for(const note of floating)this.showCard(note.id);
+      }else{
+        for(const note of floating)this.closeCard(note.id);
+      }
+      // renderDock updates the pressed state, without changing note storage.
+      this.renderDock();
+    }
+
     private addRailNote(track:HTMLElement,note:Note):HTMLButtonElement {
       const button=el('button',`rail-pin${note.anchor&&!this.liveMatch(note)?' missing':''}`);
       button.type='button';button.dataset.noteId=note.id;button.dataset.railKey=`note:${note.id}`;
@@ -866,12 +883,9 @@ namespace JP {
       list.hidden=!this.listOpen || (!this.notes.length&&turns.length<3);
       this.$<HTMLButtonElement>('#jp-list-toggle').setAttribute('aria-expanded',String(!list.hidden));
       if(list.hidden)return;
+      // The Dock button itself toggles this list. Keep content only:
+      // no redundant app title, close-toolbar chrome, or brand footer.
       list.replaceChildren();
-      const head=el('div','list-header');
-      const title=el('span');title.textContent='JotPatch';
-      const close=el('button');close.type='button';close.textContent='×';close.title='关闭列表';
-      close.addEventListener('click',()=>{this.listOpen=false;this.renderList();});
-      head.append(title,close);list.appendChild(head);
       const hasTurns=turns.length>=3;
       const live=turns.filter(t=>t.element?.isConnected);
       const mapped=new Set<string>();
@@ -898,7 +912,7 @@ namespace JP {
         const heading=el('div','list-section');heading.textContent=hasTurns?'悬浮便签':'本页便签';list.appendChild(heading);
         for(const note of others)this.addListNote(list,note,false);
       }
-      const footer=el('div','list-footer');footer.textContent=BRAND_LINE;list.appendChild(footer);
+
     }
 
     private addListNote(list:HTMLElement,note:Note,nested:boolean):void {
@@ -1094,9 +1108,20 @@ namespace JP {
       let paper=this.cards.get(noteId);
       if(!paper) { paper=this.makePaper(note); this.cards.set(noteId,paper); this.$<HTMLElement>('#jp-cards').appendChild(paper); }
       this.openIds.add(noteId);
-      paper.style.zIndex=String(++this.zOrder);
+      this.bringCardToFront(paper);
       this.positionCard(noteId);
       if(focus) paper.querySelector<HTMLElement>('.note-editor')?.focus({preventScroll:true});
+    }
+    private bringCardToFront(paper:HTMLElement):void {
+      // Keep the note stack below the Dock (z-index 1000), even after
+      // hundreds of pointer gestures. Preserve relative stacking on reset.
+      if(this.zOrder>=650){
+        const ordered=[...this.cards.values()].filter(card=>card.isConnected)
+          .sort((a,b)=>(Number(a.style.zIndex)||0)-(Number(b.style.zIndex)||0));
+        ordered.forEach((card,index)=>{card.style.zIndex=String(9+index);});
+        this.zOrder=ordered.length+8;
+      }
+      paper.style.zIndex=String(++this.zOrder);
     }
     private closeCard(noteId: string): void {
       void this.saveNow(noteId);
@@ -1178,8 +1203,8 @@ namespace JP {
           }
         }
       });
-      paper.addEventListener('pointerdown',()=>{paper.style.zIndex=String(++this.zOrder);});
-      paper.addEventListener('focusin',()=>{paper.style.zIndex=String(++this.zOrder);});
+      paper.addEventListener('pointerdown',()=>this.bringCardToFront(paper));
+      paper.addEventListener('focusin',()=>this.bringCardToFront(paper));
       paper.addEventListener('wheel',(event:WheelEvent)=>{
         // Cancel browser zoom only while the pointer is inside a note.
         if(!event.ctrlKey || !event.cancelable)return;
@@ -1203,9 +1228,16 @@ namespace JP {
       const menuTrigger=paper.querySelector<HTMLButtonElement>('.menu-trigger')!;
       menuTrigger.addEventListener('click',()=>{
         for(const other of this.cards.values())if(other!==paper){
-          const otherMenu=other.querySelector<HTMLElement>('.note-menu');if(otherMenu)otherMenu.hidden=true;
+          const otherMenu=other.querySelector<HTMLElement>('.note-menu');
+          if(otherMenu)otherMenu.hidden=true;
+          other.querySelector('.menu-trigger')?.setAttribute('aria-expanded','false');
         }
-        menu.hidden=!menu.hidden;menuTrigger.setAttribute('aria-expanded',String(!menu.hidden));
+        menu.hidden=!menu.hidden;
+        menuTrigger.setAttribute('aria-expanded',String(!menu.hidden));
+        if(!menu.hidden){
+          this.bringCardToFront(paper);
+          this.positionNoteMenu(paper,menu,menuTrigger);
+        }
       });
       paper.querySelector('.delete-menu')!.addEventListener('click',()=>{menu.hidden=true;void this.deleteNote(note.id);});
       for(const button of paper.querySelectorAll<HTMLButtonElement>('.font-size')){
@@ -1228,6 +1260,23 @@ namespace JP {
       this.installDrag(paper.querySelector<HTMLElement>('.drag-region')!,note,'move');
       this.installDrag(paper.querySelector<HTMLElement>('.resize-handle')!,note,'resize');
       return paper;
+    }
+
+    private positionNoteMenu(paper:HTMLElement,menu:HTMLElement,trigger:HTMLElement):void {
+      // A note can be just 132px high. Never clip its actions to paper bounds,
+      // and flip the menu above the header when the viewport bottom is near.
+      menu.style.top='29px';menu.style.bottom='auto';
+      menu.style.left='auto';menu.style.right='5px';
+      const rect=menu.getBoundingClientRect();
+      const head=trigger.getBoundingClientRect();
+      const parent=paper.getBoundingClientRect();
+      if(rect.bottom>innerHeight-8 && head.top>rect.height+12){
+        menu.style.top='auto';
+        menu.style.bottom=`${Math.round(parent.bottom-head.top+5)}px`;
+      }
+      if(menu.getBoundingClientRect().left<8){
+        menu.style.right='auto';menu.style.left='5px';
+      }
     }
 
     private fontPixels(size:NoteFontSize):string {
@@ -1255,6 +1304,10 @@ namespace JP {
         if(event.button!==0)return;
         // Entire fixed header is draggable, but its buttons remain clickable.
         if(mode==='move' && (event.target as Element).closest('button'))return;
+        // Header drag stops bubbling: raise explicitly before capturing the
+        // pointer, otherwise clicking a lower paper's title never reorders it.
+        const activePaper=this.cards.get(note.id)||handle.closest<HTMLElement>('.paper');
+        if(activePaper)this.bringCardToFront(activePaper);
         event.preventDefault();event.stopPropagation();
         handle.setPointerCapture(event.pointerId);
         const initial=appearance(note),startX=event.clientX,startY=event.clientY;
@@ -1454,6 +1507,7 @@ namespace JP {
       this.unpinUndo={noteId,anchor:{...note.anchor},turnId:note.conversationTurnId,oldAppearance:{...style},pageKey:this.page,timer};
       if(this.deletedUndo){clearTimeout(this.deletedUndo.timer);this.deletedUndo=null;}
       note.anchor=undefined;
+      this.floatingNotesVisible=true;
       note.conversationTurnId=undefined;
       this.explicitlyDetachedIds.delete(noteId);
       // Preserve the top-left screen position instead of teleporting the paper
