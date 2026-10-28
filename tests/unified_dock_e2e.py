@@ -84,6 +84,11 @@ def run():
         expect(panel).to_be_visible()
         expect(page.locator('#jotpatch-root .note-entry')).to_have_count(1)
         expect(list_button).to_have_attribute('aria-expanded','true')
+        compact_dock=rail.bounding_box()
+        compact_panel=panel.bounding_box()
+        assert compact_dock and compact_panel
+        assert abs((compact_panel['y']+compact_panel['height']/2)-
+                   (compact_dock['y']+compact_dock['height']/2)) < 45
         panel.locator('.list-header button').click()
         expect(panel).to_be_hidden()
         expect(list_button).to_have_attribute('aria-expanded','false')

@@ -52,6 +52,7 @@ namespace JP {
       overflow:auto;pointer-events:auto;background:#fffefaf7;border:1px solid #eae5da;
       border-radius:9px;box-shadow:0 8px 26px #0002;padding:6px}
     .list.native-nav{right:88px}
+    .list.compact{top:50%;transform:translateY(-50%);max-height:65vh}
     .list-header{display:flex;justify-content:space-between;align-items:center;padding:7px 7px 10px;font-weight:600}
     .list-header button{background:transparent;color:#777;margin:0 3px;font-size:16px}
         .entry{width:100%;background:transparent;padding:7px 7px;display:flex;align-items:center;gap:8px;

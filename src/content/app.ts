@@ -711,7 +711,9 @@ namespace JP {
       toggle.setAttribute('aria-label',toggle.title);
       const track=this.$<HTMLElement>('#jp-rail-track');
       track.hidden=compact;
-      this.$<HTMLElement>('#jp-list').classList.toggle('native-nav',this.conversation.nativeRailPresent);
+      const list=this.$<HTMLElement>('#jp-list');
+      list.classList.toggle('native-nav',this.conversation.nativeRailPresent);
+      list.classList.toggle('compact',compact);
       const live=turns.filter(turn=>turn.element?.isConnected);
       const byTurn=new Map<string,Note[]>();
       const unassigned:Note[]=[];
