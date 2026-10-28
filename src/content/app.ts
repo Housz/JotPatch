@@ -26,6 +26,7 @@ namespace JP {
     private navigationLabIndex = new NavigationLabIndex();
     private labLastMetrics: Omit<LabNavigationResult,'turn'>|null = null;
     private defaultNoteColorMode: DefaultNoteColorMode = 'yellow';
+    private uiTransparency: UiTransparency = 'clear';
     private lastAutoColor: NoteColor | null = null;
     private conversation: ConversationSnapshot = { site: null, turns: [], nativeRailPresent: false };
     private conversationTimer = 0;
@@ -240,6 +241,9 @@ namespace JP {
           this.navigationLab=preferences?.navigationLab===true;
           if(wasLab!==this.navigationLab){this.cancelNavigation(false);this.labLastMetrics=null;}
           this.defaultNoteColorMode = preferences?.defaultNoteColorMode === 'random' ? 'random' : 'yellow';
+          this.uiTransparency = preferences?.uiTransparency === 'soft' || preferences?.uiTransparency === 'light'
+            ? preferences.uiTransparency : 'clear';
+          this.applyTransparency();
           this.$<HTMLElement>('#jp-bubble').hidden = true;
           this.refreshConversation();
         }
@@ -257,8 +261,24 @@ namespace JP {
         this.conversationNavigation = prefs.conversationNavigation;
         this.navigationLab = prefs.navigationLab;
         this.defaultNoteColorMode = prefs.defaultNoteColorMode;
-      } catch { this.selectionTrigger = 'always'; this.conversationNavigation = true; this.defaultNoteColorMode = 'yellow'; this.navigationLab=false; }
+        this.uiTransparency = prefs.uiTransparency;
+      } catch { this.selectionTrigger = 'always'; this.conversationNavigation = true; this.defaultNoteColorMode = 'yellow'; this.navigationLab=false; this.uiTransparency='clear'; }
+      this.applyTransparency();
     }
+    private applyTransparency():void {
+      // Only surfaces become translucent; text, buttons, editor caret and
+      // focus rings keep their normal contrast. No expensive backdrop blur.
+      const presets={
+        clear:['100%','#fffdf9d9','#fffefaf7'],
+        soft:['94%','#fffdf9d1','#fffefaf0'],
+        light:['86%','#fffdf9b8','#fffefae6']
+      } as const;
+      const [paper,dock,list]=presets[this.uiTransparency];
+      this.host.style.setProperty('--jp-paper-amount',paper);
+      this.host.style.setProperty('--jp-dock-surface',dock);
+      this.host.style.setProperty('--jp-list-surface',list);
+    }
+
     private openSettings(): void {
       void extensionApi().runtime.sendMessage({ type: 'JP_OPEN_SITE_SETUP' }).catch(() => this.toast('请从扩展管理页打开 JotPatch 设置。'));
     }
@@ -1192,6 +1212,13 @@ namespace JP {
         document.execCommand('insertText',false,event.clipboardData?.getData('text/plain')||'');
       });
       editor.addEventListener('keydown',(event:KeyboardEvent)=>{
+        if(event.key==='Tab' && !event.altKey && !event.isComposing){
+          // Ctrl+Tab can be browser-reserved. Shift+Tab is the reliable
+          // equivalent for moving indentation back.
+          event.preventDefault();event.stopPropagation();
+          indentNoteEditor(editor,event.ctrlKey||event.metaKey||event.shiftKey);
+          return;
+        }
         if((event.ctrlKey||event.metaKey)&&!event.altKey){
           const key=event.key.toLowerCase();
           if(key==='b'||key==='i'){

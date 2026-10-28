@@ -1,6 +1,7 @@
 namespace JP {
   export const PAPER_STYLES = `
-    :host{all:initial;font:13px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif;color:#37342e}
+    :host{all:initial;font:13px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif;color:#37342e;
+      --jp-paper-amount:100%;--jp-dock-surface:#fffdf9d9;--jp-list-surface:#fffefaf7}
     :host([hidden]){display:none!important}
     *,*::before,*::after{box-sizing:border-box} [hidden]{display:none!important}
     button{font:inherit;border:0;cursor:pointer} button:focus-visible,[contenteditable]:focus-visible{outline:2px solid #7461ae;outline-offset:2px}
@@ -11,7 +12,7 @@ namespace JP {
     /* One stable surface for creation, navigation and settings. On an empty
        page it collapses to two controls instead of showing an empty track. */
     .rail{position:fixed;z-index:1000;right:7px;top:50%;transform:translateY(-50%);height:68vh;max-height:730px;
-      min-height:230px;width:38px;border-radius:19px;background:#fffdf9d9;
+      min-height:230px;width:38px;border-radius:19px;background:var(--jp-dock-surface);
       border:1px solid #e7e2d7;box-shadow:0 2px 10px #0001;pointer-events:auto}
     .rail.native-nav{right:42px}
     .rail.compact{height:114px;min-height:0;max-height:none}
@@ -53,7 +54,7 @@ namespace JP {
       overflow-wrap:anywhere;white-space:pre-line;max-height:8.4em;overflow:hidden}
 
     .list{position:fixed;z-index:1010;right:53px;top:19%;width:min(298px,calc(100vw - 108px));max-height:69vh;
-      overflow:auto;pointer-events:auto;background:#fffefaf7;border:1px solid #eae5da;
+      overflow:auto;pointer-events:auto;background:var(--jp-list-surface);border:1px solid #eae5da;
       border-radius:9px;box-shadow:0 8px 26px #0002;padding:4px 5px}
     .list.native-nav{right:88px}
     .list.compact{top:50%;transform:translateY(-50%);max-height:65vh}
@@ -76,9 +77,11 @@ namespace JP {
     .marker{position:fixed;z-index:4;width:19px;height:19px;pointer-events:auto;border-radius:50%;padding:0;
       box-shadow:0 2px 7px #0003;color:#755d24;font-size:11px;border:1px solid #fff9}
     .paper{--paper:#fff1b8;--jp-font-size:14px;position:fixed;z-index:8;display:flex;flex-direction:column;
-      background:var(--paper);border:1px solid #0000000d;border-radius:4px;box-shadow:0 5px 18px #0002;
+      background:color-mix(in srgb,var(--paper) var(--jp-paper-amount),transparent);
+      border:1px solid #0000000d;border-radius:4px;box-shadow:0 5px 18px #0002;
       pointer-events:auto;min-width:180px;min-height:132px;overflow:visible}
-    .paper:focus-within{box-shadow:0 6px 24px #0003}.paper:hover{box-shadow:0 6px 21px #0003}
+    .paper:focus-within{box-shadow:0 6px 24px #0003;background:var(--paper)}
+    .paper:hover{box-shadow:0 6px 21px #0003}
     .paper-head,.paper-foot{width:100%;display:flex;align-items:center;flex:0 0 28px;
       padding:2px 5px;user-select:none;border-color:transparent;transition:background .13s ease}
     .paper-head{justify-content:space-between;cursor:grab;touch-action:none}

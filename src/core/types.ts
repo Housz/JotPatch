@@ -17,6 +17,7 @@ namespace JP {
   export type SelectionTrigger = 'always' | 'alt' | 'off';
   export type NoteFontSize = 'sm' | 'md' | 'lg';
   export type DefaultNoteColorMode = 'yellow' | 'random';
+  export type UiTransparency = 'clear' | 'soft' | 'light';
 
   export interface NoteAppearance {
     color: NoteColor;
@@ -57,6 +58,7 @@ namespace JP {
     conversationNavigation: boolean;
     navigationLab: boolean;
     defaultNoteColorMode: DefaultNoteColorMode;
+    uiTransparency: UiTransparency;
   }
 
   export interface Match {
