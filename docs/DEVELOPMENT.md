@@ -64,6 +64,20 @@ Firefox 的衍生 Manifest、临时安装和验证差异见 [Firefox 指南](FIR
 - 浏览器控制台中的网站遥测错误不自动归因于 JotPatch。日志和测试页面不要保留真实聊天内容、账号或令牌。
 - 跨浏览器变更不要增加未经批准的权限、云同步或未公开 AI 网站接口。
 
+## v0.1.19 统一 Dock 回归
+
+`tests/unified_dock_e2e.py` 是使用真实浏览器 DOM 和模拟 WebExtension 存储的交互回归；Firefox 原生工具栏到内容脚本的消息链仍由 Selenium `tests/firefox_addon_smoke.py` 验证。
+
+```bash
+npm run check
+JP_CHROMIUM_BIN=playwright python tests/unified_dock_e2e.py
+JP_E2E_BROWSER=firefox python tests/unified_dock_e2e.py
+# 已完成 Firefox 包构建且安装 Selenium / geckodriver 后：
+python tests/firefox_addon_smoke.py
+```
+
+重点覆盖首次进入空页面能新建便签、悬浮便签列表、Esc/页面点击关闭、工具栏显隐、选中文字 📌、本地数据刷新恢复、长 ChatGPT 对话横条直接点击与原生导航回退。合成 DOM 不等于真实登录网页人工验收。具体范围见 [设计与验收记录](UNIFIED_DOCK_0_1_19.md)。
+
 ## 只修改文档
 
 从 [Agent Skill](../.agents/skills/jotpatch-documentation/SKILL.md)进入 [写作规则](WRITING_STYLE.md)、[文档类型与验收](DOCUMENTATION_TYPES.md)，按 D01–D12 确定内容归属。保留历史实验与发行证据，不因重写 README 顺便修改源码、Manifest、签名或 Tag。
