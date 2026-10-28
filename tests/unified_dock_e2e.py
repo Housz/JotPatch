@@ -106,7 +106,7 @@ def run():
         }""")
         new_button.click(trial=True)
         settings.click(trial=True)
-        first_paper.set_attribute('style',original_style)
+        first_paper.evaluate('(el,style)=>el.setAttribute("style",style)',original_style)
         print('PASS: Dock controls remain interactable when a dragged paper overlaps them')
 
         # Keyboard access; Escape closes the panel and returns focus to its control.
