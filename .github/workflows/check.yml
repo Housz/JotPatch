@@ -61,6 +61,9 @@ jobs:
           python tests/unified_dock_e2e.py
           python tests/math_selection_e2e.py
           python tests/conversation_e2e.py
+          python tests/spatial_rail_e2e.py
+          python tests/stable_rail_e2e.py
+          python tests/optimization_e2e.py
           python tests/virtualized_notes_e2e.py
           python tests/branding_e2e.py
           python tests/navigation_recovery_e2e.py
@@ -72,6 +75,9 @@ jobs:
           python tests/unified_dock_e2e.py
           python tests/math_selection_e2e.py
           python tests/conversation_e2e.py
+          python tests/spatial_rail_e2e.py
+          python tests/stable_rail_e2e.py
+          python tests/optimization_e2e.py
           python tests/virtualized_notes_e2e.py
           python tests/branding_e2e.py
           python tests/navigation_recovery_e2e.py
