@@ -17,6 +17,7 @@ namespace JP {
   export type SelectionTrigger = 'always' | 'alt' | 'off';
   export type NoteFontSize = 'sm' | 'md' | 'lg';
   export type DefaultNoteColorMode = 'yellow' | 'random';
+  export type UiTransparency = 'clear' | 'soft' | 'light';
 
   export interface NoteAppearance {
     color: NoteColor;
@@ -25,6 +26,8 @@ namespace JP {
     height: number;
     offsetX: number;
     offsetY: number;
+    /** Optional, backwards compatible with existing v1 notes. */
+    collapsed?: boolean;
   }
 
   export interface Note {
@@ -57,6 +60,7 @@ namespace JP {
     conversationNavigation: boolean;
     navigationLab: boolean;
     defaultNoteColorMode: DefaultNoteColorMode;
+    uiTransparency: UiTransparency;
   }
 
   export interface Match {

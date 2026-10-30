@@ -2,7 +2,15 @@
 
 JotPatch uses the same note, anchoring and navigation source as Chrome/Edge, with a Firefox-specific Manifest V3 event page and Mozilla-signed XPI distribution.
 
-## v0.1.18: Firefox ZIP ready for manual Mozilla signing
+## v0.1.20: stable source and manual Firefox signing
+
+[GitHub Release v0.1.20](https://github.com/Housz/JotPatch/releases/tag/v0.1.20) includes both `JotPatch-v0.1.20-chromium.zip` and the **unsigned** `JotPatch-v0.1.20-firefox.zip`, built from the same tested release source. The Firefox ZIP is the submission file for the **existing** Mozilla AMO Unlisted JotPatch add-on, not a permanent-installable package.
+
+The maintainer will obtain a Mozilla-signed `JotPatch-v0.1.20-firefox-signed.xpi` and add it to this GitHub Release after validating the original add-on ID `{8801fba0-08ef-481b-a4b6-870a061b2878}`, version, and in-place upgrade from a previously signed XPI. Until that exact signed v0.1.20 asset is actually available, keep using your existing signed Firefox version; **do not uninstall it to upgrade**.
+
+This release consolidates the previously unreleased v0.1.19 Dock and UI improvements and adds v0.1.20 lightweight current-line editor copy/cut, Shift+Tab-only outdent, and header-only collapsible notes. Chrome/Firefox DOM regression and a real temporarily installed Firefox MV3 add-on were exercised; Mozilla production signing and authenticated ChatGPT/Gemini manual testing remain separate checks.
+
+## Previous unsigned Firefox ZIP (v0.1.18)
 
 The [v0.1.18 GitHub Release](https://github.com/Housz/JotPatch/releases/tag/v0.1.18) is built from the same verified source commit as the Chromium ZIP. It includes `JotPatch-v0.1.18-firefox.zip`, an **unsigned** Firefox 142+ package. The maintainer will upload this ZIP to the existing Mozilla AMO **Unlisted / On your own** add-on, then separately attach the signed `JotPatch-v0.1.18-firefox-signed.xpi` after verification.
 

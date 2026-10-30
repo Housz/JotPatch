@@ -12,6 +12,7 @@ const labToggle = document.querySelector('#navigation-lab');
 const labStatus = document.querySelector('#lab-status');
 const conversationStatus = document.querySelector('#conversation-status');
 const colorStatus = document.querySelector('#color-status');
+const transparencyStatus = document.querySelector('#transparency-status');
 let preferenceWrite = Promise.resolve();
 function updatePreferences(patch) {
   // Serialize rapidly toggled options so read/modify/write updates do not race.
@@ -40,6 +41,9 @@ api.storage.local.get(prefKey).then((stored) => {
   labToggle.checked = stored[prefKey]?.navigationLab === true;
   const colorMode = stored[prefKey]?.defaultNoteColorMode === 'random' ? 'random' : 'yellow';
   document.querySelector(`input[name="defaultNoteColorMode"][value="${colorMode}"]`).checked = true;
+  const transparency = ['soft','light'].includes(stored[prefKey]?.uiTransparency)
+    ? stored[prefKey].uiTransparency : 'clear';
+  document.querySelector(`input[name="uiTransparency"][value="${transparency}"]`).checked = true;
 });
 for (const radio of document.querySelectorAll('input[name="selectionTrigger"]')) {
   radio.addEventListener('change', async () => {
@@ -98,5 +102,15 @@ for (const radio of document.querySelectorAll('input[name="defaultNoteColorMode"
     } catch {
       colorStatus.textContent = '保存失败，请重试。';
     }
+  });
+}
+
+for (const radio of document.querySelectorAll('input[name="uiTransparency"]')) {
+  radio.addEventListener('change', async () => {
+    if (!radio.checked) return;
+    try {
+      await updatePreferences({uiTransparency: radio.value});
+      transparencyStatus.textContent = '已保存，已打开的网页立即生效。';
+    } catch { transparencyStatus.textContent = '保存失败，请重试。'; }
   });
 }

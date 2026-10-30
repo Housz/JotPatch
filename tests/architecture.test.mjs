@@ -49,9 +49,15 @@ test('core note storage has no WebExtension globals, is injectible and preserves
   assert.equal((await repo.get('abc')).text,'hello');
   assert.equal((await repo.list('page1')).length,1);
   assert.equal((await repo.list('another')).length,0);
+  assert.equal(sandbox.JP.appearance(note).collapsed,false);
+  const collapsed={...note,appearance:{height:202,collapsed:true}};
+  await repo.put(collapsed);
+  assert.equal(sandbox.JP.appearance(await repo.get('abc')).collapsed,true);
+  assert.equal(sandbox.JP.appearance(await repo.get('abc')).height,202);
   const pref=await repo.preferences();
   assert.equal(pref.navigationLab,false);
   assert.equal(pref.defaultNoteColorMode,'yellow');
+  assert.equal(pref.uiTransparency,'clear');
   assert.doesNotMatch(readFileSync('src/core/repository.ts','utf8'),/\bchrome\.|\bbrowser\./);
 });
 test('TypeScript bundle order guarantees site registry and browser seam before application startup',()=>{
@@ -61,6 +67,9 @@ test('TypeScript bundle order guarantees site registry and browser seam before a
   assert.ok(index('src/adapters/sites/registry.ts')<index('src/adapters/sites/chatgpt.ts'));
   assert.ok(index('src/adapters/sites/chatgpt.ts')<index('src/content/conversation.ts'));
   assert.ok(index('src/adapters/browsers/webextension.ts')<index('src/core/repository.ts'));
+  assert.ok(index('src/core/markdown.ts')<index('src/core/editor-indent.ts'));
+  assert.ok(index('src/core/editor-indent.ts')<index('src/core/editor-shortcuts.ts'));
+  assert.ok(index('src/core/editor-shortcuts.ts')<index('src/content/app.ts'));
   assert.equal(files.at(-1),'src/content/entry.ts');
   assert.ok(files.every(x=>!x.includes('src/content/repository.ts')));
 });

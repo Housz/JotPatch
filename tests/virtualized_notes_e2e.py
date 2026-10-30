@@ -62,7 +62,7 @@ def run():
 
         # A regular page-level note is not tied to a Text Range and remains
         # usable while virtualized chat messages mount/unmount.
-        page.evaluate("window.__jpSendMessage({type:'JP_OPEN_LAUNCHER'})")
+        page.evaluate("window.__jpSendMessage({type:'JP_OPEN_DOCK'})")
         page.locator('#jotpatch-root #jp-new').click()
         expect(page.locator('#jotpatch-root .paper:visible')).to_have_count(1)
         print('PASS: page-level note remains visible when text-anchored notes are unresolved')

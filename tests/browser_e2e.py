@@ -192,8 +192,8 @@ def run():
         expect(page.locator('#jotpatch-root .rail-pin')).to_have_count(before+1)
         print('PASS: preference live update and right-click creation with popup disabled')
 
-        # Page-level note from tiny launcher.
-        page.evaluate("window.__jpSendMessage({type:'JP_OPEN_LAUNCHER'})")
+        # Page-level note from the unified Dock.
+        page.evaluate("window.__jpSendMessage({type:'JP_OPEN_DOCK'})")
         page.locator('#jotpatch-root #jp-new').click()
         store=page.evaluate('() => structuredClone(window.__jotpatchFakeStore)')
         assert any(n.get('anchor') is None for n in store.values() if isinstance(n,dict) and n.get('id'))

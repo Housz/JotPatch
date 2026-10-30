@@ -62,6 +62,16 @@ def main():
         ''')
         assert value.get('defaultNoteColorMode')=='random',value
         print('PASS: Firefox browser.storage.local persisted a real options-page preference',flush=True)
+        transparency=driver.find_element(By.CSS_SELECTOR,'input[name="uiTransparency"][value="soft"]')
+        transparency.click()
+        WebDriverWait(driver,10).until(lambda d:'已保存' in d.find_element(By.ID,'transparency-status').text)
+        opacity=driver.execute_async_script('''
+            const done=arguments[arguments.length-1];
+            browser.storage.local.get('jotpatch:preferences:v1')
+              .then(v=>done(v['jotpatch:preferences:v1']?.uiTransparency),e=>done({error:String(e)}));
+        ''')
+        assert opacity=='soft',opacity
+        print('PASS: real Firefox transparency preference is persisted in the existing settings key',flush=True)
 
         # Verify an actual event-page message round-trip without granting hosts.
         response=driver.execute_async_script('''
@@ -114,7 +124,8 @@ def main():
                 WebDriverWait(driver,10).until(lambda d:d.execute_script('''
                     const root=document.querySelector("#jotpatch-root");
                     return !!(root && !root.hidden && root.shadowRoot &&
-                      !root.shadowRoot.querySelector("#jp-launcher").hidden);
+                      !root.shadowRoot.querySelector("#jp-rail").hidden &&
+                       !root.shadowRoot.querySelector("#jp-new").hidden);
                 '''))
             except TimeoutException as original_error:
                 # A failed action may open an options/help tab; the driver
@@ -127,7 +138,7 @@ def main():
                             const root=document.querySelector("#jotpatch-root");
                             return {url:location.href,title:document.title,hasRoot:!!root,
                               rootHidden:root?.hidden,hasShadow:!!root?.shadowRoot,
-                              launcherHidden:root?.shadowRoot?.querySelector("#jp-launcher")?.hidden,
+                              dockHidden:root?.shadowRoot?.querySelector("#jp-rail")?.hidden,
                               help:document.querySelector("#activation-help-detail")?.textContent};
                         '''))
                     except Exception as error:
@@ -196,17 +207,16 @@ def main():
                     })().then(done,e=>done({error:String(e)}));
                 ''')
                 print(f'DIAGNOSTIC: Firefox action failure tabs={tab_states!r} extension={ext_state!r}',flush=True)
-                raise AssertionError('Native Firefox toolbar click did not activate launcher; see diagnostic tabs / injection result') from original_error
-            print('PASS: Firefox native toolbar action injects and displays real launcher',flush=True)
+                raise AssertionError('Native Firefox toolbar click did not activate Dock; see diagnostic tabs / injection result') from original_error
+            print('PASS: Firefox native toolbar action injects and displays unified Dock',flush=True)
             r=trigger()
             assert r.get('ok'),r
             WebDriverWait(driver,12).until(lambda d:d.execute_script('''
                 const root=document.querySelector("#jotpatch-root");
-                return !!(root && root.shadowRoot &&
-                  root.shadowRoot.querySelector("#jp-launcher").hidden);
+                return !!(root && root.shadowRoot && root.hidden);
             '''))
             assert driver.execute_script('return document.querySelectorAll("#jotpatch-root").length')==1
-            print('PASS: second real toolbar click toggles launcher, no duplicate root',flush=True)
+            print('PASS: second real toolbar click hides Dock and notes, no duplicate root',flush=True)
 
             # The real installed extension must create a note, serialize the
             # editor text, and restore it from Firefox storage after reload.
@@ -214,7 +224,8 @@ def main():
             trigger()
             WebDriverWait(driver,8).until(lambda d:d.execute_script('''
                 const root=document.querySelector("#jotpatch-root");
-                return root && !root.shadowRoot.querySelector("#jp-launcher").hidden;
+                return !!(root && !root.hidden && root.shadowRoot &&
+                  !root.shadowRoot.querySelector("#jp-rail").hidden);
             '''))
             new_button=driver.execute_script('''
                 return document.querySelector("#jotpatch-root").shadowRoot.querySelector("#jp-new");
@@ -266,7 +277,29 @@ def main():
             assert persisted['key'].startswith('jotpatch:note:v1:')
             print('PASS: real Firefox note editor autosaved Markdown into browser.storage.local',flush=True)
 
+            storage_window=driver.current_window_handle
             driver.switch_to.window(original_window)
+            collapse=driver.execute_script('''
+                return document.querySelector("#jotpatch-root").shadowRoot
+                  .querySelector(".paper .paper-collapse-toggle");
+            ''')
+            collapse.click()
+            WebDriverWait(driver,8).until(lambda d:d.execute_script('''
+                const paper=document.querySelector("#jotpatch-root").shadowRoot.querySelector(".paper");
+                return paper?.classList.contains("collapsed") && paper.getBoundingClientRect().height<=32;
+            '''))
+            # A collapsed state is saved on the same 380ms debounce as the
+            # note text. Confirm browser-owned storage has the new value
+            # before refreshing instead of relying on a timing guess.
+            driver.switch_to.window(storage_window)
+            WebDriverWait(driver,10).until(lambda d:d.execute_async_script('''
+                const key=arguments[0], done=arguments[arguments.length-1];
+                browser.storage.local.get(key).then(
+                  data=>done(data[key]?.appearance?.collapsed===true),
+                  ()=>done(false));
+            ''',persisted['key']))
+            driver.switch_to.window(original_window)
+            print('PASS: real Firefox installed MV3 paper collapses to header-only and saves the state',flush=True)
             driver.refresh()
             WebDriverWait(driver,12).until(lambda d:d.execute_script('return document.readyState==="complete"'))
             trigger()
@@ -275,9 +308,20 @@ def main():
                 if(!root || root.hidden || !root.shadowRoot)return false;
                 const rail=root.shadowRoot.querySelector("#jp-rail");
                 const list=root.shadowRoot.querySelector("#jp-list-toggle");
-                return !!rail && !rail.hidden && !!list && Number(list.textContent)>=1;
+                return !!rail && !rail.hidden && !!list && !list.hidden;
             '''))
             assert driver.execute_script('return document.querySelectorAll("#jotpatch-root").length')==1
+            # Reopen the stored floating note; collapsed flag must survive the
+            # browser storage round trip and its previous height stays intact.
+            floating=driver.execute_script('''
+                return document.querySelector("#jotpatch-root").shadowRoot.querySelector("#jp-loose-toggle");
+            ''')
+            floating.click()
+            WebDriverWait(driver,10).until(lambda d:d.execute_script('''
+                const paper=document.querySelector("#jotpatch-root")?.shadowRoot?.querySelector(".paper");
+                return !!paper && paper.classList.contains("collapsed") && paper.getBoundingClientRect().height<=32;
+            '''))
+            print('PASS: real Firefox stored collapsed note restored with header-only appearance',flush=True)
             print('PASS: real Firefox stored note restored after page reload and action click',flush=True)
         finally:
             server.shutdown()

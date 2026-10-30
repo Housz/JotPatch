@@ -105,7 +105,12 @@ for(const kind of ['firefox','chromium']){
     assert.equal(r.registered.size,1);
     const promise=r.emit('action',{id:4})[0];await promise;
     assert.deepEqual(r.injects.map(x=>x.type),['css','js']);
-    assert.equal(r.sends.at(-1).message.type,'JP_OPEN_LAUNCHER');
+    assert.equal(r.sends.at(-1).message.type,'JP_OPEN_DOCK');
+    await r.emit('action',{id:4})[0];
+    assert.equal(r.sends.at(-1).message.type,'JP_TOGGLE_UI');
+    assert.deepEqual(r.injects.map(x=>x.type),['css','js'],'second click must not inject again');
+    await r.emit('action',{id:4})[0];
+    assert.equal(r.sends.at(-1).message.type,'JP_TOGGLE_UI');
   });
 }
 

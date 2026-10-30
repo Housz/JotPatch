@@ -24,6 +24,8 @@
     "src/core/anchor.ts",
     "src/content/conversation.ts",
     "src/core/markdown.ts",
+    "src/core/editor-indent.ts",
+    "src/core/editor-shortcuts.ts",
     "src/core/conversation-index.ts",
     "src/core/navigation-recovery.ts",
     "src/core/navigation-lab.ts",

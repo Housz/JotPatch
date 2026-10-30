@@ -1,7 +1,6 @@
 namespace JP {
   // Lightweight paper notes and a passive, shared conversation/notes timeline.
   const PREFERENCE_KEY = 'jotpatch:preferences:v1';
-  const BRAND_LINE = 'Powered by Housz';
 
   export class JotPatchApp {
     private repo = new NoteRepository(extensionApi().storage.local);
@@ -18,14 +17,16 @@ namespace JP {
     private explicitlyDetachedIds = new Set<string>();
     private cards = new Map<string, HTMLElement>();
     private visible = true;
-    private launcherOpen = false;
     private listOpen = false;
+    // Display state is per page session; it never changes stored Note records.
+    private floatingNotesVisible = false;
     private selectionTrigger: SelectionTrigger = 'always';
     private conversationNavigation = true;
     private navigationLab = false;
     private navigationLabIndex = new NavigationLabIndex();
     private labLastMetrics: Omit<LabNavigationResult,'turn'>|null = null;
     private defaultNoteColorMode: DefaultNoteColorMode = 'yellow';
+    private uiTransparency: UiTransparency = 'clear';
     private lastAutoColor: NoteColor | null = null;
     private conversation: ConversationSnapshot = { site: null, turns: [], nativeRailPresent: false };
     private conversationTimer = 0;
@@ -73,18 +74,25 @@ namespace JP {
       window.setInterval(() => this.checkPageRoute(), 1400);
     }
 
+    /** Toolbar gesture toggles the entire UI, not a separate launcher. */
     toggle(): void {
-      this.visible = !this.visible;
-      this.host.hidden = !this.visible;
-      if (this.visible) { this.launcherOpen = true; this.renderLauncher(); this.scheduleRefresh(); }
+      if (!this.visible) { this.showDock(); return; }
+      this.visible = false;
+      this.listOpen = false;
+      this.renderList();
+      this.hideTurnPreview();
+      this.$<HTMLElement>('#jp-bubble').hidden = true;
+      this.host.hidden = true;
+      // :host{all:initial} can override the user-agent [hidden] display rule.
+      // Guard at the host element as well as in the Shadow DOM stylesheet.
+      this.host.style.display = 'none';
     }
-    openLauncher(): void {
-      this.visible = true; this.host.hidden = false; this.launcherOpen = true;
-      this.renderLauncher(); this.scheduleRefresh();
-    }
-    toggleLauncher(): void {
-      if (!this.visible) { this.openLauncher(); return; }
-      this.launcherOpen = !this.launcherOpen; this.renderLauncher();
+    showDock(): void {
+      this.visible = true;
+      this.host.hidden = false;
+      this.host.style.removeProperty('display');
+      this.renderDock();
+      this.scheduleRefresh();
     }
 
     private mount(): void {
@@ -97,16 +105,13 @@ namespace JP {
       const styles = document.createElement('style');
       styles.textContent = PAPER_STYLES;
       this.shadow.innerHTML = `
-        <div class="launcher" id="jp-launcher" hidden aria-label="JotPatch 快捷操作">
-          <button id="jp-new" aria-label="新建本页便签" title="新建本页便签" type="button">+</button>
-          <button id="jp-settings" aria-label="设置" title="设置" type="button">⚙</button>
-          <button id="jp-hide" aria-label="隐藏 JotPatch" title="隐藏便签" type="button">−</button>
-        </div>
         <div class="bubble" id="jp-bubble" hidden><button id="jp-bubble-pin" aria-label="将便签钉在选中文字旁" title="贴便签" type="button">📌</button></div>
-        <nav id="jp-rail" class="rail" aria-label="网页对话与便签导航" hidden>
-          <button id="jp-list-toggle" class="rail-head" title="打开本页导航列表" aria-label="打开本页导航列表" type="button">≡</button>
-          <div class="rail-track" id="jp-rail-track"></div>
-          <button id="jp-loose-toggle" class="rail-loose" title="本页悬浮或待定位便签" aria-label="查看本页悬浮和待定位便签" type="button" hidden>▤</button>
+        <nav id="jp-rail" class="rail compact no-notes" aria-label="JotPatch 便签与对话导航" hidden>
+          <button id="jp-new" class="rail-new" aria-label="新建本页悬浮便签" title="新建本页悬浮便签" type="button">+</button>
+          <button id="jp-list-toggle" class="rail-head" aria-label="打开本页导航列表" aria-controls="jp-list" aria-expanded="false" title="打开本页导航列表" type="button" hidden>≡</button>
+          <div class="rail-track" id="jp-rail-track" hidden></div>
+          <button id="jp-loose-toggle" class="rail-loose" title="显示全部本页悬浮便签" aria-label="显示全部本页悬浮便签" aria-pressed="false" type="button" hidden>0</button>
+          <button id="jp-settings" class="rail-settings" aria-label="打开 JotPatch 设置" title="设置" type="button">⚙</button>
         </nav>
         <div id="jp-turn-preview" class="turn-preview" role="tooltip" hidden></div>
         <aside id="jp-list" class="list" aria-label="本页便签列表" hidden></aside>
@@ -125,7 +130,6 @@ namespace JP {
 
     private setupEvents(): void {
       this.$<HTMLButtonElement>('#jp-new').addEventListener('click', () => void this.createPageNote());
-      this.$<HTMLButtonElement>('#jp-hide').addEventListener('click', () => this.toggle());
       this.$<HTMLButtonElement>('#jp-settings').addEventListener('click', () => this.openSettings());
       this.$<HTMLButtonElement>('#jp-bubble-pin').addEventListener('pointerdown', e => e.preventDefault());
       this.$<HTMLButtonElement>('#jp-bubble-pin').addEventListener('click', () => void this.createFromSelection());
@@ -152,9 +156,7 @@ namespace JP {
       window.addEventListener('keydown',event=>{
         if(['PageUp','PageDown','Home','End','ArrowUp','ArrowDown',' '].includes(event.key))userInterrupt();
       },true);
-      this.$<HTMLButtonElement>('#jp-loose-toggle').addEventListener('click', () => {
-        this.listOpen = true; this.renderList();
-      });
+      this.$<HTMLButtonElement>('#jp-loose-toggle').addEventListener('click', () => this.toggleFloatingNotes());
       const track=this.$<HTMLElement>('#jp-rail-track');
       // Rail buttons themselves own hover previews and direct navigation.
       // Even if several buttons are only pixels apart, never intercept clicks
@@ -172,11 +174,27 @@ namespace JP {
         targets[next]?.focus({preventScroll:true});
       });
       document.addEventListener('keydown', event => {
-        if(event.key==='Escape')this.hideTurnPreview();
-        if(event.key==='Escape') for(const card of this.cards.values()){const menu=card.querySelector<HTMLElement>('.note-menu');if(menu)menu.hidden=true;card.querySelector('.menu-trigger')?.setAttribute('aria-expanded','false');}
+        if(event.key!=='Escape')return;
+        this.hideTurnPreview();
+        if(this.listOpen){
+          this.listOpen=false;
+          this.renderList();
+          this.$<HTMLButtonElement>('#jp-list-toggle').focus({preventScroll:true});
+        }
+        for(const card of this.cards.values()){
+          const menu=card.querySelector<HTMLElement>('.note-menu');
+          if(menu)menu.hidden=true;
+          card.querySelector('.menu-trigger')?.setAttribute('aria-expanded','false');
+        }
       });
       document.addEventListener('pointerdown', event => {
         const path = event.composedPath();
+        // Close a temporary navigation list on outside clicks, but not on
+        // interaction with a control in the same Dock.
+        if(this.listOpen && !path.includes(this.$<HTMLElement>('#jp-list')) &&
+           !path.includes(this.$<HTMLElement>('#jp-rail'))){
+          this.listOpen=false;this.renderList();
+        }
         for (const card of this.cards.values()) {
           const menu = card.querySelector<HTMLElement>('.note-menu');
           if (menu && !path.includes(menu) && !path.includes(card.querySelector('.menu-trigger')!)){menu.hidden=true;card.querySelector('.menu-trigger')?.setAttribute('aria-expanded','false');}
@@ -198,11 +216,14 @@ namespace JP {
       window.addEventListener('popstate', () => this.checkPageRoute());
       extensionApi().runtime.onMessage.addListener((message: {type: string; selectionText?: string}, _sender: unknown, respond: (result: unknown) => void) => {
         if (message.type === 'JP_PING') { respond({ ready: true }); return false; }
-        if (message.type === 'JP_TOGGLE_UI') { this.toggle(); respond({ ok: true }); return false; }
-        if (message.type === 'JP_OPEN_LAUNCHER') { this.openLauncher(); respond({ ok: true }); return false; }
-        if (message.type === 'JP_TOGGLE_LAUNCHER') { this.toggleLauncher(); respond({ ok: true }); return false; }
+        if (message.type === 'JP_TOGGLE_UI' || message.type === 'JP_TOGGLE_LAUNCHER') {
+          this.toggle(); respond({ ok: true }); return false;
+        }
+        if (message.type === 'JP_OPEN_DOCK' || message.type === 'JP_OPEN_LAUNCHER') {
+          this.showDock(); respond({ ok: true }); return false;
+        }
         if (message.type === 'JP_CREATE_FROM_CONTEXT') {
-          this.openLauncher();
+          this.showDock();
           void this.createFromContext(message.selectionText || '').then(
             ok => respond({ok}), () => respond({ok:false}));
           return true;
@@ -220,6 +241,9 @@ namespace JP {
           this.navigationLab=preferences?.navigationLab===true;
           if(wasLab!==this.navigationLab){this.cancelNavigation(false);this.labLastMetrics=null;}
           this.defaultNoteColorMode = preferences?.defaultNoteColorMode === 'random' ? 'random' : 'yellow';
+          this.uiTransparency = preferences?.uiTransparency === 'soft' || preferences?.uiTransparency === 'light'
+            ? preferences.uiTransparency : 'clear';
+          this.applyTransparency();
           this.$<HTMLElement>('#jp-bubble').hidden = true;
           this.refreshConversation();
         }
@@ -237,12 +261,27 @@ namespace JP {
         this.conversationNavigation = prefs.conversationNavigation;
         this.navigationLab = prefs.navigationLab;
         this.defaultNoteColorMode = prefs.defaultNoteColorMode;
-      } catch { this.selectionTrigger = 'always'; this.conversationNavigation = true; this.defaultNoteColorMode = 'yellow'; this.navigationLab=false; }
+        this.uiTransparency = prefs.uiTransparency;
+      } catch { this.selectionTrigger = 'always'; this.conversationNavigation = true; this.defaultNoteColorMode = 'yellow'; this.navigationLab=false; this.uiTransparency='clear'; }
+      this.applyTransparency();
     }
+    private applyTransparency():void {
+      // Only surfaces become translucent; text, buttons, editor caret and
+      // focus rings keep their normal contrast. No expensive backdrop blur.
+      const presets={
+        clear:['100%','#fffdf9d9','#fffefaf7'],
+        soft:['94%','#fffdf9d1','#fffefaf0'],
+        light:['86%','#fffdf9b8','#fffefae6']
+      } as const;
+      const [paper,dock,list]=presets[this.uiTransparency];
+      this.host.style.setProperty('--jp-paper-amount',paper);
+      this.host.style.setProperty('--jp-dock-surface',dock);
+      this.host.style.setProperty('--jp-list-surface',list);
+    }
+
     private openSettings(): void {
       void extensionApi().runtime.sendMessage({ type: 'JP_OPEN_SITE_SETUP' }).catch(() => this.toast('请从扩展管理页打开 JotPatch 设置。'));
     }
-    private renderLauncher(): void { this.$<HTMLElement>('#jp-launcher').hidden = !this.launcherOpen; }
 
     private checkPageRoute(): void {
       const next = pageKey(location.href);
@@ -257,6 +296,7 @@ namespace JP {
       this.$<HTMLElement>('#jp-bubble').hidden = true;
       if(this.unpinUndo)clearTimeout(this.unpinUndo.timer);
       this.unpinUndo=null;
+      this.floatingNotesVisible = false;
       this.openIds.clear(); this.explicitlyDetachedIds.clear(); this.cards.clear(); this.$<HTMLElement>('#jp-cards').replaceChildren();
       this.listOpen = false;
       this.hideTurnPreview();
@@ -343,7 +383,10 @@ namespace JP {
         this.pendingRange = null;
         this.$<HTMLElement>('#jp-bubble').hidden = true;
         document.getSelection()?.removeAllRanges();
-        this.launcherOpen = false; this.renderLauncher();
+        // A newly created floating note must always be visible. Existing
+        // floating notes remain closed unless the group toggle is used.
+        if(!anchor)this.floatingNotesVisible=true;
+        this.listOpen = false;
         this.refreshAnchors(); this.showCard(note.id, true);
         return true;
       } catch (error) { console.warn('JotPatch creation failed', error); this.toast('保存失败，未创建便签'); return false; }
@@ -679,13 +722,24 @@ namespace JP {
       const turns=this.conversationNavigation?this.conversation.turns:[];
       const showTurns=turns.length>=3&&!this.conversation.nativeRailPresent;
       const anchored=this.notes.filter(note=>!!note.anchor);
-      rail.hidden=!this.notes.length&&!showTurns;
+      // The Dock must exist even on a blank page: it owns the first-note and
+      // settings actions. Only the navigation track collapses when unused.
+      const compact = !showTurns && !anchored.some(note=>note.spatial?.pageProgress!==undefined);
+      rail.hidden = !this.visible;
+      rail.classList.toggle('compact',compact);
+      rail.classList.toggle('no-notes',!this.notes.length&&!showTurns);
       rail.classList.toggle('with-conversation',showTurns);
       rail.classList.toggle('native-nav',this.conversation.nativeRailPresent);
       const toggle=this.$<HTMLButtonElement>('#jp-list-toggle');
-      toggle.textContent=showTurns?'≡':String(this.notes.length);
+      toggle.hidden = !this.notes.length&&!showTurns;
+      toggle.textContent='≡';
       toggle.title=showTurns?`已发现 ${turns.length} 轮 · ${this.notes.length} 张便签`:`本页 ${this.notes.length} 张便签`;
+      toggle.setAttribute('aria-label',`本页导航列表：${toggle.title}`);
       const track=this.$<HTMLElement>('#jp-rail-track');
+      track.hidden=compact;
+      const list=this.$<HTMLElement>('#jp-list');
+      list.classList.toggle('native-nav',this.conversation.nativeRailPresent);
+      list.classList.toggle('compact',compact);
       const live=turns.filter(turn=>turn.element?.isConnected);
       const byTurn=new Map<string,Note[]>();
       const unassigned:Note[]=[];
@@ -700,10 +754,21 @@ namespace JP {
           existing.push(note);byTurn.set(identity,existing);
         }else unassigned.push(note);
       }
-      // The streaming assistant can mutate hundreds of text nodes without
-      // adding a single question. Do not destroy/recreate the entire rail for
-      // each MutationObserver callback: it causes focus loss and visible jitter.
-      const signature=JSON.stringify({page:this.page,showTurns,
+      // The lower number represents only L2 page-floating notes, never
+      // unresolved anchored notes or conversation turns. It is a show/hide
+      // command, not a second entry point to the full navigation list.
+      const floatCount=this.notes.filter(note=>!note.anchor).length;
+      const bottom=this.$<HTMLButtonElement>('#jp-loose-toggle');
+      bottom.hidden=floatCount===0;
+      bottom.textContent=String(floatCount);
+      const action=this.floatingNotesVisible?'隐藏':'显示';
+      bottom.title=`${action}全部 ${floatCount} 张本页悬浮便签`;
+      bottom.setAttribute('aria-label',bottom.title);
+      bottom.setAttribute('aria-pressed',String(this.floatingNotesVisible));
+      rail.classList.toggle('has-loose',!bottom.hidden);
+      // Streaming may mutate hundreds of text nodes: avoid destroying/rebuilding
+      // the rail on each scan, which loses focus and causes visible jitter.
+      const signature=JSON.stringify({page:this.page,showTurns,compact,floatCount,
         native:this.conversation.nativeRailPresent,
         turnIds:showTurns?turns.map(t=>t.id):[],
         notes:this.notes.map(n=>[n.id,!!n.anchor,appearance(n).color,n.conversationTurnId]),
@@ -737,7 +802,7 @@ namespace JP {
           track.appendChild(bar);
           for(const note of notes)this.addRailNote(track,note);
         }
-        this.applyRailLayout(layoutConversationRail(this.railGroups,track.clientHeight||Math.max(170,innerHeight*.68-65)));
+        this.applyRailLayout(layoutConversationRail(this.railGroups,track.clientHeight||Math.max(130,innerHeight*.68-115)));
       }else{
         const points:PageRailPoint[]=[];
         for(const note of anchored){
@@ -746,13 +811,8 @@ namespace JP {
           points.push({noteId:note.id,fraction});
           this.addRailNote(track,note);
         }
-        this.applyRailLayout(layoutPageRail(points,track.clientHeight||Math.max(170,innerHeight*.68-65)));
+        this.applyRailLayout(layoutPageRail(points,track.clientHeight||Math.max(130,innerHeight*.68-115)));
       }
-      const assignedIds=new Set(this.railGroups.flatMap(group=>group.noteIds));
-      const bottom=this.$<HTMLButtonElement>('#jp-loose-toggle');
-      const otherCount=this.notes.filter(note=>!note.anchor||!assignedIds.has(note.id)).length;
-      bottom.hidden=otherCount===0;
-      if(!bottom.hidden){bottom.textContent=String(otherCount);bottom.title=`${otherCount} 张悬浮或待定位便签`;}
       this.activeTurnId=null;this.updateActiveTurn();this.renderList();
     }
 
@@ -783,6 +843,19 @@ namespace JP {
           if(note&&label)label.textContent=note.text.trim().split('\n')[0]||note.anchor?.exact.slice(0,65)||'空白便签';
         }
       }
+    }
+
+    private toggleFloatingNotes():void {
+      const floating=this.notes.filter(note=>!note.anchor);
+      if(!floating.length)return;
+      this.floatingNotesVisible=!this.floatingNotesVisible;
+      if(this.floatingNotesVisible){
+        for(const note of floating)this.showCard(note.id);
+      }else{
+        for(const note of floating)this.closeCard(note.id);
+      }
+      // renderDock updates the pressed state, without changing note storage.
+      this.renderDock();
     }
 
     private addRailNote(track:HTMLElement,note:Note):HTMLButtonElement {
@@ -828,13 +901,11 @@ namespace JP {
       const list=this.$<HTMLElement>('#jp-list');
       const turns=this.conversationNavigation&&!this.conversation.nativeRailPresent?this.conversation.turns:[];
       list.hidden=!this.listOpen || (!this.notes.length&&turns.length<3);
+      this.$<HTMLButtonElement>('#jp-list-toggle').setAttribute('aria-expanded',String(!list.hidden));
       if(list.hidden)return;
+      // The Dock button itself toggles this list. Keep content only:
+      // no redundant app title, close-toolbar chrome, or brand footer.
       list.replaceChildren();
-      const head=el('div','list-header');
-      const title=el('span');title.textContent='JotPatch';
-      const close=el('button');close.type='button';close.textContent='×';close.title='关闭列表';
-      close.addEventListener('click',()=>{this.listOpen=false;this.renderList();});
-      head.append(title,close);list.appendChild(head);
       const hasTurns=turns.length>=3;
       const live=turns.filter(t=>t.element?.isConnected);
       const mapped=new Set<string>();
@@ -861,7 +932,7 @@ namespace JP {
         const heading=el('div','list-section');heading.textContent=hasTurns?'悬浮便签':'本页便签';list.appendChild(heading);
         for(const note of others)this.addListNote(list,note,false);
       }
-      const footer=el('div','list-footer');footer.textContent=BRAND_LINE;list.appendChild(footer);
+
     }
 
     private addListNote(list:HTMLElement,note:Note,nested:boolean):void {
@@ -1057,9 +1128,51 @@ namespace JP {
       let paper=this.cards.get(noteId);
       if(!paper) { paper=this.makePaper(note); this.cards.set(noteId,paper); this.$<HTMLElement>('#jp-cards').appendChild(paper); }
       this.openIds.add(noteId);
-      paper.style.zIndex=String(++this.zOrder);
+      this.bringCardToFront(paper);
       this.positionCard(noteId);
       if(focus) paper.querySelector<HTMLElement>('.note-editor')?.focus({preventScroll:true});
+    }
+    private updatePaperSummary(paper:HTMLElement,note:Note):void {
+      const summary=paper.querySelector<HTMLElement>('.paper-collapse-summary');
+      if(summary)summary.textContent=note.text.trim().split('\n')[0]?.slice(0,96)||'空白便签';
+    }
+    private applyPaperCollapse(paper:HTMLElement,note:Note):void {
+      const collapsed=appearance(note).collapsed===true;
+      paper.classList.toggle('collapsed',collapsed);
+      const toggle=paper.querySelector<HTMLButtonElement>('.paper-collapse-toggle');
+      if(toggle){
+        toggle.textContent=collapsed?'▾':'▴';
+        toggle.title=collapsed?'展开便签':'折叠便签';
+        toggle.setAttribute('aria-label',toggle.title);
+        toggle.setAttribute('aria-expanded',String(!collapsed));
+      }
+      this.updatePaperSummary(paper,note);
+      if(collapsed){
+        const menu=paper.querySelector<HTMLElement>('.note-menu');
+        if(menu)menu.hidden=true;
+        paper.querySelector('.menu-trigger')?.setAttribute('aria-expanded','false');
+      }
+    }
+    private togglePaperCollapsed(note:Note,paper:HTMLElement):void {
+      const collapsed=appearance(note).collapsed!==true;
+      if(collapsed && paper.contains(this.shadow.activeElement))
+        (this.shadow.activeElement as HTMLElement)?.blur();
+      note.appearance={...appearance(note),collapsed};
+      this.applyPaperCollapse(paper,note);
+      this.bringCardToFront(paper);
+      this.touchNote(note);
+      if(!collapsed)paper.querySelector<HTMLElement>('.note-editor')?.focus({preventScroll:true});
+    }
+    private bringCardToFront(paper:HTMLElement):void {
+      // Keep the note stack below the Dock (z-index 1000), even after
+      // hundreds of pointer gestures. Preserve relative stacking on reset.
+      if(this.zOrder>=650){
+        const ordered=[...this.cards.values()].filter(card=>card.isConnected)
+          .sort((a,b)=>(Number(a.style.zIndex)||0)-(Number(b.style.zIndex)||0));
+        ordered.forEach((card,index)=>{card.style.zIndex=String(9+index);});
+        this.zOrder=ordered.length+8;
+      }
+      paper.style.zIndex=String(++this.zOrder);
     }
     private closeCard(noteId: string): void {
       void this.saveNow(noteId);
@@ -1082,6 +1195,9 @@ namespace JP {
             <span class="paper-pin-symbol" aria-hidden="true">📌︎</span>
           </button>
           <span class="paper-grab" aria-hidden="true"></span>
+          <span class="paper-collapse-summary" aria-hidden="true"></span>
+          <button class="paper-collapse-toggle" type="button" aria-expanded="true"
+            aria-label="折叠便签" title="折叠便签">▴</button>
           <div class="paper-head-actions">
             <button class="copy" title="复制 Markdown 源码" aria-label="复制 Markdown 源码" type="button">⧉</button>
             <button class="jump" title="返回原文" aria-label="返回原文" type="button">↗</button>
@@ -1114,10 +1230,15 @@ namespace JP {
       paper.querySelector<HTMLElement>('.paper-pin')!.hidden = !note.anchor;
       paper.querySelector<HTMLElement>('.note-mode')!.textContent = note.anchor ? '📌 贴在原文' : '◌ 本页悬浮';
       const editor=paper.querySelector<HTMLElement>('.note-editor')!;
+      editor.id=`jp-editor-${note.id}`;
+      paper.querySelector<HTMLButtonElement>('.paper-collapse-toggle')!
+        .setAttribute('aria-controls',editor.id);
       renderMarkdown(editor,note.text);
+      this.applyPaperCollapse(paper,note);
       const changed=()=>{
         note.text=markdownFromEditor(editor);
         editor.dataset.empty=String(!note.text.trim());
+        this.updatePaperSummary(paper,note);
         this.touchNote(note);this.renderList();
       };
       editor.dataset.empty=String(!note.text.trim());
@@ -1130,6 +1251,14 @@ namespace JP {
         document.execCommand('insertText',false,event.clipboardData?.getData('text/plain')||'');
       });
       editor.addEventListener('keydown',(event:KeyboardEvent)=>{
+        // Only Tab/Shift+Tab are editor indentation commands. Ctrl+Tab must
+        // remain available to the browser for switching tabs.
+        if(event.key==='Tab' && !event.ctrlKey && !event.metaKey &&
+           !event.altKey && !event.isComposing){
+          event.preventDefault();event.stopPropagation();
+          indentNoteEditor(editor,event.shiftKey);
+          return;
+        }
         if((event.ctrlKey||event.metaKey)&&!event.altKey){
           const key=event.key.toLowerCase();
           if(key==='b'||key==='i'){
@@ -1141,8 +1270,10 @@ namespace JP {
           }
         }
       });
-      paper.addEventListener('pointerdown',()=>{paper.style.zIndex=String(++this.zOrder);});
-      paper.addEventListener('focusin',()=>{paper.style.zIndex=String(++this.zOrder);});
+      editor.addEventListener('copy',event=>{void editorLineClipboard(editor,event,false);});
+      editor.addEventListener('cut',event=>{void editorLineClipboard(editor,event,true);});
+      paper.addEventListener('pointerdown',()=>this.bringCardToFront(paper));
+      paper.addEventListener('focusin',()=>this.bringCardToFront(paper));
       paper.addEventListener('wheel',(event:WheelEvent)=>{
         // Cancel browser zoom only while the pointer is inside a note.
         if(!event.ctrlKey || !event.cancelable)return;
@@ -1158,6 +1289,8 @@ namespace JP {
         button.addEventListener('pointerdown',event=>event.preventDefault());
         button.addEventListener('click',()=>this.format(editor,name));
       }
+      paper.querySelector<HTMLButtonElement>('.paper-collapse-toggle')!
+        .addEventListener('click',()=>this.togglePaperCollapsed(note,paper));
       paper.querySelector('.paper-pin')!.addEventListener('click',()=>this.unpinNote(note.id));
       paper.querySelector('.copy')!.addEventListener('click',()=>void this.copyNote(note.id));
       paper.querySelector('.jump')!.addEventListener('click',()=>this.goTo(note.id,false));
@@ -1166,9 +1299,16 @@ namespace JP {
       const menuTrigger=paper.querySelector<HTMLButtonElement>('.menu-trigger')!;
       menuTrigger.addEventListener('click',()=>{
         for(const other of this.cards.values())if(other!==paper){
-          const otherMenu=other.querySelector<HTMLElement>('.note-menu');if(otherMenu)otherMenu.hidden=true;
+          const otherMenu=other.querySelector<HTMLElement>('.note-menu');
+          if(otherMenu)otherMenu.hidden=true;
+          other.querySelector('.menu-trigger')?.setAttribute('aria-expanded','false');
         }
-        menu.hidden=!menu.hidden;menuTrigger.setAttribute('aria-expanded',String(!menu.hidden));
+        menu.hidden=!menu.hidden;
+        menuTrigger.setAttribute('aria-expanded',String(!menu.hidden));
+        if(!menu.hidden){
+          this.bringCardToFront(paper);
+          this.positionNoteMenu(paper,menu,menuTrigger);
+        }
       });
       paper.querySelector('.delete-menu')!.addEventListener('click',()=>{menu.hidden=true;void this.deleteNote(note.id);});
       for(const button of paper.querySelectorAll<HTMLButtonElement>('.font-size')){
@@ -1191,6 +1331,23 @@ namespace JP {
       this.installDrag(paper.querySelector<HTMLElement>('.drag-region')!,note,'move');
       this.installDrag(paper.querySelector<HTMLElement>('.resize-handle')!,note,'resize');
       return paper;
+    }
+
+    private positionNoteMenu(paper:HTMLElement,menu:HTMLElement,trigger:HTMLElement):void {
+      // A note can be just 132px high. Never clip its actions to paper bounds,
+      // and flip the menu above the header when the viewport bottom is near.
+      menu.style.top='29px';menu.style.bottom='auto';
+      menu.style.left='auto';menu.style.right='5px';
+      const rect=menu.getBoundingClientRect();
+      const head=trigger.getBoundingClientRect();
+      const parent=paper.getBoundingClientRect();
+      if(rect.bottom>innerHeight-8 && head.top>rect.height+12){
+        menu.style.top='auto';
+        menu.style.bottom=`${Math.round(parent.bottom-head.top+5)}px`;
+      }
+      if(menu.getBoundingClientRect().left<8){
+        menu.style.right='auto';menu.style.left='5px';
+      }
     }
 
     private fontPixels(size:NoteFontSize):string {
@@ -1218,6 +1375,10 @@ namespace JP {
         if(event.button!==0)return;
         // Entire fixed header is draggable, but its buttons remain clickable.
         if(mode==='move' && (event.target as Element).closest('button'))return;
+        // Header drag stops bubbling: raise explicitly before capturing the
+        // pointer, otherwise clicking a lower paper's title never reorders it.
+        const activePaper=this.cards.get(note.id)||handle.closest<HTMLElement>('.paper');
+        if(activePaper)this.bringCardToFront(activePaper);
         event.preventDefault();event.stopPropagation();
         handle.setPointerCapture(event.pointerId);
         const initial=appearance(note),startX=event.clientX,startY=event.clientY;
@@ -1369,6 +1530,7 @@ namespace JP {
         this.updatePinIcon(paper,fresh);
         const editor=paper.querySelector<HTMLElement>('.note-editor');
         if(editor){renderMarkdown(editor,fresh.text);editor.dataset.empty=String(!fresh.text.trim());}
+        this.applyPaperCollapse(paper,fresh);
         paper.style.setProperty('--paper',COLOR_HEX[appearance(fresh).color]);
         paper.style.setProperty('--jp-font-size',this.fontPixels(appearance(fresh).fontSize));
         paper.style.width=`${appearance(fresh).width}px`;paper.style.height=`${appearance(fresh).height}px`;
@@ -1417,6 +1579,7 @@ namespace JP {
       this.unpinUndo={noteId,anchor:{...note.anchor},turnId:note.conversationTurnId,oldAppearance:{...style},pageKey:this.page,timer};
       if(this.deletedUndo){clearTimeout(this.deletedUndo.timer);this.deletedUndo=null;}
       note.anchor=undefined;
+      this.floatingNotesVisible=true;
       note.conversationTurnId=undefined;
       this.explicitlyDetachedIds.delete(noteId);
       // Preserve the top-left screen position instead of teleporting the paper
