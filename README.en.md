@@ -11,14 +11,14 @@ Choose the file for your browser from the [latest GitHub Release](https://github
 | Browser | Current download | First installation |
 | --- | --- | --- |
 | Chrome / Edge | `JotPatch-v0.1.20-chromium.zip` | Extract the ZIP, enable Developer mode in your extensions page, then select **Load unpacked** |
-| Firefox 142+ | `JotPatch-v0.1.20-firefox.zip` | **Unsigned:** for submission to Mozilla Unlisted signing or temporary `about:debugging` tests only. Regular users need the separately signed v0.1.18 XPI once it is attached to the Release |
+| Firefox 142+ | `JotPatch-v0.1.20-firefox.zip` | **Unsigned:** for submission to Mozilla Unlisted signing or temporary `about:debugging` tests only. Regular users need the separately signed v0.1.20 XPI once it is attached to the Release |
 
 The **v0.1.20 Firefox ZIP is not signed yet** and is not a persistent installation package. Users of the signed v0.1.17 XPI should keep it installed until the signed v0.1.20 XPI appears in the Release assets. **Updates remain manual:** install the newer version without first uninstalling the extension. See [Firefox installation and release details](docs/FIREFOX.md).
 
 ## Quick start
 
 1. Open a regular HTTP(S) page and click the JotPatch toolbar icon.
-2. Select text and click the nearby 📌 to create an anchored note. Without a selection, use `+` in the small launcher to create a page note.
+2. Select text and click the nearby 📌 to create an anchored note. Without a selection, use `+` in the right-side Dock to create a page note.
 3. Type directly. Drag the top bar, copy Markdown, or use the bottom bar for bold, italic and lists; `···` contains color, font-size and delete controls.
 4. On ChatGPT and Gemini, gray bars indicate discovered user prompts and colored markers indicate notes. Hover for a preview and click a marker to navigate.
 5. For automatic restoration after a page refresh, grant permission to that specific website under **「自动恢复」 (Automatic restoration)** in JotPatch settings.
