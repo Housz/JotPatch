@@ -35,7 +35,7 @@ The **v0.1.20 Firefox ZIP is not signed yet** and is not a persistent installati
 
 ## Contributing
 
-The `main` branch tracks stable releases and `dev` is the integration branch. **v0.1.20** includes the unified Dock, floating-note visibility, transparency settings, **header-only collapsible notes**, and **copy/cut current Markdown line with no selection**. `Tab` indents, `Shift+Tab` outdents, and `Ctrl+Tab` remains a browser shortcut. A separate post-release PR will start the next `dev` cycle.
+The `main` branch tracks stable releases and `dev` is the integration branch. **v0.1.20** includes the unified Dock, floating-note visibility, transparency settings, **header-only collapsible notes**, and **copy/cut current Markdown line with no selection**. `Tab` indents, `Shift+Tab` outdents, and `Ctrl+Tab` remains a browser shortcut. The current `dev` version is **`0.1.21-dev.1`**; the latest stable release remains `v0.1.20`, with published assets unchanged.
 
 ```bash
 # Node.js >=20; run at repository root on dev

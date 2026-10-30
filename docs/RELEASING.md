@@ -12,9 +12,9 @@
 
 ## 1. 锁定发行源码和版本
 
-从最新 `dev` 创建 Release PR 到 `main`，将 `config/version.json` 切换为 `channel=release`，同步 `package.json.version`、`manifest.version` 与 `manifest.version_name` 到新正式版本，例如 `0.1.20`。
+从最新 `dev` 创建 Release PR 到 `main`，将 `config/version.json` 切换为 `channel=release`，同步 `package.json.version`、`manifest.version` 与 `manifest.version_name` 到新正式版本，例如 `0.1.21`。
 
-准备匹配版本的 `docs/RELEASE_NOTES_0_1_20.md`；当前 [`.github/workflows/release.yml`](../.github/workflows/release.yml)按版本数字读取 `docs/RELEASE_NOTES_<underscored-version>.md`，不要复用旧版说明或假设有另一处 `--notes-file` 手工参数。
+准备匹配版本的 `docs/RELEASE_NOTES_0_1_21.md`（尚未创建，需随下次发行准备）；当前 [`.github/workflows/release.yml`](../.github/workflows/release.yml)按版本数字读取 `docs/RELEASE_NOTES_<underscored-version>.md`，不要复用旧版说明或假设有另一处 `--notes-file` 手工参数。
 
 Firefox 签名使用固定 Gecko ID `{8801fba0-08ef-481b-a4b6-870a061b2878}`。**v0.1.18 正式发行已经整合 [Firefox 修复来源](https://github.com/Housz/JotPatch/pull/30)，后续正式发行仍需验证 Firefox ZIP 中的 ID、启动行为和本地存储升级路径。**
 
