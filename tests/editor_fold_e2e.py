@@ -156,8 +156,10 @@ def run():
         }""")
         assert keyboard=={"allowed":True,"prevented":False},keyboard
         assert [n for n in saved(reload) if n["id"]==note_id][0]["text"]=="Alpha\nGamma"
+        current_caret(editor,0,0)
         editor.press("Tab")
         editor.press("Shift+Tab")
+        wait_saved(reload,note_id,"Alpha\nGamma")
         print("PASS: Tab / Shift+Tab remain, Ctrl+Tab is never intercepted")
 
         # The native clipboard shortcut should really fire a browser copy
