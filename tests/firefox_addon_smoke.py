@@ -277,6 +277,7 @@ def main():
             assert persisted['key'].startswith('jotpatch:note:v1:')
             print('PASS: real Firefox note editor autosaved Markdown into browser.storage.local',flush=True)
 
+            storage_window=driver.current_window_handle
             driver.switch_to.window(original_window)
             collapse=driver.execute_script('''
                 return document.querySelector("#jotpatch-root").shadowRoot
@@ -287,7 +288,18 @@ def main():
                 const paper=document.querySelector("#jotpatch-root").shadowRoot.querySelector(".paper");
                 return paper?.classList.contains("collapsed") && paper.getBoundingClientRect().height<=32;
             '''))
-            print('PASS: real Firefox installed MV3 paper collapses to header-only without removing note',flush=True)
+            # A collapsed state is saved on the same 380ms debounce as the
+            # note text. Confirm browser-owned storage has the new value
+            # before refreshing instead of relying on a timing guess.
+            driver.switch_to.window(storage_window)
+            WebDriverWait(driver,10).until(lambda d:d.execute_async_script('''
+                const key=arguments[0], done=arguments[arguments.length-1];
+                browser.storage.local.get(key).then(
+                  data=>done(data[key]?.appearance?.collapsed===true),
+                  ()=>done(false));
+            ''',persisted['key']))
+            driver.switch_to.window(original_window)
+            print('PASS: real Firefox installed MV3 paper collapses to header-only and saves the state',flush=True)
             driver.refresh()
             WebDriverWait(driver,12).until(lambda d:d.execute_script('return document.readyState==="complete"'))
             trigger()
