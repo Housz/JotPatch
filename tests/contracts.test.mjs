@@ -70,6 +70,21 @@ test('0.1.19 floating visibility, compact list, opacity and indentation have exp
   assert.equal(manifest.host_permissions,undefined);
 });
 
+test('v0.1.20 editor line actions and header-only fold preserve schema and browser shortcuts', () => {
+  const source=readFileSync('src/content/app.ts','utf8');
+  const css=readFileSync('src/ui/paper-styles.ts','utf8');
+  const helper=readFileSync('src/core/editor-shortcuts.ts','utf8');
+  const types=readFileSync('src/core/types.ts','utf8');
+  assert.match(source,/paper-collapse-toggle/);
+  assert.match(source,/togglePaperCollapsed/);
+  assert.match(source,/editorLineClipboard\(editor,event,true\)/);
+  assert.match(source,/!event\.ctrlKey && !event\.metaKey/);
+  assert.match(css,/\.paper\.collapsed\{height:30px!important;min-height:0!important/);
+  assert.match(types,/collapsed\?: boolean/);
+  assert.match(helper,/event\.clipboardData\.setData\('text\/plain'/);
+  assert.equal(manifest.host_permissions,undefined);
+});
+
 test('right-click action and selection-trigger preference are included', () => {
   // The background resolves the runtime through JP.extensionApi(), so the contract
   // checks the capability instead of a Chrome-specific namespace prefix.

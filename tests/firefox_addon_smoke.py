@@ -278,6 +278,16 @@ def main():
             print('PASS: real Firefox note editor autosaved Markdown into browser.storage.local',flush=True)
 
             driver.switch_to.window(original_window)
+            collapse=driver.execute_script('''
+                return document.querySelector("#jotpatch-root").shadowRoot
+                  .querySelector(".paper .paper-collapse-toggle");
+            ''')
+            collapse.click()
+            WebDriverWait(driver,8).until(lambda d:d.execute_script('''
+                const paper=document.querySelector("#jotpatch-root").shadowRoot.querySelector(".paper");
+                return paper?.classList.contains("collapsed") && paper.getBoundingClientRect().height<=32;
+            '''))
+            print('PASS: real Firefox installed MV3 paper collapses to header-only without removing note',flush=True)
             driver.refresh()
             WebDriverWait(driver,12).until(lambda d:d.execute_script('return document.readyState==="complete"'))
             trigger()
@@ -289,6 +299,17 @@ def main():
                 return !!rail && !rail.hidden && !!list && !list.hidden;
             '''))
             assert driver.execute_script('return document.querySelectorAll("#jotpatch-root").length')==1
+            # Reopen the stored floating note; collapsed flag must survive the
+            # browser storage round trip and its previous height stays intact.
+            floating=driver.execute_script('''
+                return document.querySelector("#jotpatch-root").shadowRoot.querySelector("#jp-loose-toggle");
+            ''')
+            floating.click()
+            WebDriverWait(driver,10).until(lambda d:d.execute_script('''
+                const paper=document.querySelector("#jotpatch-root")?.shadowRoot?.querySelector(".paper");
+                return !!paper && paper.classList.contains("collapsed") && paper.getBoundingClientRect().height<=32;
+            '''))
+            print('PASS: real Firefox stored collapsed note restored with header-only appearance',flush=True)
             print('PASS: real Firefox stored note restored after page reload and action click',flush=True)
         finally:
             server.shutdown()

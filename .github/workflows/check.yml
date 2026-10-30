@@ -60,6 +60,7 @@ jobs:
           python tests/browser_e2e.py
           python tests/unified_dock_e2e.py
           python tests/dock_polish_e2e.py
+          python tests/editor_fold_e2e.py
           python tests/math_selection_e2e.py
           python tests/conversation_e2e.py
           python tests/spatial_rail_e2e.py
@@ -75,6 +76,7 @@ jobs:
           python tests/browser_e2e.py
           python tests/unified_dock_e2e.py
           python tests/dock_polish_e2e.py
+          python tests/editor_fold_e2e.py
           python tests/math_selection_e2e.py
           python tests/conversation_e2e.py
           python tests/spatial_rail_e2e.py

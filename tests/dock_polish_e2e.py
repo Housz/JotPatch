@@ -164,12 +164,10 @@ def run():
           .some(n=>n?.id===id && n.text==='**第一行**\\n第二行')""",arg=floating[0])
         select_lines(editor)
         editor.press('Tab')
-        editor.evaluate("""el=>el.dispatchEvent(new KeyboardEvent('keydown',{
-          key:'Tab',ctrlKey:true,bubbles:true,cancelable:true
-        }))""")
+        editor.press('Shift+Tab')
         page.wait_for_function("""id=>Object.values(__jotpatchFakeStore)
           .some(n=>n?.id===id && n.text==='**第一行**\\n第二行')""",arg=floating[0])
-        print('PASS: selected lines indent/outdent and Ctrl+Tab event handler retain bold Markdown')
+        print('PASS: selected lines indent/outdent using Shift+Tab, retaining bold Markdown')
 
         # Preferences update live. Transparency only affects surfaces; editing
         # and caret text remain opaque. No GPU backdrop blur is introduced.
