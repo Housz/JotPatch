@@ -6,19 +6,19 @@ JotPatch 是一款轻量浏览器便签扩展。阅读网页或 ChatGPT、Gemini
 
 ## 下载与安装
 
-从 [最新 GitHub Release](https://github.com/Housz/JotPatch/releases/latest) 选择浏览器对应的文件。本次正式发行版本为 **v0.1.18**。
+从 [最新 GitHub Release](https://github.com/Housz/JotPatch/releases/latest) 选择浏览器对应的文件。本次正式发行版本为 **v0.1.20**（上一正式版本是 v0.1.18，v0.1.19 仅为开发版本）。
 
 | 浏览器 | 当前文件 | 首次安装 |
 | --- | --- | --- |
-| Chrome / Edge | `JotPatch-v0.1.18-chromium.zip` | 解压；在扩展管理页开启开发者模式，选择「加载已解压的扩展程序」 |
-| Firefox 142+ | `JotPatch-v0.1.18-firefox.zip` | **未签名**：用于 Mozilla Unlisted 提交和 `about:debugging` 临时测试。普通用户安装请使用经 Mozilla 签名的同版本 XPI（签名完成后由维护者另行上传） |
+| Chrome / Edge | `JotPatch-v0.1.20-chromium.zip` | 解压；在扩展管理页开启开发者模式，选择「加载已解压的扩展程序」 |
+| Firefox 142+ | `JotPatch-v0.1.20-firefox.zip` | **未签名**：用于 Mozilla Unlisted 提交和 `about:debugging` 临时测试。普通用户安装请使用经 Mozilla 签名的同版本 XPI（签名完成后由维护者另行上传） |
 
-**v0.1.18 的 Firefox ZIP 尚未签名**，不能作为普通 Firefox 的长期安装包。已经使用 v0.1.17 签名 XPI 的用户请保留现有安装，直到 Release 新增 v0.1.18 签名 XPI 后再覆盖升级。**本项目暂时使用手动更新**；不需要卸载旧扩展。Firefox 的安装、签名及版本来源见 [Firefox 说明](docs/FIREFOX.md)。
+**v0.1.20 的 Firefox ZIP 尚未签名**，不能作为普通 Firefox 的长期安装包。已经使用 v0.1.17 签名 XPI 的用户请保留现有安装，直到 Release 新增 v0.1.20 签名 XPI 后再覆盖升级。**本项目暂时使用手动更新**；不需要卸载旧扩展。Firefox 的安装、签名及版本来源见 [Firefox 说明](docs/FIREFOX.md)。
 
 ## 开始使用
 
 1. 打开普通 HTTP(S) 网页，点击浏览器工具栏中的 JotPatch 图标。
-2. 选中文字，点击旁边的 📌 创建原文便签；没有选区时可点迷你启动区的 `+` 新建本页悬浮便签。
+2. 选中文字，点击旁边的 📌 创建原文便签；没有选区时可点右侧 Dock 的 `+` 新建本页悬浮便签。
 3. 直接输入内容；顶栏拖动、复制 Markdown，底栏加粗、斜体或添加列表；`···` 可更换颜色、字号或删除。
 4. 在 ChatGPT、Gemini 页面，灰色短横条代表已发现的用户提问，彩色标记代表便签。悬停查看摘要，点击直接跳转。
 5. 如需刷新网页后自动恢复，在设置中的「自动恢复」为对应网站单独授权。
@@ -35,7 +35,7 @@ JotPatch 是一款轻量浏览器便签扩展。阅读网页或 ChatGPT、Gemini
 
 ## 参与开发
 
-当前采用 `main` 正式发行线、`dev` 集成开发线。最新稳定发行是 **`v0.1.18`**，当前 `dev` 开发版本为 **`0.1.20-dev.1`**，下一正式目标为 `v0.1.20`（跳过未发行的 v0.1.19）。开发版在一体化 Dock 基础上增加**顶栏折叠便签**和**无选区时复制/剪切当前行**；编辑器只使用 `Tab` 缩进、`Shift+Tab` 缩回，`Ctrl+Tab` 保留给浏览器。正式 v0.1.18 的 UI 仍保持原样。
+当前采用 `main` 正式发行线、`dev` 集成开发线。**v0.1.20** 已整合一体化 Dock、悬浮便签显隐、透明度、顶栏折叠及无选区复制/剪切当前行；编辑器只使用 `Tab` 缩进、`Shift+Tab` 缩回，`Ctrl+Tab` 留给浏览器。下一轮 `dev` 版本由发行后同步 PR 单独设置。
 
 ```bash
 # Node.js >=20；在仓库根目录和 dev 分支执行

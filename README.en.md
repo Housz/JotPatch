@@ -6,14 +6,14 @@ JotPatch is a lightweight browser sticky-note extension. Attach notes near selec
 
 ## Download and install
 
-Choose the file for your browser from the [latest GitHub Release](https://github.com/Housz/JotPatch/releases/latest). The current release is **v0.1.18**.
+Choose the file for your browser from the [latest GitHub Release](https://github.com/Housz/JotPatch/releases/latest). The current release is **v0.1.20** (v0.1.19 was a development-only version).
 
 | Browser | Current download | First installation |
 | --- | --- | --- |
-| Chrome / Edge | `JotPatch-v0.1.18-chromium.zip` | Extract the ZIP, enable Developer mode in your extensions page, then select **Load unpacked** |
-| Firefox 142+ | `JotPatch-v0.1.18-firefox.zip` | **Unsigned:** for submission to Mozilla Unlisted signing or temporary `about:debugging` tests only. Regular users need the separately signed v0.1.18 XPI once it is attached to the Release |
+| Chrome / Edge | `JotPatch-v0.1.20-chromium.zip` | Extract the ZIP, enable Developer mode in your extensions page, then select **Load unpacked** |
+| Firefox 142+ | `JotPatch-v0.1.20-firefox.zip` | **Unsigned:** for submission to Mozilla Unlisted signing or temporary `about:debugging` tests only. Regular users need the separately signed v0.1.18 XPI once it is attached to the Release |
 
-The **v0.1.18 Firefox ZIP is not signed yet** and is not a persistent installation package. Users of the signed v0.1.17 XPI should keep it installed until the signed v0.1.18 XPI appears in the Release assets. **Updates remain manual:** install the newer version without first uninstalling the extension. See [Firefox installation and release details](docs/FIREFOX.md).
+The **v0.1.20 Firefox ZIP is not signed yet** and is not a persistent installation package. Users of the signed v0.1.17 XPI should keep it installed until the signed v0.1.20 XPI appears in the Release assets. **Updates remain manual:** install the newer version without first uninstalling the extension. See [Firefox installation and release details](docs/FIREFOX.md).
 
 ## Quick start
 
@@ -35,7 +35,7 @@ The **v0.1.18 Firefox ZIP is not signed yet** and is not a persistent installati
 
 ## Contributing
 
-The `main` branch tracks stable releases and `dev` is the integration branch. The latest stable release is **`v0.1.18`**. The current `dev` development version is **`0.1.20-dev.1`**, targeting `v0.1.20` (v0.1.19 was never released). In addition to the unified Dock, it offers **header-only collapsible notes** and **copy/cut current Markdown line with no selection**. `Tab` indents, `Shift+Tab` outdents, and `Ctrl+Tab` remains a browser shortcut. The published v0.1.18 UI is unchanged.
+The `main` branch tracks stable releases and `dev` is the integration branch. **v0.1.20** includes the unified Dock, floating-note visibility, transparency settings, **header-only collapsible notes**, and **copy/cut current Markdown line with no selection**. `Tab` indents, `Shift+Tab` outdents, and `Ctrl+Tab` remains a browser shortcut. A separate post-release PR will start the next `dev` cycle.
 
 ```bash
 # Node.js >=20; run at repository root on dev

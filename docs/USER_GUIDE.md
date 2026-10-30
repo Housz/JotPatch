@@ -1,6 +1,6 @@
 # JotPatch 用户指南
 
-JotPatch 将轻量便签保存在你正在阅读的网页旁。本文以 GitHub Release **v0.1.18** 的功能为基线。Firefox 的新 ZIP 仍需 Mozilla 手动签名，获取签名 XPI 后才能进行普通浏览器的长期安装。
+JotPatch 将轻量便签保存在你正在阅读的网页旁。本文以 GitHub Release **v0.1.20** 的功能为基线。Firefox 的新 ZIP 仍需 Mozilla 手动签名，获取签名 XPI 后才能进行普通浏览器的长期安装。
 
 ## 安装
 
@@ -8,25 +8,25 @@ JotPatch 将轻量便签保存在你正在阅读的网页旁。本文以 GitHub 
 
 **前提**：支持扩展的 Chrome 或 Edge，使用 [最新 Release](https://github.com/Housz/JotPatch/releases/latest) 中的 Chromium ZIP。
 
-1. 完整解压 `JotPatch-v0.1.18-chromium.zip`。
+1. 完整解压 `JotPatch-v0.1.20-chromium.zip`。
 2. 打开 `chrome://extensions` 或 `edge://extensions`，开启「开发者模式」。
 3. 点击「加载已解压的扩展程序」，选择**直接包含 `manifest.json`** 的目录。
-4. 在普通 HTTP(S) 网页点击 JotPatch 图标，看到右上角的迷你启动区即表示已启用。
+4. 在普通 HTTP(S) 网页点击 JotPatch 图标，看到网页右侧 JotPatch Dock 即表示已启用。
 
 ### Firefox
 
-**前提**：Firefox 142 或更高版本。只有当 Release 中提供 **`JotPatch-v0.1.18-firefox-signed.xpi`**（Mozilla 签名）时，普通用户才能安装新版本；**`JotPatch-v0.1.18-firefox.zip` 是未签名包，用于开发临时加载及 Mozilla 提交**。若签名 XPI 尚未提供，请继续使用此前已经签名的 v0.1.17。
+**前提**：Firefox 142 或更高版本。只有当 Release 中提供 **`JotPatch-v0.1.20-firefox-signed.xpi`**（Mozilla 签名）时，普通用户才能安装新版本；**`JotPatch-v0.1.20-firefox.zip` 是未签名包，用于开发临时加载及 Mozilla 提交**。若签名 XPI 尚未提供，请继续使用此前已经签名的 v0.1.17。
 
 1. 打开 `about:addons`，在扩展管理页的齿轮菜单选择「从文件安装附加组件」。
 2. 选择 XPI，确认浏览器的安装提示。
-3. 打开普通 HTTP(S) 网页并点击 JotPatch 工具栏图标；首次启动应看到迷你启动区。
+3. 打开普通 HTTP(S) 网页并点击 JotPatch 工具栏图标；首次启动应看到右侧 Dock。
 4. 重启浏览器后检查扩展仍在。签名 XPI 用于正常持久安装；`about:debugging` 加载的未签名 ZIP 仅为临时调试。**升级时不要先卸载原版，以保护本地便签数据。**
 
 Firefox 的 ID、手动升级及已知发行差异见 [Firefox 专题](FIREFOX.md)。不同浏览器的便签数据不会自动同步。
 
-## v0.1.20 开发版预览：统一 Dock 与编辑器（尚未正式发布）
+## v0.1.20：统一 Dock 与轻量编辑器
 
-`dev` 分支的 `0.1.20-dev.1` 正在测试一体化右侧 Dock、便签折叠和轻量编辑快捷键。**正式 v0.1.18 仍使用独立的迷你启动区和导航栏；不要将下述操作视为已发布版本的行为。**
+v0.1.20 将此前开发版的一体化右侧 Dock、便签折叠和轻量编辑快捷键整合为正式功能；此前 v0.1.18 的独立迷你启动区已被统一 Dock 替代。
 
 - 无便签、无足够对话轮次时，页面右侧只显示小型 Dock：上方 `+` 新建本页悬浮便签，下方 `⚙` 打开设置。不会显示空白长轨道。
 - 存在本页便签后出现 `≡` 按钮，点击打开紧凑的本页便签与提问列表（不显示额外品牌标题和页脚）；再次点击 `≡`、按 `Esc` 或点击网页空白处关闭。
@@ -37,7 +37,7 @@ Firefox 的 ID、手动升级及已知发行差异见 [Firefox 专题](FIREFOX.m
 
 本次继续实现 [#33 透明度档位](https://github.com/Housz/JotPatch/issues/33)、[#38 编辑缩进](https://github.com/Housz/JotPatch/issues/38)、[#39 便签置顶](https://github.com/Housz/JotPatch/issues/39) 和 [#40 小便签菜单遮挡](https://github.com/Housz/JotPatch/issues/40)。右键删除 [#36](https://github.com/Housz/JotPatch/issues/36) 与跨网页悬浮 [#41](https://github.com/Housz/JotPatch/issues/41) 仍属独立后续需求。
 
-开发版编辑器中，`Tab` 插入两格缩进，**仅 `Shift+Tab` 缩回**；`Ctrl+Tab` 不由扩展拦截，仍用于浏览器切换标签。选择多行后缩进会作用于各行；目前不提供嵌套 Markdown 列表的语法级编辑。
+v0.1.20 的编辑器中，`Tab` 插入两格缩进，**仅 `Shift+Tab` 缩回**；`Ctrl+Tab` 不由扩展拦截，仍用于浏览器切换标签。选择多行后缩进会作用于各行；目前不提供嵌套 Markdown 列表的语法级编辑。
 
 在设置中可选**清晰（默认）／柔和／轻透**三档，只调整便签纸、Dock 和列表的背景透明度。文字、按钮、焦点仍保持实色；编辑便签时纸张会恢复不透明。不使用性能成本较高的背景模糊。详见 [统一 Dock 设计与验收记录](UNIFIED_DOCK_0_1_19.md)。
 
@@ -60,7 +60,7 @@ JotPatch 采用少量常用编辑器快捷键，而不是完整代码编辑器�
 
 ### 本页悬浮便签
 
-没有选择文字时，点击扩展图标，在迷你启动区点 `+`。这类便签属于**当前网页**，不是跨网页持续跟随的便签。
+没有选择文字时，在右侧 Dock 点击 `+`。这类便签属于**当前网页**，不是跨网页持续跟随的便签。
 
 ### 编辑格式与管理
 
@@ -88,7 +88,7 @@ JotPatch 采用少量常用编辑器快捷键，而不是完整代码编辑器�
 
 ## 设置与授权
 
-在迷你启动区点击 ⚙ 打开 JotPatch 设置页：
+在右侧 Dock 点击 ⚙ 打开 JotPatch 设置页：
 
 | 设置区域 | 行为 |
 | --- | --- |
@@ -113,7 +113,7 @@ JotPatch 采用少量常用编辑器快捷键，而不是完整代码编辑器�
 | 现象 | 检查方法与下一步 |
 | --- | --- |
 | 点击图标没有出现便签 | 先在普通 HTTP(S) 页面测试；浏览器内部页如 `about:newtab`、`chrome://extensions` 不支持注入。再到扩展错误控制台查 JotPatch 堆栈。 |
-| Firefox 显示未签名或无法长期保留 | 确认安装的是 Release 中实际提供的 `-firefox-signed.xpi`，不是 `JotPatch-v0.1.18-firefox.zip` 开发 / 签名候选包。参阅 [Firefox 说明](FIREFOX.md)。 |
+| Firefox 显示未签名或无法长期保留 | 确认安装的是 Release 中实际提供的 `-firefox-signed.xpi`，不是 `JotPatch-v0.1.20-firefox.zip` 开发 / 签名候选包。参阅 [Firefox 说明](FIREFOX.md)。 |
 | 刷新网页后需要重新点图标 | 在「自动恢复」中为该网站授权，再刷新网页。 |
 | 导航没有列出所有历史提问 | 默认只记住页面已经暴露的轮次；正常浏览旧消息后才逐步加入，不会后台自动扫描全历史。 |
 | 原文便签暂时不显示 | 检查原文是否已被网站动态卸载；通过导航明确请求恢复。不要删除旧便签重建。 |

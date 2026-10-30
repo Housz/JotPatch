@@ -1,38 +1,32 @@
 # 版本与分支渠道
 
-JotPatch 的稳定版本使用 `MAJOR.MINOR.PATCH`，Git Tag 为 `vMAJOR.MINOR.PATCH`；`dev` 的开发版本使用 `MAJOR.MINOR.PATCH-dev.N`。以 [`config/version.json`](../config/version.json)为渠道配置，校验规则见 [`scripts/versioning.mjs`](../scripts/versioning.mjs)。
+JotPatch 使用正式版 `MAJOR.MINOR.PATCH` 与对应 Git Tag；开发线使用 `MAJOR.MINOR.PATCH-dev.N`。以 [`config/version.json`](../config/version.json) 为版本渠道控制文件，具体规则由 [`scripts/versioning.mjs`](../scripts/versioning.mjs) 校验。
 
-## 当前版本（2026-10-27）
+## 正式版 v0.1.20
 
-| 对象 | 版本或配置 | 意义 |
+| 对象 | 值 | 说明 |
 | --- | --- | --- |
-| 最新正式发行 | [v0.1.18](https://github.com/Housz/JotPatch/releases/tag/v0.1.18) | `main` 上已发布的两浏览器 ZIP |
-| `dev` 的 `package.json.version` | `0.1.20-dev.1` | 下一轮开发版本 |
-| `dev` 的 `manifest.version` | `0.1.18.1` | 纯数字 WebExtension 版本 |
-| `dev` 的 `manifest.version_name` | `0.1.20-dev.1` | Chromium 显示版本；Firefox Manifest 转换时删除 |
-| `config/version.json` | `channel=dev`、`baseline=0.1.18`、`nextRelease=0.1.20`、`devBuild=1` | 开发渠道配置 |
+| 最新正式发行 | [v0.1.20](https://github.com/Housz/JotPatch/releases/tag/v0.1.20) | `main` 正式代码、Git Tag 和两浏览器 ZIP |
+| `package.json.version` | `0.1.20` | 正式 npm 包版本 |
+| `manifest.version` | `0.1.20` | Chromium / Firefox 发行包所用数字版本 |
+| `config/version.json` | `channel=release`、`baseline=0.1.18`、`nextRelease=0.1.20` | 正式版构建渠道 |
 
-`v0.1.18` 对应合并源码 `aca4797cc9240b26329525edcca52b0f667e6879`，该 Tag 及附件不会因启动下一轮 `dev` 而修改。
+**v0.1.19 从未正式发布**，只是经 PR 合并的开发阶段。v0.1.20 包含该阶段的统一 Dock、透明度、便签层级改进，以及新一轮编辑器快捷键和折叠功能。完成 v0.1.20 发行后，将通过单独同步 PR 为 `dev` 设定 `0.1.21-dev.1`；这不会修改已发布的 v0.1.20 Tag 或 ZIP。
 
-## 开发与发行映射
+## 开发版、构建与升级序
+
+`dev` 版本的 `package.json.version`、`manifest.version`、`manifest.version_name` 与 `config/version.json` 必须一致。此前 v0.1.20 的开发渠道使用：
 
 ```text
-当前 dev package.version       0.1.20-dev.1
-当前 dev manifest.version      0.1.18.1
-当前 dev manifest.version_name 0.1.20-dev.1
-
-下次 release package.version       0.1.20
-下次 release manifest.version      0.1.20
-下次 release manifest.version_name 0.1.20
-下次正式 Git Tag                 v0.1.20（v0.1.19 未发行，跳过）
+package.version       0.1.20-dev.1
+manifest.version      0.1.18.1
+manifest.version_name 0.1.20-dev.1
 ```
 
-`scripts/package.mjs --channel=dev --build=N` 会生成 `0.1.18.N` 的数字 Manifest 版本与 `v0.1.20-dev.N` 包名。数字版本用于浏览器升级排序，开发版仍低于未来的 `0.1.20` 正式版。v0.1.19 仅为开发集成周期，未打 Tag 或发布；下一个正式版本直接采用 v0.1.20。Chrome 扩展 Manifest 版本最多四段，每段为 0–65535 的整数；不能把 `-dev.N` 写入 `manifest.version`。
+该数字版本依赖 `baseline`，不会在开发版抢先超过 v0.1.20 正式版。下一开发周期 `0.1.21-dev.1` 应使用 `baseline=0.1.20`、`nextRelease=0.1.21`、`manifest.version=0.1.20.1`。任何版本升级都不自动改变用户本地存储键或扩展身份。
 
-准备正式发布时，在从 `dev` 派生的 Release PR 中将渠道切换到 `release`，同步 `package.json.version`、`manifest.version` 和 `manifest.version_name` 到 `nextRelease`。运行 `npm run check`、必要浏览器回归和 `npm run package:release`。未经审批不直接改 `main`、Tag 或已有 Release。
+## Firefox 版本身份及手动签名
 
-## Firefox 扩展身份与手动更新
+Firefox 保持 `{8801fba0-08ef-481b-a4b6-870a061b2878}`。v0.1.20 的 Firefox ZIP 是**尚未签名的 Mozilla 提交包**；不能直接作为普通 Firefox 长期安装版。维护者需在现有 Unlisted 项目签名并将 XPI 另行上传至 [v0.1.20 Release](https://github.com/Housz/JotPatch/releases/tag/v0.1.20)。已安装签名 XPI 的用户直接覆盖更新，不应先卸载。
 
-Firefox 正式签名扩展保持 ID `{8801fba0-08ef-481b-a4b6-870a061b2878}`，与 v0.1.17 已签名 XPI 相同。`v0.1.18` Firefox ZIP 已发布，但还需要维护者在 Mozilla Unlisted 项目中**手动签名**并将 XPI 单独附加到 [v0.1.18 Release](https://github.com/Housz/JotPatch/releases/tag/v0.1.18)。未签名 ZIP 不能作为普通 Firefox 的持久安装包。此流程没有实现自动更新或跨浏览器便签同步。
-
-历史上，v0.1.17 的 Firefox 签名 XPI 来自后续热修复提交 `6757760a`，原 v0.1.17 Tag 来自 `34be0692`。v0.1.18 已通过 [Firefox 修复整合](https://github.com/Housz/JotPatch/pull/30) 将同一固定扩展 ID 和启动修复纳入正式源码。发行与数据安全细节见 [发行指南](RELEASING.md)和 [用户指南](USER_GUIDE.md)。
+历史上 v0.1.17 的修复版 Firefox XPI 基于 `6757760a`，而原 Git Tag 对应 `34be0692`；v0.1.18 起已整合相同的固定 Firefox ID，避免发行分支恢复旧扩展身份。详见 [Firefox 指南](FIREFOX.md)和 [发行流程](RELEASING.md)。

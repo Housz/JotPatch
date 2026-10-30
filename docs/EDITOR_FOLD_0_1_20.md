@@ -2,7 +2,7 @@
 
 ## 事实基线
 
-当前正式 Release 为 [v0.1.18](https://github.com/Housz/JotPatch/releases/tag/v0.1.18)。v0.1.19 是尚未正式发行的开发阶段；本次基于其已验证的一体化 Dock 和数据协议，下一版定为 **v0.1.20**。`0.1.20-dev.1` 是开发配置，不表示 v0.1.20 已完成签名或发布。
+本版相对于上一正式 [v0.1.18](https://github.com/Housz/JotPatch/releases/tag/v0.1.18) 发布；v0.1.19 只有开发分支集成而未打 Tag。**v0.1.20** 包含此前验证的一体化 Dock 和本轮轻量编辑与折叠功能。正式 Firefox XPI 仍需 Mozilla 在现有 Unlisted 项目手动签名。
 
 ## #43 编辑器常用操作
 
