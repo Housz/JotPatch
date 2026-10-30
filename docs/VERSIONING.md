@@ -1,38 +1,38 @@
 # 版本与分支渠道
 
-JotPatch 的稳定版本使用 `MAJOR.MINOR.PATCH`，Git Tag 为 `vMAJOR.MINOR.PATCH`；`dev` 的开发版本使用 `MAJOR.MINOR.PATCH-dev.N`。以 [`config/version.json`](../config/version.json)为渠道配置，校验规则见 [`scripts/versioning.mjs`](../scripts/versioning.mjs)。
+JotPatch 使用正式版 `MAJOR.MINOR.PATCH` 与对应的 Git Tag；开发线使用 `MAJOR.MINOR.PATCH-dev.N`。[`config/version.json`](../config/version.json) 控制渠道、基线与目标版本；[`scripts/versioning.mjs`](../scripts/versioning.mjs) 验证构建协议。
 
-## 当前版本（2026-10-27）
+## 当前版本状态
 
 | 对象 | 版本或配置 | 意义 |
 | --- | --- | --- |
-| 最新正式发行 | [v0.1.18](https://github.com/Housz/JotPatch/releases/tag/v0.1.18) | `main` 上已发布的两浏览器 ZIP |
-| `dev` 的 `package.json.version` | `0.1.20-dev.1` | 下一轮开发版本 |
-| `dev` 的 `manifest.version` | `0.1.18.1` | 纯数字 WebExtension 版本 |
-| `dev` 的 `manifest.version_name` | `0.1.20-dev.1` | Chromium 显示版本；Firefox Manifest 转换时删除 |
-| `config/version.json` | `channel=dev`、`baseline=0.1.18`、`nextRelease=0.1.20`、`devBuild=1` | 开发渠道配置 |
+| 最新正式发行 | [v0.1.20](https://github.com/Housz/JotPatch/releases/tag/v0.1.20) | `main` 已发布的 Chromium ZIP 与未签名 Firefox ZIP |
+| `dev` 的 `package.json.version` | `0.1.21-dev.1` | 新一轮开发版本 |
+| `dev` 的 `manifest.version` | `0.1.20.1` | 浏览器要求的纯数字版本 |
+| `dev` 的 `manifest.version_name` | `0.1.21-dev.1` | Chromium 显示版本；Firefox 构建时移除 |
+| `config/version.json` | `channel=dev`、`baseline=0.1.20`、`nextRelease=0.1.21`、`devBuild=1` | 当前开发渠道 |
 
-`v0.1.18` 对应合并源码 `aca4797cc9240b26329525edcca52b0f667e6879`，该 Tag 及附件不会因启动下一轮 `dev` 而修改。
+v0.1.19 仅作为中间开发周期存在，**没有正式 Tag 或 Release**；v0.1.20 是从 v0.1.18 直接升级的稳定版本。同步版本配置不会移动旧 Tag 或改写已发布的附件。
 
-## 开发与发行映射
+## 下一轮开发和正式发行
 
 ```text
-当前 dev package.version       0.1.20-dev.1
-当前 dev manifest.version      0.1.18.1
-当前 dev manifest.version_name 0.1.20-dev.1
+当前 dev package.version       0.1.21-dev.1
+当前 dev manifest.version      0.1.20.1
+当前 dev manifest.version_name 0.1.21-dev.1
 
-下次 release package.version       0.1.20
-下次 release manifest.version      0.1.20
-下次 release manifest.version_name 0.1.20
-下次正式 Git Tag                 v0.1.20（v0.1.19 未发行，跳过）
+下次 release package.version       0.1.21
+下次 release manifest.version      0.1.21
+下次 release manifest.version_name 0.1.21
+下次 Git Tag                     v0.1.21
 ```
 
-`scripts/package.mjs --channel=dev --build=N` 会生成 `0.1.18.N` 的数字 Manifest 版本与 `v0.1.20-dev.N` 包名。数字版本用于浏览器升级排序，开发版仍低于未来的 `0.1.20` 正式版。v0.1.19 仅为开发集成周期，未打 Tag 或发布；下一个正式版本直接采用 v0.1.20。Chrome 扩展 Manifest 版本最多四段，每段为 0–65535 的整数；不能把 `-dev.N` 写入 `manifest.version`。
+在 `dev` 渠道中，`scripts/package.mjs --channel=dev --build=N` 使用 `0.1.20.N` 的数字 Manifest 版本以及 `v0.1.21-dev.N` 的发行包标识。数字开发版低于未来正式 `0.1.21`；Manifest 的每段版本号必须为不超过 65535 的整数。
 
-准备正式发布时，在从 `dev` 派生的 Release PR 中将渠道切换到 `release`，同步 `package.json.version`、`manifest.version` 和 `manifest.version_name` 到 `nextRelease`。运行 `npm run check`、必要浏览器回归和 `npm run package:release`。未经审批不直接改 `main`、Tag 或已有 Release。
+正式发行时在 Release PR 中切换 `config/version.json.channel` 为 `release`，将 `package.json.version`、`manifest.version`、`manifest.version_name` 同步到 `nextRelease`，运行 [开发测试](DEVELOPMENT.md)并用 Merge commit 合入 `main`。不要为了测试直接修改正式 Tag 或旧 Release。
 
-## Firefox 扩展身份与手动更新
+## Firefox 扩展身份与手动签名
 
-Firefox 正式签名扩展保持 ID `{8801fba0-08ef-481b-a4b6-870a061b2878}`，与 v0.1.17 已签名 XPI 相同。`v0.1.18` Firefox ZIP 已发布，但还需要维护者在 Mozilla Unlisted 项目中**手动签名**并将 XPI 单独附加到 [v0.1.18 Release](https://github.com/Housz/JotPatch/releases/tag/v0.1.18)。未签名 ZIP 不能作为普通 Firefox 的持久安装包。此流程没有实现自动更新或跨浏览器便签同步。
+固定 Firefox Gecko ID：`{8801fba0-08ef-481b-a4b6-870a061b2878}`，与最初签名 v0.1.17 一致。[v0.1.20 Release](https://github.com/Housz/JotPatch/releases/tag/v0.1.20) 中的 Firefox ZIP 仍是**未签名的 Mozilla 提交包**，不能用于普通 Firefox 的长期安装。维护者在**已有 AMO Unlisted 项目**取得同 ID、高版本的签名 XPI 后，应另行验收升级路径并上传到同一 Release；普通用户升级不要先卸载旧版。
 
-历史上，v0.1.17 的 Firefox 签名 XPI 来自后续热修复提交 `6757760a`，原 v0.1.17 Tag 来自 `34be0692`。v0.1.18 已通过 [Firefox 修复整合](https://github.com/Housz/JotPatch/pull/30) 将同一固定扩展 ID 和启动修复纳入正式源码。发行与数据安全细节见 [发行指南](RELEASING.md)和 [用户指南](USER_GUIDE.md)。
+本项目未配置自动更新或跨浏览器便签同步。历史上 v0.1.17 的签名 XPI 来源于后续 Firefox 热修复代码 `6757760a`，而该版本原始 Tag 指向 `34be0692`；v0.1.18 起已将签名身份和工具栏修复纳入正式源码。详见 [Firefox 指南](FIREFOX.md)及 [发行流程](RELEASING.md)。
