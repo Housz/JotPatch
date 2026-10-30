@@ -79,6 +79,20 @@ python tests/firefox_addon_smoke.py
 
 重点覆盖首次进入空页面能新建便签、悬浮便签分组显隐、精简列表、Esc/页面点击关闭、工具栏显隐、选中文字 📌、本地数据刷新恢复、长 ChatGPT 对话横条直接点击与原生导航回退。另有 `tests/dock_polish_e2e.py` 验证标题栏置顶、菜单不裁剪、Tab 缩进和透明度即时变化。合成 DOM 不等于真实登录网页人工验收。具体范围见 [设计与验收记录](UNIFIED_DOCK_0_1_19.md)。
 
+## v0.1.20 编辑器与折叠验收
+
+Issue [#43](https://github.com/Housz/JotPatch/issues/43) 和 [#44](https://github.com/Housz/JotPatch/issues/44) 在 `0.1.20-dev.1` 下开发，不更改 Note Schema v1 和 Firefox 固定 ID。
+
+```bash
+npm run check
+JP_CHROMIUM_BIN=playwright python tests/editor_fold_e2e.py
+JP_E2E_BROWSER=firefox python tests/editor_fold_e2e.py
+# Firefox 真正安装/设置与折叠恢复另由 Selenium 执行：
+python tests/firefox_addon_smoke.py
+```
+
+`tests/editor_fold_e2e.py` 检查顶栏折叠后精确高度、拖动、原尺寸恢复、Storage 本地持久化、无选区复制剪切当前 Markdown 行、选区复制不被覆盖，以及 `Ctrl+Tab` 不受扩展干扰。工作流仍覆盖既有导航/LaTeX/长对话回归。合成 DOM 与真实登录 ChatGPT/Gemini 人工验收应分别记录，参见 [v0.1.20 说明](EDITOR_FOLD_0_1_20.md)。
+
 ## 只修改文档
 
 从 [Agent Skill](../.agents/skills/jotpatch-documentation/SKILL.md)进入 [写作规则](WRITING_STYLE.md)、[文档类型与验收](DOCUMENTATION_TYPES.md)，按 D01–D12 确定内容归属。保留历史实验与发行证据，不因重写 README 顺便修改源码、Manifest、签名或 Tag。
