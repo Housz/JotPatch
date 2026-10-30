@@ -81,6 +81,15 @@ namespace JP {
       border:1px solid #0000000d;border-radius:4px;box-shadow:0 5px 18px #0002;
       pointer-events:auto;min-width:180px;min-height:132px;overflow:visible}
     .paper:focus-within{box-shadow:0 6px 24px #0003;background:var(--paper)}
+    /* Collapse only the visible paper, never overwrite its stored full height. */
+    .paper.collapsed{height:30px!important;min-height:0!important}
+    .paper.collapsed .note-editor,.paper.collapsed .paper-foot,
+    .paper.collapsed .resize-handle,.paper.collapsed .note-menu{display:none!important}
+    .paper.collapsed .paper-head{flex:0 0 28px;height:28px}
+    .paper.collapsed .paper-grab{display:none}
+    .paper-collapse-summary{display:none;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+      min-width:0;flex:1;margin:0 4px;color:#665b49;font-size:11px;pointer-events:none}
+    .paper.collapsed .paper-collapse-summary{display:block}
     .paper:hover{box-shadow:0 6px 21px #0003}
     .paper-head,.paper-foot{width:100%;display:flex;align-items:center;flex:0 0 28px;
       padding:2px 5px;user-select:none;border-color:transparent;transition:background .13s ease}
@@ -98,6 +107,10 @@ namespace JP {
       font-variant-emoji:text;font-size:13px;line-height:1;filter:grayscale(1)}
     .paper-pin[hidden]{display:none!important}
     .paper-head button.paper-pin:hover{background:#0000000c;color:#514c46;opacity:.88}
+    .paper-head button.paper-collapse-toggle{flex:0 0 23px;width:23px;color:#776e61;opacity:.75}
+    .paper-head button.paper-collapse-toggle:hover{opacity:1;background:#0000000c}
+    .paper.collapsed .paper-head-actions{opacity:0}
+    .paper.collapsed:hover .paper-head-actions,.paper.collapsed:focus-within .paper-head-actions{opacity:.9}
     .paper-head-actions{display:flex;gap:1px;opacity:0;pointer-events:auto;transition:opacity .14s ease}
     .paper-foot>button,.paper-foot>.save-indicator{opacity:0;pointer-events:auto;transition:opacity .14s ease}
     .paper:hover .paper-head-actions,.paper:focus-within .paper-head-actions,

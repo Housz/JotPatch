@@ -26,6 +26,8 @@ namespace JP {
     height: number;
     offsetX: number;
     offsetY: number;
+    /** Optional, backwards compatible with existing v1 notes. */
+    collapsed?: boolean;
   }
 
   export interface Note {
