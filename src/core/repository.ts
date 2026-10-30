@@ -19,7 +19,8 @@ namespace JP {
       width: Math.min(560, Math.max(180, Number(style.width) || DEFAULTS.width)),
       height: Math.min(620, Math.max(132, Number(style.height) || DEFAULTS.height)),
       offsetX: Number.isFinite(style.offsetX) ? style.offsetX! : DEFAULTS.offsetX,
-      offsetY: Number.isFinite(style.offsetY) ? style.offsetY! : DEFAULTS.offsetY
+      offsetY: Number.isFinite(style.offsetY) ? style.offsetY! : DEFAULTS.offsetY,
+      collapsed: style.collapsed === true
     };
   }
 

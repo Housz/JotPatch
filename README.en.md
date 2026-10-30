@@ -35,7 +35,7 @@ The **v0.1.18 Firefox ZIP is not signed yet** and is not a persistent installati
 
 ## Contributing
 
-The `main` branch tracks stable releases and `dev` is the integration branch. The latest stable release is **`v0.1.18`**. The current `dev` development version is **`0.1.19-dev.1`**. Its unified lightweight Dock now has a separate floating-note show/hide count, compact navigation list, reliable paper layering, Tab indentation, and three background-transparency presets; the released v0.1.18 UI remains unchanged.
+The `main` branch tracks stable releases and `dev` is the integration branch. The latest stable release is **`v0.1.18`**. The current `dev` development version is **`0.1.20-dev.1`**, targeting `v0.1.20` (v0.1.19 was never released). In addition to the unified Dock, it offers **header-only collapsible notes** and **copy/cut current Markdown line with no selection**. `Tab` indents, `Shift+Tab` outdents, and `Ctrl+Tab` remains a browser shortcut. The published v0.1.18 UI is unchanged.
 
 ```bash
 # Node.js >=20; run at repository root on dev

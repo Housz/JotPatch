@@ -7,27 +7,27 @@ JotPatch 的稳定版本使用 `MAJOR.MINOR.PATCH`，Git Tag 为 `vMAJOR.MINOR.P
 | 对象 | 版本或配置 | 意义 |
 | --- | --- | --- |
 | 最新正式发行 | [v0.1.18](https://github.com/Housz/JotPatch/releases/tag/v0.1.18) | `main` 上已发布的两浏览器 ZIP |
-| `dev` 的 `package.json.version` | `0.1.19-dev.1` | 下一轮开发版本 |
+| `dev` 的 `package.json.version` | `0.1.20-dev.1` | 下一轮开发版本 |
 | `dev` 的 `manifest.version` | `0.1.18.1` | 纯数字 WebExtension 版本 |
-| `dev` 的 `manifest.version_name` | `0.1.19-dev.1` | Chromium 显示版本；Firefox Manifest 转换时删除 |
-| `config/version.json` | `channel=dev`、`baseline=0.1.18`、`nextRelease=0.1.19`、`devBuild=1` | 开发渠道配置 |
+| `dev` 的 `manifest.version_name` | `0.1.20-dev.1` | Chromium 显示版本；Firefox Manifest 转换时删除 |
+| `config/version.json` | `channel=dev`、`baseline=0.1.18`、`nextRelease=0.1.20`、`devBuild=1` | 开发渠道配置 |
 
 `v0.1.18` 对应合并源码 `aca4797cc9240b26329525edcca52b0f667e6879`，该 Tag 及附件不会因启动下一轮 `dev` 而修改。
 
 ## 开发与发行映射
 
 ```text
-当前 dev package.version       0.1.19-dev.1
+当前 dev package.version       0.1.20-dev.1
 当前 dev manifest.version      0.1.18.1
-当前 dev manifest.version_name 0.1.19-dev.1
+当前 dev manifest.version_name 0.1.20-dev.1
 
-下次 release package.version       0.1.19
-下次 release manifest.version      0.1.19
-下次 release manifest.version_name 0.1.19
-下次正式 Git Tag                 v0.1.19
+下次 release package.version       0.1.20
+下次 release manifest.version      0.1.20
+下次 release manifest.version_name 0.1.20
+下次正式 Git Tag                 v0.1.20（v0.1.19 未发行，跳过）
 ```
 
-`scripts/package.mjs --channel=dev --build=N` 会生成 `0.1.18.N` 的数字 Manifest 版本与 `v0.1.19-dev.N` 包名。数字版本用于浏览器升级排序，开发版仍低于未来的 `0.1.19` 正式版。Chrome 扩展 Manifest 版本最多四段，每段为 0–65535 的整数；不能把 `-dev.N` 写入 `manifest.version`。
+`scripts/package.mjs --channel=dev --build=N` 会生成 `0.1.18.N` 的数字 Manifest 版本与 `v0.1.20-dev.N` 包名。数字版本用于浏览器升级排序，开发版仍低于未来的 `0.1.20` 正式版。v0.1.19 仅为开发集成周期，未打 Tag 或发布；下一个正式版本直接采用 v0.1.20。Chrome 扩展 Manifest 版本最多四段，每段为 0–65535 的整数；不能把 `-dev.N` 写入 `manifest.version`。
 
 准备正式发布时，在从 `dev` 派生的 Release PR 中将渠道切换到 `release`，同步 `package.json.version`、`manifest.version` 和 `manifest.version_name` 到 `nextRelease`。运行 `npm run check`、必要浏览器回归和 `npm run package:release`。未经审批不直接改 `main`、Tag 或已有 Release。
 

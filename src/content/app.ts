@@ -1132,6 +1132,37 @@ namespace JP {
       this.positionCard(noteId);
       if(focus) paper.querySelector<HTMLElement>('.note-editor')?.focus({preventScroll:true});
     }
+    private updatePaperSummary(paper:HTMLElement,note:Note):void {
+      const summary=paper.querySelector<HTMLElement>('.paper-collapse-summary');
+      if(summary)summary.textContent=note.text.trim().split('\n')[0]?.slice(0,96)||'空白便签';
+    }
+    private applyPaperCollapse(paper:HTMLElement,note:Note):void {
+      const collapsed=appearance(note).collapsed===true;
+      paper.classList.toggle('collapsed',collapsed);
+      const toggle=paper.querySelector<HTMLButtonElement>('.paper-collapse-toggle');
+      if(toggle){
+        toggle.textContent=collapsed?'▾':'▴';
+        toggle.title=collapsed?'展开便签':'折叠便签';
+        toggle.setAttribute('aria-label',toggle.title);
+        toggle.setAttribute('aria-expanded',String(!collapsed));
+      }
+      this.updatePaperSummary(paper,note);
+      if(collapsed){
+        const menu=paper.querySelector<HTMLElement>('.note-menu');
+        if(menu)menu.hidden=true;
+        paper.querySelector('.menu-trigger')?.setAttribute('aria-expanded','false');
+      }
+    }
+    private togglePaperCollapsed(note:Note,paper:HTMLElement):void {
+      const collapsed=appearance(note).collapsed!==true;
+      if(collapsed && paper.contains(this.shadow.activeElement))
+        (this.shadow.activeElement as HTMLElement)?.blur();
+      note.appearance={...appearance(note),collapsed};
+      this.applyPaperCollapse(paper,note);
+      this.bringCardToFront(paper);
+      this.touchNote(note);
+      if(!collapsed)paper.querySelector<HTMLElement>('.note-editor')?.focus({preventScroll:true});
+    }
     private bringCardToFront(paper:HTMLElement):void {
       // Keep the note stack below the Dock (z-index 1000), even after
       // hundreds of pointer gestures. Preserve relative stacking on reset.
@@ -1164,6 +1195,9 @@ namespace JP {
             <span class="paper-pin-symbol" aria-hidden="true">📌︎</span>
           </button>
           <span class="paper-grab" aria-hidden="true"></span>
+          <span class="paper-collapse-summary" aria-hidden="true"></span>
+          <button class="paper-collapse-toggle" type="button" aria-expanded="true"
+            aria-label="折叠便签" title="折叠便签">▴</button>
           <div class="paper-head-actions">
             <button class="copy" title="复制 Markdown 源码" aria-label="复制 Markdown 源码" type="button">⧉</button>
             <button class="jump" title="返回原文" aria-label="返回原文" type="button">↗</button>
@@ -1196,10 +1230,15 @@ namespace JP {
       paper.querySelector<HTMLElement>('.paper-pin')!.hidden = !note.anchor;
       paper.querySelector<HTMLElement>('.note-mode')!.textContent = note.anchor ? '📌 贴在原文' : '◌ 本页悬浮';
       const editor=paper.querySelector<HTMLElement>('.note-editor')!;
+      editor.id=`jp-editor-${note.id}`;
+      paper.querySelector<HTMLButtonElement>('.paper-collapse-toggle')!
+        .setAttribute('aria-controls',editor.id);
       renderMarkdown(editor,note.text);
+      this.applyPaperCollapse(paper,note);
       const changed=()=>{
         note.text=markdownFromEditor(editor);
         editor.dataset.empty=String(!note.text.trim());
+        this.updatePaperSummary(paper,note);
         this.touchNote(note);this.renderList();
       };
       editor.dataset.empty=String(!note.text.trim());
@@ -1212,11 +1251,12 @@ namespace JP {
         document.execCommand('insertText',false,event.clipboardData?.getData('text/plain')||'');
       });
       editor.addEventListener('keydown',(event:KeyboardEvent)=>{
-        if(event.key==='Tab' && !event.altKey && !event.isComposing){
-          // Ctrl+Tab can be browser-reserved. Shift+Tab is the reliable
-          // equivalent for moving indentation back.
+        // Only Tab/Shift+Tab are editor indentation commands. Ctrl+Tab must
+        // remain available to the browser for switching tabs.
+        if(event.key==='Tab' && !event.ctrlKey && !event.metaKey &&
+           !event.altKey && !event.isComposing){
           event.preventDefault();event.stopPropagation();
-          indentNoteEditor(editor,event.ctrlKey||event.metaKey||event.shiftKey);
+          indentNoteEditor(editor,event.shiftKey);
           return;
         }
         if((event.ctrlKey||event.metaKey)&&!event.altKey){
@@ -1230,6 +1270,8 @@ namespace JP {
           }
         }
       });
+      editor.addEventListener('copy',event=>{void editorLineClipboard(editor,event,false);});
+      editor.addEventListener('cut',event=>{void editorLineClipboard(editor,event,true);});
       paper.addEventListener('pointerdown',()=>this.bringCardToFront(paper));
       paper.addEventListener('focusin',()=>this.bringCardToFront(paper));
       paper.addEventListener('wheel',(event:WheelEvent)=>{
@@ -1247,6 +1289,8 @@ namespace JP {
         button.addEventListener('pointerdown',event=>event.preventDefault());
         button.addEventListener('click',()=>this.format(editor,name));
       }
+      paper.querySelector<HTMLButtonElement>('.paper-collapse-toggle')!
+        .addEventListener('click',()=>this.togglePaperCollapsed(note,paper));
       paper.querySelector('.paper-pin')!.addEventListener('click',()=>this.unpinNote(note.id));
       paper.querySelector('.copy')!.addEventListener('click',()=>void this.copyNote(note.id));
       paper.querySelector('.jump')!.addEventListener('click',()=>this.goTo(note.id,false));
@@ -1486,6 +1530,7 @@ namespace JP {
         this.updatePinIcon(paper,fresh);
         const editor=paper.querySelector<HTMLElement>('.note-editor');
         if(editor){renderMarkdown(editor,fresh.text);editor.dataset.empty=String(!fresh.text.trim());}
+        this.applyPaperCollapse(paper,fresh);
         paper.style.setProperty('--paper',COLOR_HEX[appearance(fresh).color]);
         paper.style.setProperty('--jp-font-size',this.fontPixels(appearance(fresh).fontSize));
         paper.style.width=`${appearance(fresh).width}px`;paper.style.height=`${appearance(fresh).height}px`;
